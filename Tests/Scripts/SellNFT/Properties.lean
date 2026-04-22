@@ -90,7 +90,7 @@ def success_imp_no_multi_spent : Prop :=
 
 #blaster (gen-cex: 0) (solve-result: 1) (random-seed: 10) [success_imp_no_multi_spent]
 
-/-- Counterexample expected if sell nft is succcessful when seller is not paid -/
+/-- Counterexample expected if sell nft is successful when seller is not paid -/
 def seller_not_paid_imp_success : Prop :=
   ∀ (input : SpendingInput),
      validSpendingContext input →

@@ -11,7 +11,7 @@ open PlutusCore.UPLC.Utils
 
 set_option warn.sorry false
 
-#import_uplc fibonacciNaiveRecursion PlutusV2 single_cbor_hex "Tests/Functions/Fibonacci/fibonacci_native.flat"
+#import_uplc fibonacciNaiveRecursion PlutusV2 single_cbor_hex "Tests/Functions/Fibonacci/fibonacci_naive.flat"
 
 #import_uplc fibonacciSeungheonOhSize PlutusV2 single_cbor_hex "Tests/Functions/Fibonacci/fibonacci_size.flat"
 

@@ -2,7 +2,7 @@ import CardanoLedgerApi.V2
 import Tests.Scripts.UnlockPIN.UnlockPIN
 import Blaster
 
-namespace Tests.Uplc.Script.UnlockPIN
+namespace Tests.Scripts.UnlockPIN
 open CardanoLedgerApi.V2
 open PlutusCore.UPLC.Utils
 open PlutusCore.Data (Data)
@@ -41,7 +41,7 @@ def unsafe_pin_imp_successful : Prop :=
 
 #blaster (gen-cex: 0) (solve-result: 1) [unsafe_pin_imp_successful]
 
--- Counterexample expected: There exists at least one valid SpendingInput for which helloWorld is successful.
+-- Counterexample expected: There exists at least one valid SpendingInput for which unlockPIN is successful.
 def cannot_break_pin : Prop :=
   ∀ (input : SpendingInput),
     validSpendingContext input →
@@ -49,4 +49,4 @@ def cannot_break_pin : Prop :=
 
 #blaster (gen-cex: 0) (solve-result: 1) [cannot_break_pin]
 
-end Tests.Uplc.Script.UnlockPIN
+end Tests.Scripts.UnlockPIN
