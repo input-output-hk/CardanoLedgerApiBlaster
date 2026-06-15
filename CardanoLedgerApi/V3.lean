@@ -101,10 +101,18 @@ namespace CardanoLedgerApi.V3
   )
   -- V3 Governance
   export Governance (
+    ChangedParameters
+    Constitution
+    GovernanceAction
     GovernanceActionId
+    NewCommitteeMembers
+    OldCommitteeMembers
     ProposalProcedure
+    ProtocolVersion
+    Quorum
     Vote
     Voter
+    Withdrawals
   )
   -- V3.Tx
   export Tx (
@@ -132,7 +140,6 @@ namespace CardanoLedgerApi.V3
     TxInfo
     TxInInfo
     VoterMap
-    Withdrawals
     resolveInput
     findOwnInput
     findPubKeyInputs
@@ -140,6 +147,7 @@ namespace CardanoLedgerApi.V3
     findInput
     findRedeemer
     ownCurrencySymbol
+    ownChangeParameters
     valueSpent
     valueProduced
     spendingInputs
@@ -148,6 +156,7 @@ namespace CardanoLedgerApi.V3
     certifyingInputs
     votingInputs
     proposingInputs
+    isBalanced
     isMintingScriptInfo
     isRewardingScriptInfo
     isSpendingScriptInfo
@@ -179,6 +188,12 @@ namespace CardanoLedgerApi.V3
     isBalanced
     validTxInfo
     validScriptContext
+    validSpendingContext
+    validMintingContext
+    validRewardingContext
+    validCertifyingContext
+    validVotingContext
+    validProposingContext
   )
 
 end CardanoLedgerApi.V3

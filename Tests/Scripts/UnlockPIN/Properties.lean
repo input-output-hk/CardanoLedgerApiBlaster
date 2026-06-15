@@ -47,6 +47,6 @@ def cannot_break_pin : Prop :=
     validSpendingContext input →
     ¬ isSuccessful (appliedUnlockPIN.prop input)
 
-#blaster (gen-cex: 0) (solve-result: 1) [cannot_break_pin]
+#blaster (gen-cex: 0) (solve-result: 1) (random-seed: 1) [cannot_break_pin]
 
 end Tests.Scripts.UnlockPIN

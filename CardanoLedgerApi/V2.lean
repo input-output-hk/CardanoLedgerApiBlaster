@@ -69,6 +69,7 @@ namespace CardanoLedgerApi.V2
     rewardingInputs
     certifyingInputs
     credentialInWithdrawals
+    isBalanced
     isCertifyingPurpose
     isMintingPurpose
     isRewardingPurpose

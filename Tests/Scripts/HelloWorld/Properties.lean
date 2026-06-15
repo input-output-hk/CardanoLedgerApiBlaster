@@ -45,6 +45,6 @@ def cannot_break_pwd : Prop :=
   ∀ (input : SpendingInput),
     validSpendingContext input → ¬ isSuccessful (appliedHelloWorld.prop input)
 
-#blaster (gen-cex: 0) (solve-result: 1) [cannot_break_pwd]
+#blaster (gen-cex: 0) (solve-result: 1) (random-seed: 1) [cannot_break_pwd]
 
 end Tests.Scripts.HelloWorld

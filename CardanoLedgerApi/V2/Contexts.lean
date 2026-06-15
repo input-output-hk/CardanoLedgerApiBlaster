@@ -545,19 +545,27 @@ def valueProduced (ctx : ScriptContext) : Value :=
 
 /-- Return the list of arguments to be applied to a UPLC Spending validator -/
 def spendingInputs (input : SpendingInput) : List Term :=
-  [toTerm input.datum, toTerm input.redeemer, toTerm input.ctx]
+  match input.ctx.scriptContextPurpose with
+  | .Spending _ => [toTerm input.datum, toTerm input.redeemer, toTerm input.ctx]
+  | _ => [Term.Error]
 
 /-- Return the list of arguments to be applied to a UPLC Minting validator -/
 def mintingInputs (input : MintingInput) : List Term :=
-  [toTerm input.redeemer, toTerm input.ctx]
+  match input.ctx.scriptContextPurpose with
+  | .Minting _ => [toTerm input.redeemer, toTerm input.ctx]
+  | _ => [Term.Error]
 
 /-- Return the list of arguments to be applied to a UPLC Rewarding validator -/
 def rewardingInputs (input : RewardingInput) : List Term :=
-  [toTerm input.redeemer, toTerm input.ctx]
+  match input.ctx.scriptContextPurpose with
+  | .Rewarding _ => [toTerm input.redeemer, toTerm input.ctx]
+  | _ => [Term.Error]
 
 /-- Return the list of arguments to be applied to a UPLC Certifying validator -/
 def certifyingInputs (input : CertifyingInput) : List Term :=
-  [toTerm input.redeemer, toTerm input.ctx]
+  match input.ctx.scriptContextPurpose with
+  | .Certifying _ => [toTerm input.redeemer, toTerm input.ctx]
+  | _ => [Term.Error]
 
 
 /-! Predicates -/
@@ -880,19 +888,27 @@ def validScriptContext (datum : Option Datum) (redeemer : Redeemer) (ctx : Scrip
 
 /-- Check ledger rule for spending script context -/
 def validSpendingContext (input : SpendingInput) : Bool :=
-  validScriptContext (some input.datum) input.redeemer input.ctx
+  match input.ctx.scriptContextPurpose with
+  | .Spending _ => validScriptContext (some input.datum) input.redeemer input.ctx
+  | _ => false
 
 /-- Check ledger rule for minting script context -/
 def validMintingContext (input : MintingInput) : Bool :=
-  validScriptContext none input.redeemer input.ctx
+  match input.ctx.scriptContextPurpose with
+  | .Minting _ => validScriptContext none input.redeemer input.ctx
+  | _ => false
 
 /-- Check ledger rule for rewarding script context -/
 def validRewardingContext (input : RewardingInput) : Bool :=
-  validScriptContext none input.redeemer input.ctx
+  match input.ctx.scriptContextPurpose with
+  | .Rewarding _ => validScriptContext none input.redeemer input.ctx
+  | _ => false
 
 /-- Check ledger rule for certifying script context -/
 def validCertifyingContext (input : CertifyingInput) : Bool :=
-  validScriptContext none input.redeemer input.ctx
+  match input.ctx.scriptContextPurpose with
+  | .Certifying _ => validScriptContext none input.redeemer input.ctx
+  | _ => false
 
 
 end CardanoLedgerApi.V2.Contexts

@@ -294,29 +294,6 @@ instance : IsData TxInInfo where
 /-- Unlike V1/V2, MintValue does not contain Ada with zero quantity -/
 abbrev MintValue := V2.Value
 
-abbrev Withdrawals := List (V2.Credential × Integer) -- handled as a Data.Map at the Data level
-
-/-- Return the list `Data × Data` representation for Withdrawals. -/
-def withdrawalsToListPairData (xs : Withdrawals) : List (Data × Data) :=
-  Recursor.map x in xs with (IsData.toData x.1, Data.I x.2)
-
-/-- Try to decode `Withdrawals` from a `Data × Data` list instance. -/
-def listPairDataToWithdrawals (xs : List (Data × Data)) : Option Withdrawals :=
-  match xs with
-  | [] => some []
-  | (d1, Data.I i) :: xs' =>
-      match IsData.fromData d1, listPairDataToWithdrawals xs' with
-      | some cred, some rest => (cred, i) :: rest
-      | _, _ => none
-  | _ => none
-
-/-- IsData instance for Withdrawals -/
-instance : IsData Withdrawals where
-  toData x := Data.Map (withdrawalsToListPairData x)
-  fromData
-  | Data.Map r_wdrwl => listPairDataToWithdrawals r_wdrwl
-  | _ => none
-
 abbrev RedeemerMap := List (ScriptPurpose × V2.Redeemer) -- handled as a Data.Map at the Data level
 
 /-- Return the list `Data × Data` representation for RedeemerMap. -/
@@ -654,6 +631,19 @@ def ownCurrencySymbol (ctx : ScriptContext) : Option V2.CurrencySymbol :=
   | .MintingScript cs => some cs
   | _ => none
 
+/-- Return the change parameters proposed by the current validator script only when:
+      1. Script purpose is`Proposing idx proposal`
+      2. proposal.ppGovernanceAction = ParameterChange _ c _
+      3. c is a Map
+-/
+def ownChangeParameters (ctx : ScriptContext) : Option (List (Data × Data)) :=
+  match ctx.scriptContextScriptInfo with
+  | .ProposingScript _idx proposal =>
+        match proposal.ppGovernanceAction with
+        | Data.Constr 0 [_, Data.Map changes, _] => some changes
+        | _ => none
+  | _ => none
+
 /-- Return the total value of inputs spent in the pending transaction -/
 def valueSpent (ctx : ScriptContext) : V2.Value :=
   let rec visit (ins : List TxInInfo) (acc : V2.Value) : V2.Value :=
@@ -683,22 +673,40 @@ def ScriptInfo.toScriptPurpose : ScriptInfo → ScriptPurpose
 
 
 /-- Return the list of arguments to be applied to a UPLC Spending validator -/
-def spendingInputs (ctx : ScriptContext) : List Term := [toTerm ctx]
+def spendingInputs (ctx : ScriptContext) : List Term :=
+  match ctx.scriptContextScriptInfo with
+  | .SpendingScript .. => [toTerm ctx]
+  | _ => [Term.Error]
 
 /-- Return the list of arguments to be applied to a UPLC Minting validator -/
-def mintingInputs (ctx : ScriptContext) : List Term := spendingInputs ctx
+def mintingInputs (ctx : ScriptContext) : List Term :=
+  match ctx.scriptContextScriptInfo with
+  | .MintingScript .. => [toTerm ctx]
+  | _ => [Term.Error]
 
 /-- Return the list of arguments to be applied to a UPLC Rewarding validator -/
-def rewardingInputs (ctx : ScriptContext) : List Term := spendingInputs ctx
+def rewardingInputs (ctx : ScriptContext) : List Term :=
+  match ctx.scriptContextScriptInfo with
+  | .RewardingScript .. => [toTerm ctx]
+  | _ => [Term.Error]
 
 /-- Return the list of arguments to be applied to a UPLC Certifying validator -/
-def certifyingInputs (ctx : ScriptContext) : List Term := spendingInputs ctx
+def certifyingInputs (ctx : ScriptContext) : List Term :=
+  match ctx.scriptContextScriptInfo with
+  | .CertifyingScript .. => [toTerm ctx]
+  | _ => [Term.Error]
 
 /-- Return the list of arguments to be applied to a UPLC Voting validator -/
-def votingInputs (ctx : ScriptContext) : List Term := spendingInputs ctx
+def votingInputs (ctx : ScriptContext) : List Term :=
+  match ctx.scriptContextScriptInfo with
+  | .VotingScript .. => [toTerm ctx]
+  | _ => [Term.Error]
 
 /-- Return the list of arguments to be applied to a UPLC Proposing validator -/
-def proposingInputs (ctx : ScriptContext) : List Term := spendingInputs ctx
+def proposingInputs (ctx : ScriptContext) : List Term :=
+  match ctx.scriptContextScriptInfo with
+  | .ProposingScript .. => [toTerm ctx]
+  | _ => [Term.Error]
 
 
 /-! Predicates -/
@@ -881,24 +889,59 @@ def validScriptVoter (v : Voter) : Bool :=
   | .DRepVoter cred => V2.isScriptCredential cred
   | _ => false
 
+/-- [LEDGER-RULE]: Ledger rules for change parameters proposed by the current proposing script (V3).
+    Change parameters `cp` is valid if and only if it has the form:
+     cp = [ (Data.I key₁, d₁), ..., (Data.I keyₙ, dₙ) ]
+
+     such that:
+
+     1. parameter keys are unique and are sorted
+         - key₁ < key₂ < ... < keyₙ
+-/
+def sortedChangeParameters (cp : Data) : Bool :=
+  let rec sortedKeys (params : List (Data × Data)) (prev_key : Integer) : Bool :=
+    match params with
+    | [] => true
+    | (Data.I key, _) :: xs => prev_key < key && sortedKeys xs key
+    | _ => false
+  match cp with
+  | Data.Map params =>
+     match params with
+     | [] => true
+     | (Data.I key, _) :: xs => sortedKeys xs key
+     | _ => false
+  | _ => false
+
+/-- [LEDGER-RULE]: Ledger rules for transaction's Withdrawals (V3).
+    The withdrawal map is valid if and only if one of the following conditions is satisfied:
+      1. Withdrawal map is empty
+          - ctx.scriptContextTxInfo.txInfoWdrl = []
+      2. Withdrawal map is sorted w.r.t. Credential
+          ctx.scriptContextTxInfo.txInfoWdrl = [(cred₁, n₁), ..., (credₖ, nₖ)] ∧
+          cred₁ < cred₂ < .. < credₖ
+-/
+def validWithdrawals (withdrawals : Withdrawals) : Bool :=
+  let rec visit (withdrawals : Withdrawals) (prev_cred : V2.Credential) : Bool :=
+   match withdrawals with
+   | [] => true
+   | x :: xs => prev_cred < x.1 && visit xs x.1
+  match withdrawals with
+  | [] => true
+  | x :: xs => visit xs x.1
+
 /-- [LEDGER-RULE]: Ledger rules for the proposal procedure of certificate of the current proposing script (V3).
     The proposal `p` is valid if and only if one of the following conditions is satisfied:
 
-    1. p.ppGovernanceAction = ParameterChange _ _ (Just sh)
+    1. p.ppGovernanceAction = ParameterChange _ cp (Just sh) ∧ sortedChangeParameters cp
 
-    2. p.ppGovernanceAction = TreasuryWithdrawals _ (Just sh)
+    2. p.ppGovernanceAction = TreasuryWithdrawals _ (Just sh) ∧ validWithdrawals wths
 
 -/
 def validScriptProposal (p : ProposalProcedure) : Bool :=
-  match p.ppGovernanceAction with
-  | Data.Constr 0 [_action, _changedParams, r_hash] =>
-      -- ParameterChange
-      (IsData.fromData r_hash : Option V2.ScriptHash).isSome
-  | Data.Constr 2 [_credMap, r_hash] =>
-      -- TreasuryWithdrawals
-      (IsData.fromData r_hash : Option V2.ScriptHash).isSome
+  match (IsData.fromData p.ppGovernanceAction : Option (GovernanceAction)) with
+  | some (.ParameterChange _ cp (some _)) => sortedChangeParameters cp
+  | some (.TreasuryWithdrawals wths (some _)) => validWithdrawals wths
   | _ => false
-
 
 /-- [LEDGER-RULE]: Ledger rules for ScriptInfo (V3):
      ScriptInfo `s` is valid if and only if the following conditions are satisfied:
@@ -1028,24 +1071,6 @@ def validReferenceInputs (ctx : ScriptContext) : Bool :=
 -/
 def validOutputs (outputs : List V2.TxOut) : Bool :=
   Recursor.all x in outputs => V2.validTxOutValue x.txOutValue
-
-
-/-- [LEDGER-RULE]: Ledger rules for transaction's Withdrawals (V3).
-    The withdrawal map is valid if and only if one of the following conditions is satisfied:
-      1. Withdrawal map is empty
-          - ctx.scriptContextTxInfo.txInfoWdrl = []
-      2. Withdrawal map is sorted w.r.t. Credential
-          ctx.scriptContextTxInfo.txInfoWdrl = [(cred₁, n₁), ..., (credₖ, nₖ)] ∧
-          cred₁ < cred₂ < .. < credₖ
--/
-def validWithdrawals (withdrawals : Withdrawals) : Bool :=
-  let rec visit (withdrawals : Withdrawals) (prev_cred : V2.Credential) : Bool :=
-   match withdrawals with
-   | [] => true
-   | x :: xs => prev_cred < x.1 && visit xs x.1
-  match withdrawals with
-  | [] => true
-  | x :: xs => visit xs x.1
 
 /-- [LEDGER-RULE]: Ledger rules for transaction's redeemer map (V3).
     The redeemer map is valid if and only if one of the following conditions is satisfied:
@@ -1200,6 +1225,43 @@ def validTxInfo (ctx : ScriptContext) : Bool :=
 def validScriptContext (ctx : ScriptContext) : Bool :=
   validScriptInfo ctx &&
   validTxInfo ctx
+
+
+/-- Check ledger rule for spending script context -/
+def validSpendingContext (ctx : ScriptContext) : Bool :=
+  match ctx.scriptContextScriptInfo with
+  | .SpendingScript .. => validScriptContext ctx
+  | _ => false
+
+/-- Check ledger rule for minting script context -/
+def validMintingContext (ctx : ScriptContext) : Bool :=
+  match ctx.scriptContextScriptInfo with
+  | .MintingScript _ => validScriptContext ctx
+  | _ => false
+
+/-- Check ledger rule for rewarding script context -/
+def validRewardingContext (ctx : ScriptContext) : Bool :=
+  match ctx.scriptContextScriptInfo with
+  | .RewardingScript _ => validScriptContext ctx
+  | _ => false
+
+/-- Check ledger rule for certifying script context -/
+def validCertifyingContext (ctx : ScriptContext) : Bool :=
+  match ctx.scriptContextScriptInfo with
+  | .CertifyingScript .. => validScriptContext ctx
+  | _ => false
+
+/-- Check ledger rule for voting script context -/
+def validVotingContext (ctx : ScriptContext) : Bool :=
+  match ctx.scriptContextScriptInfo with
+  | .VotingScript .. => validScriptContext ctx
+  | _ => false
+
+/-- Check ledger rule for proposing script context -/
+def validProposingContext (ctx : ScriptContext) : Bool := validScriptContext ctx
+  -- match ctx.scriptContextScriptInfo with
+  -- | .ProposingScript .. => validScriptContext ctx
+  -- | _ => false
 
 
 end CardanoLedgerApi.V3.Contexts

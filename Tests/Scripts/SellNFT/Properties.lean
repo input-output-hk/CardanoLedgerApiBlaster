@@ -26,9 +26,9 @@ instance : IsData SellDatum where
   | _ => none
 
 
-def sellerIsPaid' (sellDatum : SellDatum) (amount : Integer) (ctx : ScriptContext) : Bool :=
+def sellerIsPaid' (sellDatum : SellDatum) (amount : Integer) (ctx : ScriptContext) : Prop :=
   Recursor.any out in ctx.scriptContextTxInfo.txInfoOutputs =>
-    out.txOutAddress = sellDatum.seller && lovelaceOf out.txOutValue ≥ amount
+    out.txOutAddress = sellDatum.seller ∧ lovelaceOf out.txOutValue ≥ amount
 
 def sellerIsPaid (input : SpendingInput) : Prop :=
   match IsData.fromData input.datum with
@@ -60,12 +60,12 @@ def no_multi_spent (input : SpendingInput) : Prop :=
       sellerIsPaid' sell expectedAmount input.ctx
   | _, _ => false
 
-/-- sellNFT successful → spending purpose ∧ seller is paid with expected Ada -/
+/-- sellNFT successful → seller is paid with expected Ada -/
 theorem sell_nft_successful_imp_seller_is_paid :
   ∀ (input : SpendingInput),
      validSpendingContext input →
      isSuccessful (appliedSellNFT.prop input) →
-     (isSpendingPurpose input.ctx ∧ sellerIsPaid input) := by blaster
+     sellerIsPaid input := by blaster
 
 /-- seller is not paid → sell nft errors -/
 theorem seller_not_paid_sell_nft_error :
@@ -74,12 +74,6 @@ theorem seller_not_paid_sell_nft_error :
      ¬ sellerIsPaid input →
      isUnsuccessful (appliedSellNFT.prop input) := by blaster
 
-/-- not spending purpose → sell nft errors -/
-theorem not_spending_purpose_imp_sell_nft_error :
-  ∀ (input : SpendingInput),
-     validSpendingContext input →
-     ¬ isSpendingPurpose input.ctx →
-     isUnsuccessful (appliedSellNFT.prop input) := by blaster
 
 /-- Counterexample expected as sell nft is vulnerable against multi satisfaction -/
 def success_imp_no_multi_spent : Prop :=
@@ -88,7 +82,7 @@ def success_imp_no_multi_spent : Prop :=
      isSuccessful (appliedSellNFT.prop input) →
      no_multi_spent input
 
-#blaster (gen-cex: 0) (solve-result: 1) (random-seed: 10) [success_imp_no_multi_spent]
+#blaster (gen-cex: 0) (solve-result: 1) [success_imp_no_multi_spent]
 
 /-- Counterexample expected if sell nft is successful when seller is not paid -/
 def seller_not_paid_imp_success : Prop :=
@@ -97,13 +91,13 @@ def seller_not_paid_imp_success : Prop :=
      ¬ sellerIsPaid input →
      isSuccessful (appliedSellNFT.prop input)
 
-#blaster (gen-cex: 0) (solve-result: 1) [seller_not_paid_imp_success]
+#blaster (gen-cex: 0) (solve-result: 1) (random-seed: 1) [seller_not_paid_imp_success]
 
 /-- Counterexample expected: There exists at least one valid SpendingInput for which SellNFT is successful -/
 def cannot_unlock_nft : Prop :=
   ∀ (input : SpendingInput),
      validSpendingContext input →
-    ¬ isSuccessful (appliedSellNFT.prop input)
+     ¬ isSuccessful (appliedSellNFT.prop input)
 
 #blaster (gen-cex: 0) (solve-result: 1) [cannot_unlock_nft]
 
