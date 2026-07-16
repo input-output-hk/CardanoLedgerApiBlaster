@@ -347,7 +347,7 @@ instance : LawfulBEq ProtocolVersion where
   rfl {bs} := by simp [BEq.beq]
 
 def ltProtocolVersion (x y : ProtocolVersion) : Bool :=
-  x.pvMajor < y.pvMajor || (x.pvMajor = y.pvMajor && x.pvMinor < y.pvMinor)
+  x.pvMajor < y.pvMajor || (x.pvMajor == y.pvMajor && x.pvMinor < y.pvMinor)
 
 /-- LT instance for ProtocolVersion -/
 instance : LT ProtocolVersion where

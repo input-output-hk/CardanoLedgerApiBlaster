@@ -26,14 +26,14 @@ instance : IsData SellDatum where
   | _ => none
 
 
-def sellerIsPaid' (sellDatum : SellDatum) (amount : Integer) (ctx : ScriptContext) : Prop :=
+def sellerIsPaid' (sellDatum : SellDatum) (amount : Integer) (ctx : ScriptContext) : Bool :=
   Recursor.any out in ctx.scriptContextTxInfo.txInfoOutputs =>
-    out.txOutAddress = sellDatum.seller ∧ lovelaceOf out.txOutValue ≥ amount
+    out.txOutAddress = sellDatum.seller && lovelaceOf out.txOutValue ≥ amount
 
-def sellerIsPaid (input : SpendingInput) : Prop :=
+def sellerIsPaid (input : SpendingInput) : Bool :=
   match IsData.fromData input.datum with
   | some sell => sellerIsPaid' sell sell.price input.ctx
-  | none => False
+  | none => false
 
 
 def getPrice (tinfo : TxInInfo) (ownInput : TxInInfo) (sellerAddress : Address) : Integer :=
@@ -49,7 +49,7 @@ def getPrice (tinfo : TxInInfo) (ownInput : TxInInfo) (sellerAddress : Address) 
    else 0
  else 0
 
-def no_multi_spent (input : SpendingInput) : Prop :=
+def no_multi_spent (input : SpendingInput) : Bool :=
   let rec accumulatedPrice (ownInput : TxInInfo) (sellerAddress : Address) (ins : List TxInInfo) : Integer :=
     match ins with
     | [] => 0

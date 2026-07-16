@@ -1258,10 +1258,10 @@ def validVotingContext (ctx : ScriptContext) : Bool :=
   | _ => false
 
 /-- Check ledger rule for proposing script context -/
-def validProposingContext (ctx : ScriptContext) : Bool := validScriptContext ctx
-  -- match ctx.scriptContextScriptInfo with
-  -- | .ProposingScript .. => validScriptContext ctx
-  -- | _ => false
+def validProposingContext (ctx : ScriptContext) : Bool :=
+  match ctx.scriptContextScriptInfo with
+  | .ProposingScript .. => validScriptContext ctx
+  | _ => false
 
 
 end CardanoLedgerApi.V3.Contexts

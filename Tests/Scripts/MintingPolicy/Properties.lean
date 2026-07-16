@@ -26,7 +26,7 @@ def findMLogiScripHashInReferenceInputs (pparamsCs : ByteString) (inputs : List 
 def mintingLogicInWithdrawalMap (pparamsCs : ByteString) (ctx : ScriptContext) : Bool :=
   match findMLogiScripHashInReferenceInputs pparamsCs ctx.scriptContextTxInfo.txInfoReferenceInputs with
   | some cred => credentialInWithdrawals cred ctx.scriptContextTxInfo.txInfoWdrl
-  | none => False
+  | none => false
 
 
 /-- Minting Policy successful → scriptInfo = minting logic is in withdrawal map -/
