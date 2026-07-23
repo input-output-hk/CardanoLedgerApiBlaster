@@ -76,7 +76,18 @@ instance : IsData TxInInfo where
 
 abbrev ScriptPurpose := V1.Contexts.ScriptPurpose
 
-abbrev Withdrawals := List (StakingCredential × Integer) -- handled as a Data.Map at the Data level for V2
+def Withdrawals : Type := List (StakingCredential × Integer) -- handled as a Data.Map at the Data level for V2
+
+instance : Repr Withdrawals := inferInstanceAs (Repr (List (StakingCredential × Integer)))
+
+/-- BEq instance for Withdrawals -/
+instance : BEq Withdrawals := ⟨List.beq⟩
+
+/-- DecidableEq instance for Withdrawals -/
+instance : DecidableEq Withdrawals := inferInstanceAs (DecidableEq (List (StakingCredential × Integer)))
+
+/-! LawfulBEq instance for Withdrawals -/
+instance : LawfulBEq Withdrawals := inferInstanceAs (LawfulBEq (List (StakingCredential × Integer)))
 
 /-- Return the list `Data × Data` representation for Withdrawals.
     V1->V2: each element in Withdrawals is encoded as Data × Data.
@@ -90,7 +101,7 @@ def listPairDataToTxInfoWdrl (xs : List (Data × Data)) : Option Withdrawals :=
   | [] => some []
   | (d1, Data.I i) :: xs' =>
       match IsData.fromData d1, listPairDataToTxInfoWdrl xs' with
-      | some cred, some rest => (cred, i) :: rest
+      | some cred, some rest => some ((cred, i) :: rest)
       | _, _ => none
   | _ => none
 
@@ -103,7 +114,18 @@ instance : IsData Withdrawals where
   | Data.Map r_wdrwl => listPairDataToTxInfoWdrl r_wdrwl
   | _ => none
 
-abbrev DatumMap := List (DatumHash × Datum) -- handled as a Data.Map at the Data level for V2
+def DatumMap : Type := List (DatumHash × Datum) -- handled as a Data.Map at the Data level for V2
+
+instance : Repr DatumMap := inferInstanceAs (Repr (List (DatumHash × Datum)))
+
+/-- BEq instance for DatumMap -/
+instance : BEq DatumMap := ⟨List.beq⟩
+
+/-- DecidableEq instance for DatumMap -/
+instance : DecidableEq DatumMap := inferInstanceAs (DecidableEq (List (DatumHash × Datum)))
+
+/-! LawfulBEq instance for DatumMap -/
+instance : LawfulBEq DatumMap := inferInstanceAs (LawfulBEq (List (DatumHash × Datum)))
 
 /-- Return the list `Data × Data` representation for DatumMap.
     V1->V2: each element in DatumMap is encoded as a Data × Data.
@@ -115,11 +137,10 @@ def txInfoDataToListPairData (xs : DatumMap) : List (Data × Data):=
 def listPairDataToTxInfoData (xs : List (Data × Data)) : Option DatumMap :=
   match xs with
   | [] => some []
-  | (Data.B dh, d2) :: xs' =>
-      match listPairDataToTxInfoData xs' with
-      | some rest => (dh, d2) :: rest
-      |  _ => none
-  | _ => none
+  | (r_dh, d2) :: xs' =>
+      match IsData.fromData r_dh, listPairDataToTxInfoData xs' with
+      | some dh, some rest => some ((dh, d2) :: rest)
+      | _, _ => none
 
 /- IsData instance for DatumMap
    V1->V2: is encoded as a Data.Map
@@ -130,7 +151,18 @@ instance : IsData DatumMap where
   | Data.Map r_dmap => listPairDataToTxInfoData r_dmap
   | _ => none
 
-abbrev RedeemerMap := List (ScriptPurpose × Redeemer) -- handled as a Data.Map at the Data level
+def RedeemerMap : Type := List (ScriptPurpose × Redeemer) -- handled as a Data.Map at the Data level
+
+instance : Repr RedeemerMap := inferInstanceAs (Repr (List (ScriptPurpose × Redeemer)))
+
+/-- BEq instance for RedeemerMap -/
+instance : BEq RedeemerMap := ⟨List.beq⟩
+
+/-- DecidableEq instance for RedeemerMap -/
+instance : DecidableEq RedeemerMap := inferInstanceAs (DecidableEq (List (ScriptPurpose × Redeemer)))
+
+/-! LawfulBEq instance for RedeemerMap -/
+instance : LawfulBEq RedeemerMap := inferInstanceAs (LawfulBEq (List (ScriptPurpose × Redeemer)))
 
 /-- Return the list `Data × Data` representation for RedeemerMap. -/
 def txInfoRedeemersToListPairData (xs : RedeemerMap) : List (Data × Data) :=
@@ -142,7 +174,7 @@ def listPairDataToTxInfoRedeemers (xs : List (Data × Data)) : Option RedeemerMa
   | [] => some []
   | (d1, d2) :: xs' =>
       match IsData.fromData d1, listPairDataToTxInfoRedeemers xs' with
-      | some purpose, some rest => (purpose, d2) :: rest
+      | some purpose, some rest => some ((purpose, d2) :: rest)
       | _, _ => none
 
 /-- IsData instance for RedeemerMap -/
@@ -909,6 +941,5 @@ def validCertifyingContext (input : CertifyingInput) : Bool :=
   match input.ctx.scriptContextPurpose with
   | .Certifying _ => validScriptContext none input.redeemer input.ctx
   | _ => false
-
 
 end CardanoLedgerApi.V2.Contexts

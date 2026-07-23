@@ -294,7 +294,19 @@ instance : IsData TxInInfo where
 /-- Unlike V1/V2, MintValue does not contain Ada with zero quantity -/
 abbrev MintValue := V2.Value
 
-abbrev RedeemerMap := List (ScriptPurpose × V2.Redeemer) -- handled as a Data.Map at the Data level
+def RedeemerMap : Type := List (ScriptPurpose × V2.Redeemer) -- handled as a Data.Map at the Data level
+
+instance : Repr RedeemerMap := inferInstanceAs (Repr (List (ScriptPurpose × V2.Redeemer)))
+
+/-- BEq instance for RedeemerMap -/
+instance : BEq RedeemerMap := ⟨List.beq⟩
+
+/-- DecidableEq instance for RedeemerMap -/
+instance : DecidableEq RedeemerMap := inferInstanceAs (DecidableEq (List (ScriptPurpose × V2.Redeemer)))
+
+/-! LawfulBEq instance for RedeemerMap -/
+instance : LawfulBEq RedeemerMap := inferInstanceAs (LawfulBEq (List (ScriptPurpose × V2.Redeemer)))
+
 
 /-- Return the list `Data × Data` representation for RedeemerMap. -/
 def txInfoRedeemersToListPairData (xs : RedeemerMap) : List (Data × Data) :=
@@ -306,7 +318,7 @@ def listPairDataToTxInfoRedeemers (xs : List (Data × Data)) : Option RedeemerMa
   | [] => some []
   | (d1, d2) :: xs' =>
       match IsData.fromData d1, listPairDataToTxInfoRedeemers xs' with
-      | some purpose, some rest => (purpose, d2) :: rest
+      | some purpose, some rest => some ((purpose, d2) :: rest)
       | _, _ => none
 
 /-- IsData instance for RedeemerMap -/
@@ -316,7 +328,18 @@ instance : IsData RedeemerMap where
   | Data.Map r_map => listPairDataToTxInfoRedeemers r_map
   | _ => none
 
-abbrev GovernanceVoteMap := List (GovernanceActionId × Vote) -- handled as a Data.Map at the Data level
+def GovernanceVoteMap : Type := List (GovernanceActionId × Vote) -- handled as a Data.Map at the Data level
+
+instance : Repr GovernanceVoteMap := inferInstanceAs (Repr (List (GovernanceActionId × Vote)))
+
+/-- BEq instance for GovernanceVoteMap -/
+instance : BEq GovernanceVoteMap := ⟨List.beq⟩
+
+/-- DecidableEq instance for GovernanceVoteMap -/
+instance : DecidableEq GovernanceVoteMap := inferInstanceAs (DecidableEq (List (GovernanceActionId × Vote)))
+
+/-! LawfulBEq instance for GovernanceVoteMap -/
+instance : LawfulBEq GovernanceVoteMap := inferInstanceAs (LawfulBEq (List (GovernanceActionId × Vote)))
 
 /-- Return the list `Data × Data` representation for GovernanceVoteMap. -/
 def governanceVoteMapToListPairData (xs : GovernanceVoteMap) : List (Data × Data) :=
@@ -328,7 +351,7 @@ def listPairDataToGovernanceVoteMap (xs : List (Data × Data)) : Option Governan
   | [] => some []
   | (r_action, r_vote) :: xs' =>
       match IsData.fromData r_action, IsData.fromData r_vote, listPairDataToGovernanceVoteMap xs' with
-      | some action, some vote, some rest => (action, vote) :: rest
+      | some action, some vote, some rest => some ((action, vote) :: rest)
       | _, _, _ => none
 
 /-- IsData instance for GovernanceVoteMap -/
@@ -339,7 +362,18 @@ instance : IsData GovernanceVoteMap where
   | _ => none
 
 
-abbrev VoterMap := List (Voter × GovernanceVoteMap) -- handled as a Data.Map at the Data level
+def VoterMap : Type := List (Voter × GovernanceVoteMap) -- handled as a Data.Map at the Data level
+
+instance : Repr VoterMap := inferInstanceAs (Repr (List (Voter × GovernanceVoteMap)))
+
+/-- BEq instance for VoteMap -/
+instance : BEq VoterMap := ⟨List.beq⟩
+
+/-- DecidableEq instance for VoteMap -/
+instance : DecidableEq VoterMap := inferInstanceAs (DecidableEq (List (Voter × GovernanceVoteMap)))
+
+/-! LawfulBEq instance for VoteMap -/
+instance : LawfulBEq VoterMap := inferInstanceAs (LawfulBEq (List (Voter × GovernanceVoteMap)))
 
 /-- Return the list `Data × Data` representation for VoterMap. -/
 def voterMapToListPairData (xs : VoterMap) : List (Data × Data) :=
@@ -351,7 +385,7 @@ def listPairDataToVoterMap (xs : List (Data × Data)) : Option VoterMap :=
   | [] => some []
   | (r_voter, r_governance) :: xs' =>
       match IsData.fromData r_voter, IsData.fromData r_governance, listPairDataToVoterMap xs' with
-      | some voter, some governance, some rest => (voter, governance) :: rest
+      | some voter, some governance, some rest => some ((voter, governance) :: rest)
       | _, _, _ => none
 
 /-- IsData instance for VoterMap -/
@@ -820,8 +854,9 @@ def validMintValue (v : MintValue) : Bool :=
           ( txOutDatumHash ownResolvedInput = some dh ∧
             ¬ ∃ datum : Datum, (dh, datum) ∈ ctx.scriptContextTxInfo.txInfoData )
 
-     2. optDatum = some datum → txOutInlineDatum ownResolvedInput = some datum
-
+     2. optDatum = some datum →
+          ( txOutInlineDatum ownResolvedInput = some datum ∨
+             ( txOutDatumHash ownResolvedInput = some dh ∧ (dh, datum) ∈ ctx.scriptContextTxInfo.txInfoData ) )
      with:
        - optDatum : corresponding to the optional datum of the current spending script.
        - ownResolvedInput : corresponding to the resolved input `TxOut` for the current spending script.
@@ -837,6 +872,7 @@ def validInputDatum (optDatum : Option V2.Datum) (ownResolvedInput : V2.TxOut) (
   | none, .OutputDatumHash dh => V2.findDatum dh ctx.scriptContextTxInfo.txInfoData == none
   | none, .NoOutputDatum => true
   | some datum, .OutputDatum datum' => datum == datum'
+  | some datum, .OutputDatumHash dh => V2.findDatum dh ctx.scriptContextTxInfo.txInfoData == some datum
   | some _, _ => false
 
 /-- [LEDGER-RULE]: Ledger rules for the certificate of the current certifying script (V3).
@@ -1262,6 +1298,5 @@ def validProposingContext (ctx : ScriptContext) : Bool :=
   match ctx.scriptContextScriptInfo with
   | .ProposingScript .. => validScriptContext ctx
   | _ => false
-
 
 end CardanoLedgerApi.V3.Contexts

@@ -186,7 +186,7 @@ instance : DecidableLT Delegatee := decLtDelegatee
 @[simp] theorem ltDelegatee_same_false (x : Delegatee) : ltDelegatee x x = false := by
   cases x <;> simp only [ltDelegatee, LT.lt] <;> simp <;> repeat' apply String.le_refl
 
-theorem Delegatee_lt_irrefl (x : Delegatee) : ¬ x < x := by cases x <;> simp [LT.lt]
+@[simp] theorem Delegatee_lt_irrefl (x : Delegatee) : ¬ x < x := by cases x <;> simp [LT.lt]
 
 instance : Std.Irrefl (. < . : Delegatee → Delegatee → Prop) where
   irrefl := Delegatee_lt_irrefl

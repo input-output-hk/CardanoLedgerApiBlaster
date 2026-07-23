@@ -7,8 +7,91 @@ open PlutusCore.Data (Data)
 open PlutusCore.ByteString (ByteString)
 open PlutusCore.Integer (Integer)
 
-abbrev CurrencySymbol := ByteString
-abbrev TokenName := ByteString
+def CurrencySymbol : Type := ByteString
+
+instance : Repr CurrencySymbol := inferInstanceAs (Repr ByteString)
+
+/-- BEq instance for CurrencySymbol -/
+instance : BEq CurrencySymbol := inferInstanceAs (BEq ByteString)
+
+/-! LawfulBEq instance for CurrencySymbol -/
+instance : LawfulBEq CurrencySymbol := inferInstanceAs (LawfulBEq ByteString)
+
+/-! DecidableEq instance for CurrencySymbol -/
+instance : DecidableEq CurrencySymbol := inferInstanceAs (DecidableEq ByteString)
+
+/-- LT instance for CurrencySymbol -/
+instance : LT CurrencySymbol := inferInstanceAs (LT ByteString)
+
+/-- DecidableLT instance for TxOutRef -/
+instance : DecidableLT (CurrencySymbol) := inferInstanceAs (DecidableLT ByteString)
+
+@[simp] theorem beqCurrencySymbol_iff_eq (x y : CurrencySymbol) : x == y ↔ x = y := by simp [BEq.beq]
+
+@[simp] theorem beqCurrencySymbol_false_iff_not_eq (x y : CurrencySymbol) : (x == y) = false ↔ x ≠ y := by simp [BEq.beq]
+
+/-- Std.Irrefl instance for CurrencySymbol -/
+instance : Std.Irrefl (. < . : CurrencySymbol → CurrencySymbol → Prop) :=
+  inferInstanceAs (Std.Irrefl (. < . : ByteString → ByteString → Prop))
+
+/-- LE instance for CurrencySymbol -/
+instance : LE CurrencySymbol := inferInstanceAs (LE ByteString)
+
+/-- DecidableLE instance for CurrencySymbol -/
+instance : DecidableLE CurrencySymbol := inferInstanceAs (DecidableLE ByteString)
+
+/-- ToString instance for CurrencySymbol -/
+instance : ToString CurrencySymbol := inferInstanceAs (ToString ByteString)
+
+/-- String to CurrencySymbol coercion to mimick OverloadedString in Haskell -/
+instance : Coe String CurrencySymbol := inferInstanceAs (Coe String ByteString)
+
+/-- IsData instance for CurrencySymbol -/
+instance : IsData CurrencySymbol := inferInstanceAs (IsData ByteString)
+
+
+def TokenName : Type := ByteString
+
+instance : Repr TokenName := inferInstanceAs (Repr ByteString)
+
+/-- BEq instance for TokenName -/
+instance : BEq TokenName := inferInstanceAs (BEq ByteString)
+
+/-! LawfulBEq instance for TokenName -/
+instance : LawfulBEq TokenName := inferInstanceAs (LawfulBEq ByteString)
+
+/-! DecidableEq instance for TokenName -/
+instance : DecidableEq TokenName := inferInstanceAs (DecidableEq ByteString)
+
+/-- LT instance for TokenName -/
+instance : LT TokenName := inferInstanceAs (LT ByteString)
+
+/-- DecidableLT instance for TxOutRef -/
+instance : DecidableLT (TokenName) := inferInstanceAs (DecidableLT ByteString)
+
+@[simp] theorem beqTokenName_iff_eq (x y : TokenName) : x == y ↔ x = y := by simp [BEq.beq]
+
+@[simp] theorem beqTokenName_false_iff_not_eq (x y : TokenName) : (x == y) = false ↔ x ≠ y := by simp [BEq.beq]
+
+/-- Std.Irrefl instance for TokenName -/
+instance : Std.Irrefl (. < . : TokenName → TokenName → Prop) :=
+  inferInstanceAs (Std.Irrefl (. < . : ByteString → ByteString → Prop))
+
+/-- LE instance for TokenName -/
+instance : LE TokenName := inferInstanceAs (LE ByteString)
+
+/-- DecidableLE instance for TokenName -/
+instance : DecidableLE TokenName := inferInstanceAs (DecidableLE ByteString)
+
+/-- ToString instance for TokenName -/
+instance : ToString TokenName := inferInstanceAs (ToString ByteString)
+
+/-- String to TokenName coercion to mimick OverloadedString in Haskell -/
+instance : Coe String TokenName := inferInstanceAs (Coe String ByteString)
+
+/-- IsData instance for TokenName -/
+instance : IsData TokenName := inferInstanceAs (IsData ByteString)
+
 
 /-- The currency symbol for `Ada` -/
 def adaSymbol : CurrencySymbol := ""
@@ -20,18 +103,21 @@ def adaToken : TokenName := ""
      - predicate validTxOutValue when is specified in a TxOut
      - predicate validMintValue when is specified in txInfoMint
 -/
-abbrev Value := List (Data × Data)
+def Value : Type := List (Data × Data)
+
+instance : Repr Value := inferInstanceAs (Repr (List (Data × Data)))
 
 /-- BEq instance for Value -/
 instance : BEq Value := ⟨List.beq⟩
 
 /-- DecidableEq instance for Value -/
-instance : DecidableEq Value := inferInstanceAs (DecidableEq Value)
+instance : DecidableEq Value := inferInstanceAs (DecidableEq (List (Data × Data)))
 
 /-! LawfulBEq instance for Value -/
-instance : LawfulBEq Value := inferInstanceAs (LawfulBEq Value)
+instance : LawfulBEq Value := inferInstanceAs (LawfulBEq (List (Data × Data)))
 
-/-- IsData instance for ScriptHash -/
+
+/-- IsData instance for Value -/
 instance : IsData Value where
   toData v := Data.Map v
   fromData

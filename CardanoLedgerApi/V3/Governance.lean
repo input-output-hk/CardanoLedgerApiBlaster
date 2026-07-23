@@ -94,7 +94,7 @@ instance : DecidableLT Voter := decLtVoter
 @[simp] theorem ltVoter_same_false (x : Voter) : ltVoter x x = false := by
   cases x <;> simp only [ltVoter, LT.lt] <;> simp; apply String.lt_irrefl
 
-theorem Voter_lt_irrefl (x : Voter) : ¬ x < x := by cases x <;> simp [LT.lt]
+@[simp] theorem Voter_lt_irrefl (x : Voter) : ¬ x < x := by cases x <;> simp [LT.lt]
 
 instance : Std.Irrefl (. < . : Voter → Voter → Prop) where
   irrefl := Voter_lt_irrefl
@@ -199,7 +199,7 @@ instance : DecidableLT Vote := decLtVote
 /-! Std.Irrefl instance for Vote -/
 @[simp] theorem ltVote_same_false (x : Vote) : ltVote x x = false := by cases x <;> simp [ltVote]
 
-theorem Vote_lt_irrefl (x : Vote) : ¬ x < x := by cases x <;> simp [LT.lt]
+@[simp] theorem Vote_lt_irrefl (x : Vote) : ¬ x < x := by cases x <;> simp [LT.lt]
 
 instance : Std.Irrefl (. < . : Vote → Vote → Prop) where
   irrefl := Vote_lt_irrefl
@@ -406,7 +406,19 @@ The mapping from parameter IDs to parameters can be found in
 -/
 abbrev ChangedParameters := Data
 
-abbrev Withdrawals := List (V2.Credential × Integer) -- handled as a Data.Map at the Data level
+def Withdrawals : Type := List (V2.Credential × Integer) -- handled as a Data.Map at the Data level
+
+instance : Repr Withdrawals := inferInstanceAs (Repr (List (V2.Credential × Integer)))
+
+/-- BEq instance for Withdrawals -/
+instance : BEq Withdrawals := ⟨List.beq⟩
+
+/-- DecidableEq instance for Withdrawals -/
+instance : DecidableEq Withdrawals := inferInstanceAs (DecidableEq (List (V2.Credential × Integer)))
+
+/-! LawfulBEq instance for Withdrawals -/
+instance : LawfulBEq Withdrawals := inferInstanceAs (LawfulBEq (List (V2.Credential × Integer)))
+
 
 /-- Return the list `Data × Data` representation for Withdrawals. -/
 def withdrawalsToListPairData (xs : Withdrawals) : List (Data × Data) :=
@@ -418,7 +430,7 @@ def listPairDataToWithdrawals (xs : List (Data × Data)) : Option Withdrawals :=
   | [] => some []
   | (d1, Data.I i) :: xs' =>
       match IsData.fromData d1, listPairDataToWithdrawals xs' with
-      | some cred, some rest => (cred, i) :: rest
+      | some cred, some rest => some ((cred, i) :: rest)
       | _, _ => none
   | _ => none
 
@@ -429,7 +441,18 @@ instance : IsData Withdrawals where
   | Data.Map r_wdrwl => listPairDataToWithdrawals r_wdrwl
   | _ => none
 
-abbrev NewCommitteeMembers := List (ColdCommitteeCredential × Integer) -- handled as Data.Map at Data level
+def NewCommitteeMembers : Type := List (ColdCommitteeCredential × Integer) -- handled as Data.Map at Data level
+
+instance : Repr NewCommitteeMembers := inferInstanceAs (Repr (List (V2.Credential × Integer)))
+
+/-- BEq instance for NewCommitteeMembers -/
+instance : BEq NewCommitteeMembers := ⟨List.beq⟩
+
+/-- DecidableEq instance for NewCommitteeMembers -/
+instance : DecidableEq NewCommitteeMembers := inferInstanceAs (DecidableEq (List (V2.Credential × Integer)))
+
+/-! LawfulBEq instance for NewCommitteeMembers -/
+instance : LawfulBEq NewCommitteeMembers := inferInstanceAs (LawfulBEq (List (V2.Credential × Integer)))
 
 /-- Return the list `Data × Data` representation for NewCommitteeMembers. -/
 def newCommitteeToListPairData (xs : NewCommitteeMembers) : List (Data × Data) :=
@@ -441,7 +464,7 @@ def listPairDataToNewCommittee (xs : List (Data × Data)) : Option NewCommitteeM
   | [] => some []
   | (d1, Data.I i) :: xs' =>
       match IsData.fromData d1, listPairDataToNewCommittee xs' with
-      | some cred, some rest => (cred, i) :: rest
+      | some cred, some rest => some ((cred, i) :: rest)
       | _, _ => none
   | _ => none
 
@@ -644,7 +667,7 @@ instance : DecidableLT ProposalProcedure := decLtProposalProcedure
 /-! Std.Irrefl instance for ProposalProcedure -/
 @[simp] theorem ltProposalProcedure_same_false (x : ProposalProcedure) : ltProposalProcedure x x = false := by
   match x with
-  | ProposalProcedure.mk .. => simp [ltProposalProcedure]; apply V1.Credential.Credential.lt_irrefl
+  | ProposalProcedure.mk .. => simp [ltProposalProcedure]
 
 theorem ProposalProcedure_lt_irrefl (x : ProposalProcedure) : ¬ x < x := by cases x <;> simp [LT.lt]
 

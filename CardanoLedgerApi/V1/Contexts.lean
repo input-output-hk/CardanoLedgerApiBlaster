@@ -194,7 +194,18 @@ instance : IsData ScriptPurpose where
        | none => none
   | _ => none
 
-abbrev Withdrawals := List (StakingCredential × Integer)
+def Withdrawals : Type := List (StakingCredential × Integer)
+
+instance : Repr Withdrawals := inferInstanceAs (Repr (List (StakingCredential × Integer)))
+
+/-- BEq instance for Withdrawals -/
+instance : BEq Withdrawals := ⟨List.beq⟩
+
+/-- DecidableEq instance for Withdrawals -/
+instance : DecidableEq Withdrawals := inferInstanceAs (DecidableEq (List (StakingCredential × Integer)))
+
+/-! LawfulBEq instance for Withdrawals -/
+instance : LawfulBEq Withdrawals := inferInstanceAs (LawfulBEq (List (StakingCredential × Integer)))
 
 /- IsData instance for StakingCredential × Integer -/
 instance : IsData (StakingCredential × Integer) where
@@ -216,7 +227,7 @@ def listDataToTxInfoWdrl (xs : List Data) : Option Withdrawals :=
   | [] => some []
   | x :: xs' =>
       match IsData.fromData x, listDataToTxInfoWdrl xs' with
-      | some cred, some rest => cred :: rest
+      | some cred, some rest => some (cred :: rest)
       | _, _ => none
 
 /-- IsData instance for Withdrawals -/
@@ -226,7 +237,18 @@ instance : IsData Withdrawals where
   | Data.List r_wdrwl => listDataToTxInfoWdrl r_wdrwl
   | _ => none
 
-abbrev DatumMap := List (DatumHash × Datum)
+def DatumMap : Type := List (DatumHash × Datum)
+
+instance : Repr DatumMap := inferInstanceAs (Repr (List (DatumHash × Datum)))
+
+/-- BEq instance for DatumMap -/
+instance : BEq DatumMap := ⟨List.beq⟩
+
+/-- DecidableEq instance for DatumMap -/
+instance : DecidableEq DatumMap := inferInstanceAs (DecidableEq (List (DatumHash × Datum)))
+
+/-! LawfulBEq instance for DatumMap -/
+instance : LawfulBEq DatumMap := inferInstanceAs (LawfulBEq (List (DatumHash × Datum)))
 
 /- IsData instance for DatumHash × Datum -/
 instance : IsData (DatumHash × Datum) where
@@ -245,7 +267,7 @@ def listDataToTxInfoData (xs : List Data) : Option DatumMap :=
   | [] => some []
   | x :: xs' =>
       match IsData.fromData x, listDataToTxInfoData xs' with
-      | some d, some rest => d :: rest
+      | some d, some rest => some (d :: rest)
       | _, _ => none
 
 /- IsData instance for DatumMap -/
@@ -394,17 +416,16 @@ def txInfoSignatoriesToListData (xs : List PubKeyHash) : List Data :=
 def listDataToTxInfoSignatories (xs : List Data) : Option (List PubKeyHash) :=
   match xs with
   | [] => some []
-  | Data.B pk :: xs' =>
-      match listDataToTxInfoSignatories xs' with
-      | some rest => pk :: rest
-      | none => none
-  | _ => none
+  | r_pk :: xs' =>
+      match IsData.fromData r_pk, listDataToTxInfoSignatories xs' with
+      | some pk, some rest => pk :: rest
+      | _, _ => none
 
 /-- IsData instance for List PubKeyHash -/
 instance : IsData (List PubKeyHash) where
   toData x := Data.List (txInfoSignatoriesToListData x)
   fromData
-  | Data.List r_sig =>  listDataToTxInfoSignatories r_sig
+  | Data.List r_sig => listDataToTxInfoSignatories r_sig
   | _ => none
 
 

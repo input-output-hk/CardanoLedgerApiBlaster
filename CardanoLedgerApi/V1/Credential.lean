@@ -10,14 +10,51 @@ open PlutusCore.Integer (Integer)
 open Scripts
 
 /-- `PubKeyHash` is an alias to `ByteString` -/
-abbrev PubKeyHash := ByteString
+def PubKeyHash : Type := ByteString
+
+instance : Repr PubKeyHash := inferInstanceAs (Repr ByteString)
+
+instance : Repr PubKeyHash := inferInstanceAs (Repr ByteString)
+
+/-- BEq instance for PubKeyHash -/
+instance : BEq PubKeyHash := inferInstanceAs (BEq ByteString)
+
+/-! LawfulBEq instance for PubKeyHash -/
+instance : LawfulBEq PubKeyHash := inferInstanceAs (LawfulBEq ByteString)
+
+/-- DecidableEq instance for PubKeyHash -/
+instance : DecidableEq PubKeyHash := inferInstanceAs (DecidableEq ByteString)
+
+/-- LT instance for PubKeyHash -/
+instance : LT PubKeyHash := inferInstanceAs (LT ByteString)
+
+/-- DecidableLT instance for TxOutRef -/
+instance : DecidableLT (PubKeyHash) := inferInstanceAs (DecidableLT ByteString)
+
+@[simp] theorem beqPubKeyHash_iff_eq (x y : PubKeyHash) : x == y ↔ x = y := by simp [BEq.beq]
+
+@[simp] theorem beqPubKeyHash_false_iff_not_eq (x y : PubKeyHash) : (x == y) = false ↔ x ≠ y := by simp [BEq.beq]
+
+@[simp] theorem PubKeyHash.lt_irrefl (x : PubKeyHash) : ¬ x < x := by apply ByteString.lt_irrefl
+
+/-- Std.Irrefl instance for PubKeyHash -/
+instance : Std.Irrefl (. < . : PubKeyHash → PubKeyHash → Prop) :=
+  inferInstanceAs (Std.Irrefl (. < . : ByteString → ByteString → Prop))
+
+/-- LE instance for PubKeyHash -/
+instance : LE PubKeyHash := inferInstanceAs (LE ByteString)
+
+/-- DecidableLE instance for PubKeyHash -/
+instance : DecidableLE PubKeyHash := inferInstanceAs (DecidableLE ByteString)
+
+/-- ToString instance for PubKeyHash -/
+instance : ToString PubKeyHash := inferInstanceAs (ToString ByteString)
+
+/-- String to PubKeyHash coercion to mimick OverloadedString in Haskell -/
+instance : Coe String PubKeyHash := inferInstanceAs (Coe String ByteString)
 
 /-- IsData instance for PubKeyHash -/
-instance : IsData PubKeyHash where
-  toData := Data.B
-  fromData
-  | Data.B pk => some pk
-  | _ => none
+instance : IsData PubKeyHash := inferInstanceAs (IsData ByteString)
 
 /--  Credentials required to unlock a transaction output. -/
 inductive Credential where
@@ -88,7 +125,7 @@ instance : DecidableLT Credential := Credential.decLt
 @[simp] theorem ltCredential_same_false (x : Credential) : ltCredential x x = false := by
     cases x <;> simp only [ltCredential, LT.lt] <;> simp <;> apply String.lt_irrefl
 
-theorem Credential.lt_irrefl (x : Credential) : ¬ x < x := by cases x <;> simp [LT.lt]
+@[simp] theorem Credential.lt_irrefl (x : Credential) : ¬ x < x := by cases x <;> simp [LT.lt]
 
 instance : Std.Irrefl (. < . : Credential → Credential → Prop) where
   irrefl := Credential.lt_irrefl
