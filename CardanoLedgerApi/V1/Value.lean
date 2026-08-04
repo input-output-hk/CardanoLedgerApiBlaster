@@ -81,8 +81,64 @@ def withoutLovelace (v : Value) : Value :=
 
 /-- Return the quantity for the given currency symbol `cs` and the
     given token name `tn` in Value `v`.
+
+    The `Data` keys are destructured in the match patterns and the comparison is
+    performed on the `ByteString` payloads, so no equality is ever *applied* at
+    type `Data`.  This matters for the SMT toolchain: `Eq`/`BEq` on `Data` go
+    through `eqData`, which lives in a `mutual` block, and a goal that still
+    carries a `Data`-equality application over a symbolic `Value` cannot be
+    translated.  Compare `PlutusCore.Value.lookupDataOuter`, which uses the same
+    shape.
+
+    **The rewrite is a pattern-split of the old condition, entry by entry.**
+    `Data.B` is a constructor, hence injective and disjoint from
+    `Data.Constr`/`Data.Map`/`Data.List`/`Data.I`.  Therefore
+    `Data.B tn = r_tn` holds iff `r_tn` is of the form `Data.B b` with `b = tn`,
+    which is exactly what the `(Data.B r_tn, r_price)` arm tests (with `==`,
+    equivalent to `=` by `LawfulBEq ByteString`); the catch-all arm covers the
+    keys for which the old condition was necessarily `false`, and takes the same
+    `else` branch the old code took.  Behaviour on malformed entries is
+    therefore identical to the old code:
+
+    * `find_token`, key not a `B`: old condition `false`, recurse — new
+      catch-all arm, recurse.
+    * `find_token`, key matches but payload not an `I`: both return `0` and stop
+      scanning.
+    * `visit`, key not a `B` but payload a `Map`: old condition `false`, recurse
+      — new `(_, Data.Map _)` arm, recurse.
+    * `visit`, payload not a `Map`: both fall to the final catch-all and return
+      `0` without scanning the tail.
+
+    See `valueOf_eq_valueOfClassic` for the machine-checked statement of this
+    argument against the previous definition, kept verbatim as `valueOfClassic`.
 -/
 def valueOf (cs : CurrencySymbol) (tn : TokenName) (v : Value) : Integer :=
+  let rec find_token (tns : List (Data × Data)) : Integer :=
+    match tns with
+    | [] => 0
+    | (Data.B r_tn, r_price) :: xs =>
+        if tn == r_tn then
+           match r_price with
+           | Data.I price => price
+           | _ => 0
+        else find_token xs
+    | _ :: xs => find_token xs
+  let rec visit (v : Value) : Integer :=
+    match v with
+    | [] => 0
+    | (Data.B r_cs, Data.Map tokens) :: xs =>
+         if cs == r_cs
+         then find_token tokens
+         else visit xs
+    | (_, Data.Map _) :: xs => visit xs
+    | _ => 0
+  visit v
+
+/-- The previous definition of `valueOf`, kept verbatim so that the
+    SMT-translatability rewrite can be checked against it in the kernel.
+    See `valueOf_eq_valueOfClassic`.  Not exported; it exists only for the proof.
+-/
+private def valueOfClassic (cs : CurrencySymbol) (tn : TokenName) (v : Value) : Integer :=
   let rec find_token (tns : List (Data × Data)) : Integer :=
     match tns with
     | [] => 0
@@ -101,6 +157,53 @@ def valueOf (cs : CurrencySymbol) (tn : TokenName) (v : Value) : Integer :=
          else visit xs
     | _ => 0
   visit v
+
+private theorem valueOf_find_token_eq (tn : TokenName) (tns : List (Data × Data)) :
+    valueOf.find_token tn tns = valueOfClassic.find_token tn tns := by
+  induction tns with
+  | nil => rfl
+  | cons hd xs ih =>
+      obtain ⟨r_tn, r_price⟩ := hd
+      cases r_tn with
+      | B b =>
+          by_cases h : tn = b
+          . subst h
+            simp [valueOf.find_token, valueOfClassic.find_token]
+          . simp [valueOf.find_token, valueOfClassic.find_token, h, ih]
+      | Constr _ _ => simp [valueOf.find_token, valueOfClassic.find_token, ih]
+      | Map _ => simp [valueOf.find_token, valueOfClassic.find_token, ih]
+      | List _ => simp [valueOf.find_token, valueOfClassic.find_token, ih]
+      | I _ => simp [valueOf.find_token, valueOfClassic.find_token, ih]
+
+private theorem valueOf_visit_eq (cs : CurrencySymbol) (tn : TokenName) (v : Value) :
+    valueOf.visit cs tn v = valueOfClassic.visit cs tn v := by
+  induction v with
+  | nil => rfl
+  | cons hd xs ih =>
+      obtain ⟨r_cs, r_price⟩ := hd
+      cases r_price with
+      | Map tokens =>
+          cases r_cs with
+          | B b =>
+              by_cases h : cs = b
+              . subst h
+                simp [valueOf.visit, valueOfClassic.visit, valueOf_find_token_eq]
+              . simp [valueOf.visit, valueOfClassic.visit, h, ih]
+          | Constr _ _ => simp [valueOf.visit, valueOfClassic.visit, ih]
+          | Map _ => simp [valueOf.visit, valueOfClassic.visit, ih]
+          | List _ => simp [valueOf.visit, valueOfClassic.visit, ih]
+          | I _ => simp [valueOf.visit, valueOfClassic.visit, ih]
+      | Constr _ _ => cases r_cs <;> simp [valueOf.visit, valueOfClassic.visit]
+      | List _ => cases r_cs <;> simp [valueOf.visit, valueOfClassic.visit]
+      | I _ => cases r_cs <;> simp [valueOf.visit, valueOfClassic.visit]
+      | B _ => cases r_cs <;> simp [valueOf.visit, valueOfClassic.visit]
+
+/-- **Nothing changed.** The SMT-translatable `valueOf` agrees pointwise with the
+    previous definition (`valueOfClassic`) on *every* `Value`, well-formed or not.
+-/
+theorem valueOf_eq_valueOfClassic (cs : CurrencySymbol) (tn : TokenName) (v : Value) :
+    valueOf cs tn v = valueOfClassic cs tn v :=
+  valueOf_visit_eq cs tn v
 
 
 /-- Add a (positive or negative) quantity of a single token to Value `v`.
