@@ -1,4 +1,5 @@
 
+import Tests.Scripts.Auction.Properties
 import Tests.Scripts.Governance.Properties
 import Tests.Scripts.HelloWorld.Properties
 import Tests.Scripts.MintingPolicy.Properties
