@@ -16,7 +16,7 @@ structure AuctionParams where
   currencySymbol : CurrencySymbol
   tokenName      : TokenName
   minBid         : Integer
-  aucitonEndTime : POSIXTime
+  auctionEndTime : POSIXTime
   deriving Repr
 
 structure Bid where
@@ -44,7 +44,7 @@ instance : IsData AuctionParams where
       IsData.toData p.currencySymbol,
       IsData.toData p.tokenName,
       IsData.toData p.minBid,
-      IsData.toData p.aucitonEndTime
+      IsData.toData p.auctionEndTime
     ]
   fromData
     | Data.Constr 0 [Data.B seller, Data.B cs, Data.B tn, Data.I minBid, Data.I endTime] => some ⟨seller, cs, tn, minBid, endTime⟩

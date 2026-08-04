@@ -17,7 +17,6 @@ open CardanoLedgerApi.V3.Tx
 open Tests.Scripts.Auction
 
 set_option warn.sorry false
-set_option maxHeartbeats 0
 
 /-! # Common-vulnerability audit
 
