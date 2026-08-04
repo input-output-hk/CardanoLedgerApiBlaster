@@ -63,21 +63,55 @@ instance : LawfulBEq ScriptPurpose where
   rfl {bs} := by simp [BEq.beq]
 
 
+/-- Strict order on `ScriptPurpose` **in the order the Cardano ledger emits
+`txInfoRedeemers`**, which is NOT the Plutus constructor order.
+
+LEDGER CITATION (checkout `cd8b7fab8`).  `txInfoRedeemers` is built by
+`transTxRedeemers = PV2.unsafeFromList <$> mapM (transRedeemerPtr …) (Map.toList
+$ tx ^. witsTxL . rdmrsTxWitsL . unRedeemersL)`
+(`eras/babbage/impl/src/Cardano/Ledger/Babbage/TxInfo.hs:217-221`, used for V3 at
+`eras/conway/impl/src/Cardano/Ledger/Conway/TxInfo.hs:499,512`).  `Map.toList`
+enumerates in `PlutusPurpose AsIx ConwayEra` = `ConwayPlutusPurpose AsIx` order
+and `unsafeFromList` does NOT re-sort, so the emitted key order is the DERIVED
+`Ord` of
+
+    ConwaySpending | ConwayMinting | ConwayCertifying | ConwayRewarding
+                   | ConwayVoting  | ConwayProposing
+
+(`eras/conway/impl/src/Cardano/Ledger/Conway/Scripts.hs:202-213`), i.e.
+**`Spending < Minting < Certifying < Rewarding < Voting < Proposing`** — not the
+Plutus declaration order (`Minting` first) that this function used before.  The
+old order made `validRedeemerMap`, hence `validMintingContext`, UNSATISFIABLE for
+any transaction carrying both a spending and a minting redeemer (defect D1).
+
+INTRA-KIND order is unchanged and agrees with the ledger, because the ledger's
+`AsIx` index is the position in an already-sorted collection and the Plutus key's
+leading component sorts the same way: `Spending` ← `Set.toList txInputs` (`TxIn`
+= (`TxId`,`TxIx`) ≡ `ltTxOutRef`); `Minting` ← the `MultiAsset` policy map
+(`PolicyID` ≡ `CurrencySymbol` bytes); `Rewarding` ← the withdrawal map, whose
+key order is `Credential` (see `V1/Credential.lean`'s `ltCredential`, fixed for
+defect D2) modulo the `Network` component that Plutus drops — harmless because
+`validateWrongNetworkWithdrawal`
+(`eras/shelley/impl/src/Cardano/Ledger/Shelley/Rules/Utxo.hs:181,384`) forces one
+network per transaction; `Certifying`/`Proposing` compare their `Integer` index
+first, which IS the `AsIx` index; `Voting` ← the `VotingProcedures` map, and the
+ledger's `Voter` `Ord` (`Conway/Governance/Procedures.hs:338-342`) has the same
+constructor order as `ltVoter`. -/
 def ltScriptPurpose (x y : ScriptPurpose) : Bool :=
   match x, y with
-  | .Minting cs1, .Minting cs2 => cs1 < cs2
-  | .Minting _, _ => true
   | .Spending tref1, .Spending tref2 => tref1 < tref2
-  | .Spending _, .Minting _ => false
   | .Spending _, _ => true
-  | .Rewarding cred1, .Rewarding cred2 => cred1 < cred2
-  | .Rewarding _, .Minting _
-  | .Rewarding _, .Spending _ => false
-  | .Rewarding _, _ => true
+  | .Minting cs1, .Minting cs2 => cs1 < cs2
+  | .Minting _, .Spending _ => false
+  | .Minting _, _ => true
   | .Certifying n1 cert1, .Certifying n2 cert2 => n1 < n2 || (n1 == n2 && cert1 < cert2)
-  | .Certifying .., .Voting _
-  | .Certifying .., .Proposing .. => true
-  | .Certifying .., _ => false
+  | .Certifying .., .Spending _
+  | .Certifying .., .Minting _ => false
+  | .Certifying .., _ => true
+  | .Rewarding cred1, .Rewarding cred2 => cred1 < cred2
+  | .Rewarding _, .Voting _
+  | .Rewarding _, .Proposing .. => true
+  | .Rewarding _, _ => false
   | .Voting v1, .Voting v2 => v1 < v2
   | .Voting _, .Proposing .. => true
   | .Voting _, _ => false

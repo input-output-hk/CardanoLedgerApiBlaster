@@ -58,12 +58,37 @@ instance : LawfulBEq Credential where
   rfl {bs} := by simp [BEq.beq]
 
 
+/-- Strict order on `Credential` **in the Cardano ledger's order**, which is NOT
+the Plutus constructor order.
+
+LEDGER CITATION (checkout `cd8b7fab8`): the ledger's `Credential` is
+
+    data Credential (kr :: KeyRole) = ScriptHashObj !ScriptHash | KeyHashObj !(KeyHash kr)
+      deriving (Show, Eq, Generic, Ord)
+
+(`libs/cardano-ledger-core/src/Cardano/Ledger/Credential.hs:96-99`), so its
+derived `Ord` puts **`ScriptHashObj < KeyHashObj`** — the opposite of the Plutus
+declaration order `PubKeyCredential | ScriptCredential` that this function used
+before.  Credential-keyed maps reach `TxInfo` unsorted: `txInfoWdrl =
+transMap transAccountAddress transCoinToLovelace (unWithdrawals …)` with
+`transMap = PV3.unsafeFromList . map … . Map.toList`
+(`eras/conway/impl/src/Cardano/Ledger/Conway/TxInfo.hs:544-546, 692-694`), so
+`validWithdrawals` must use the ledger order or it rejects any real withdrawal map
+mixing script and key credentials (defect D2).
+
+The withdrawal map's ledger key is `AccountAddress = (Network, AccountId
+Credential)` (`libs/cardano-ledger-core/src/Cardano/Ledger/Address.hs:183-191`)
+and Plutus drops the `Network` component; that is harmless because
+`validateWrongNetworkWithdrawal`
+(`eras/shelley/impl/src/Cardano/Ledger/Shelley/Rules/Utxo.hs:181,384`) forces a
+single network per transaction, on which (`Network`, `Credential`) order restricts
+to `Credential` order. -/
 def ltCredential (x y : Credential) : Bool :=
   match x, y with
   | .PubKeyCredential pk1, .PubKeyCredential pk2 => pk1 < pk2
   | .ScriptCredential sh1, .ScriptCredential sh2 => sh1 < sh2
-  | .PubKeyCredential _, .ScriptCredential _ => true
-  | .ScriptCredential _, .PubKeyCredential _ => false
+  | .ScriptCredential _, .PubKeyCredential _ => true
+  | .PubKeyCredential _, .ScriptCredential _ => false
 
 /-- LT instance for Credential -/
 instance : LT Credential where

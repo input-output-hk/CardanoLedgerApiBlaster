@@ -121,19 +121,37 @@ instance : LawfulBEq ScriptPurpose where
   rfl {bs} := by simp [BEq.beq]
 
 
+/-- Strict order on the V1/V2 `ScriptPurpose` **in the order the Cardano ledger
+emits `txInfoRedeemers`** (V2; V1 `TxInfo` has no redeemer map), which is NOT the
+Plutus constructor order.
+
+LEDGER CITATION (checkout `cd8b7fab8`): same construction as the V3 case
+(`transTxRedeemers`, `eras/babbage/impl/src/Cardano/Ledger/Babbage/TxInfo.hs:
+217-221` — `unsafeFromList ∘ Map.toList`, no re-sorting), with
+`PlutusPurpose f BabbageEra = AlonzoPlutusPurpose f BabbageEra`
+(`eras/babbage/impl/src/Cardano/Ledger/Babbage/Scripts.hs:61`) whose derived `Ord`
+follows
+
+    AlonzoSpending | AlonzoMinting | AlonzoCertifying | AlonzoRewarding
+
+(`eras/alonzo/impl/src/Cardano/Ledger/Alonzo/Scripts.hs:308-313`), i.e.
+**`Spending < Minting < Certifying < Rewarding`**.  A V2 script executed in the
+Conway era sees `ConwayPlutusPurpose` order instead
+(`Conway/Scripts.hs:202-213`), which restricted to these four kinds is the SAME
+sequence, so the fix is unambiguous across eras.  This is the V1/V2 instance of
+defect D1. -/
 def ltScriptPurpose (x y : ScriptPurpose) : Bool :=
   match x, y with
-  | .Minting cs1, .Minting cs2 => cs1 < cs2
-  | .Minting _, _ => true
   | .Spending tref1, .Spending tref2 => tref1 < tref2
-  | .Spending _, .Minting _ => false
   | .Spending _, _ => true
-  | .Rewarding cred1, .Rewarding cred2 => cred1 < cred2
-  | .Rewarding _, .Minting _
-  | .Rewarding _, .Spending _ => false
-  | .Rewarding _, _ => true
+  | .Minting cs1, .Minting cs2 => cs1 < cs2
+  | .Minting _, .Spending _ => false
+  | .Minting _, _ => true
   | .Certifying cert1, .Certifying cert2 => cert1 < cert2
+  | .Certifying _, .Rewarding _ => true
   | .Certifying _, _ => false
+  | .Rewarding cred1, .Rewarding cred2 => cred1 < cred2
+  | .Rewarding _, _ => false
 
 /-- LT instance for ScriptPurpose -/
 instance : LT ScriptPurpose where
