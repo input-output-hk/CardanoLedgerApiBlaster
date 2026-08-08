@@ -926,19 +926,21 @@ def validInputs (ctx : ScriptContext) : Bool :=
 
 
 /-- [LEDGER-RULE]: Ledger rules for transaction's outputs (V1):
-      - ∀ x ∈ ctx.scriptContextTxInfo.txInfoOutputs,
-           validTxOutValue x.txOutValue ∧
-           (isScriptCredentialAddress x.txOutAddress → hasDatumHash x)
+      - ∀ x ∈ ctx.scriptContextTxInfo.txInfoOutputs, validTxOutValue x.txOutValue
      with:
        - ctx : corresponding to the ScriptContext applied to the current validator script.
 
-     NOTE: It's not mandatory for a datum hash in a transaction's output to be present in
-     the witness map (even for script address).
+     NOTE: The ledger does not check output datums in any era. `UnspendableUTxONoDatumHash`
+     is raised from `txInsNoDataHash` and so concerns *spent inputs*, not outputs. Paying to
+     a script address without a datum hash is permitted: it creates a UTxO that a V1 script
+     cannot later spend, but the paying transaction is valid and a validator can legitimately
+     observe it.
+
+     This predicate previously also required a datum hash on script-address outputs, which
+     excluded such transactions from every V1 theorem. V3 already had the correct form.
 -/
 def validOutputs (outputs : List TxOut) : Bool :=
-  Recursor.all x in outputs =>
-     validTxOutValue x.txOutValue &&
-     (!(isScriptCredentialAddress x.txOutAddress) || hasDatumHash x)
+  Recursor.all x in outputs => validTxOutValue x.txOutValue
 
 /-- [LEDGER-RULE]: Ledger rules for transaction's Withdrawals.
     The withdrawal map is valid if and only if one of the following conditions is satisfied:

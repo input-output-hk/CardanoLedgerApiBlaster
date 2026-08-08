@@ -5,7 +5,7 @@
    "type": "git",
    "subDir": null,
    "scope": "",
-   "rev": "59db213ca6396269d2606b7dd9ac2bc26ae7c4ce",
+   "rev": "3db3e1cca4e286b91e284745269e2b4a563b402b",
    "name": "Blaster",
    "manifestFile": "lake-manifest.json",
    "inputRev": "beta-lambda-cache-optimization",
