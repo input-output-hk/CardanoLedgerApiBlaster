@@ -734,15 +734,19 @@ def validInputs (ctx : ScriptContext) : Bool :=
 
 /-- [LEDGER-RULE]: Ledger rules for a single transaction's reference input (V2):
     An reference input `tin` is valid if and only if the following is satisfied:
-      - validTxOutValue tin.txInInfoResolved.txOutValue ∧
-        ( isScriptCredentialAddress tin.txInInfoResolved.txOutAddress → hasDatum tin.txInInfoResolved )
-    NOTE: For V2, any spending script must have either a datum or a datum hash.
-    NOTE: When a utxo for a spending script is present in the reference input list,
-           if the utxo has a datum hash, a corresponding entry in the witness map is not mandatory.
+      - validTxOutValue tin.txInInfoResolved.txOutValue
+
+    NOTE: No era of the ledger imposes a datum requirement on reference inputs.
+    `getInputDataHashesTxBody` inspects only the spent inputs (`inputsTxBodyL`) and never
+    `referenceInputsTxBodyL`; the sole reference-input mention in any UTXOW rule unions them
+    in for reference *script* lookup, not datums. Reference input datums are read directly
+    from the resolved UTxO when the context is built, so there is nothing to witness.
+
+    This predicate previously also required a datum on script-address reference inputs, which
+    excluded valid transactions from every V2 theorem.
 -/
 def validReferenceInput (tin : TxInInfo) : Bool :=
-  validTxOutValue tin.txInInfoResolved.txOutValue &&
-  (!(isScriptCredentialAddress tin.txInInfoResolved.txOutAddress) || hasDatum tin.txInInfoResolved)
+  validTxOutValue tin.txInInfoResolved.txOutValue
 
 
 /-- [LEDGER-RULE]: Ledger rules for transaction's reference inputs (V2):
@@ -777,20 +781,21 @@ def validReferenceInputs (ctx : ScriptContext) : Bool :=
 
 
 /-- [LEDGER-RULE]: Ledger rules for transaction's outputs (V2):
-      - ∀ x ∈ ctx.scriptContextTxInfo.txInfoOutputs,
-           validTxOutValue x.txOutValue ∧
-           (isScriptCredentialAddress x.txOutAddress → hasDatum x)
+      - ∀ x ∈ ctx.scriptContextTxInfo.txInfoOutputs, validTxOutValue x.txOutValue
      with:
        - ctx : corresponding to the ScriptContext applied to the current validator script.
 
-     NOTE: It's not mandatory for a datum hash in a transaction's output to be present in
-     the witness map (even for script address).
-     NOTE: For V2, a utxo created at a script address must have either a datum or a datum hash.
+     NOTE: The ledger does not check output datums in any era. `UnspendableUTxONoDatumHash`
+     is raised from `txInsNoDataHash` and so concerns *spent inputs*, not outputs. Paying to
+     a script address without a datum is permitted: it creates a UTxO that a V2 script cannot
+     later spend, but the paying transaction is valid and a validator can legitimately
+     observe it.
+
+     This predicate previously also required a datum on script-address outputs, which excluded
+     such transactions from every V2 theorem. V3 already had the correct form.
 -/
 def validOutputs (outputs : List TxOut) : Bool :=
-  Recursor.all x in outputs =>
-     validTxOutValue x.txOutValue &&
-     (!(isScriptCredentialAddress x.txOutAddress) || hasDatum x)
+  Recursor.all x in outputs => validTxOutValue x.txOutValue
 
 
 /-- [LEDGER-RULE]: Ledger rules for transaction's redeemer map.
