@@ -59,6 +59,10 @@ example :
     V1.Contexts.ltScriptPurpose (.Certifying .DCertGenesis)
       (.Rewarding (.StakingHash (.PubKeyCredential ""))) = true := by
   decide
+example :
+    V1.Contexts.ltScriptPurpose (.Rewarding (.StakingHash (.PubKeyCredential "")))
+      (.Certifying .DCertGenesis) = false := by
+  decide
 
 /-! ## `Credential`: `ScriptCredential < PubKeyCredential` -/
 
