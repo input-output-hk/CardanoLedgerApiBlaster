@@ -29,7 +29,7 @@ build_tests:
 
 .PHONY: clean_tests
 clean_tests:
-	lake clean
+	rm -rf .lake/build/lib/lean/Tests* .lake/build/ir/Tests*
 
 .PHONY: check_tests
 check_tests: clean_tests

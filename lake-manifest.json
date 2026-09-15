@@ -15,7 +15,7 @@
    "type": "git",
    "subDir": null,
    "scope": "",
-   "rev": "4ef48606303c45225d3ed2e2a87fc50280a763b7",
+   "rev": "ed3126b6a2f5cc32bd151fdefb26e66dcf514888",
    "name": "PlutusCore",
    "manifestFile": "lake-manifest.json",
    "inputRev": "main",
