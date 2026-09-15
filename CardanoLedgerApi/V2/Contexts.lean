@@ -760,9 +760,7 @@ def validReferenceInput (tin : TxInInfo) : Bool :=
           2.2 Reference Inputs are sorted according to `TxOutRef`
                - in₁.txInInfoOutRef < in₂.txInInfoOutRef < .. < inₘ.txInInfoOutRef
 
-          2.3. ∀ i ∈ [1..m],
-                 validTxOutValue inᵢ.txInInfoResolved.txOutValue ∧
-                 ( isScriptCredentialAddress inᵢ.txInInfoResolved.txOutAddress → hasDatum inᵢ.txInInfoResolved )
+          2.3. ∀ i ∈ [1..m], validTxOutValue inᵢ.txInInfoResolved.txOutValue
      with:
        - ctx : corresponding to the ScriptContext applied to the current validator script.
 
