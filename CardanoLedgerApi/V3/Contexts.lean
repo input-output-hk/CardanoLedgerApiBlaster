@@ -366,13 +366,13 @@ def VoterMap : Type := List (Voter × GovernanceVoteMap) -- handled as a Data.Ma
 
 instance : Repr VoterMap := inferInstanceAs (Repr (List (Voter × GovernanceVoteMap)))
 
-/-- BEq instance for VoteMap -/
+/-- BEq instance for VoterMap -/
 instance : BEq VoterMap := ⟨List.beq⟩
 
-/-- DecidableEq instance for VoteMap -/
+/-- DecidableEq instance for VoterMap -/
 instance : DecidableEq VoterMap := inferInstanceAs (DecidableEq (List (Voter × GovernanceVoteMap)))
 
-/-! LawfulBEq instance for VoteMap -/
+/-! LawfulBEq instance for VoterMap -/
 instance : LawfulBEq VoterMap := inferInstanceAs (LawfulBEq (List (Voter × GovernanceVoteMap)))
 
 /-- Return the list `Data × Data` representation for VoterMap. -/

@@ -14,8 +14,6 @@ def PubKeyHash : Type := ByteString
 
 instance : Repr PubKeyHash := inferInstanceAs (Repr ByteString)
 
-instance : Repr PubKeyHash := inferInstanceAs (Repr ByteString)
-
 /-- BEq instance for PubKeyHash -/
 instance : BEq PubKeyHash := inferInstanceAs (BEq ByteString)
 

@@ -443,16 +443,16 @@ instance : IsData Withdrawals where
 
 def NewCommitteeMembers : Type := List (ColdCommitteeCredential × Integer) -- handled as Data.Map at Data level
 
-instance : Repr NewCommitteeMembers := inferInstanceAs (Repr (List (V2.Credential × Integer)))
+instance : Repr NewCommitteeMembers := inferInstanceAs (Repr (List (ColdCommitteeCredential × Integer)))
 
 /-- BEq instance for NewCommitteeMembers -/
 instance : BEq NewCommitteeMembers := ⟨List.beq⟩
 
 /-- DecidableEq instance for NewCommitteeMembers -/
-instance : DecidableEq NewCommitteeMembers := inferInstanceAs (DecidableEq (List (V2.Credential × Integer)))
+instance : DecidableEq NewCommitteeMembers := inferInstanceAs (DecidableEq (List (ColdCommitteeCredential × Integer)))
 
 /-! LawfulBEq instance for NewCommitteeMembers -/
-instance : LawfulBEq NewCommitteeMembers := inferInstanceAs (LawfulBEq (List (V2.Credential × Integer)))
+instance : LawfulBEq NewCommitteeMembers := inferInstanceAs (LawfulBEq (List (ColdCommitteeCredential × Integer)))
 
 /-- Return the list `Data × Data` representation for NewCommitteeMembers. -/
 def newCommitteeToListPairData (xs : NewCommitteeMembers) : List (Data × Data) :=
