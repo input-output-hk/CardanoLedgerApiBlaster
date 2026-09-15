@@ -1095,17 +1095,6 @@ def validReferenceInputs (ctx : ScriptContext) : Bool :=
   | x :: xs => V2.validTxOutValue x.txInInfoResolved.txOutValue && visit xs x.txInInfoOutRef
 
 
-/-- [LEDGER-RULE]: Ledger rules for transaction's outputs (V3):
-      - ∀ x ∈ ctx.scriptContextTxInfo.txInfoOutputs,
-           validTxOutValue x.txOutValue
-     with:
-       - ctx : corresponding to the ScriptContext applied to the current validator script.
-
-     NOTE: For V3, a spending script may not have any datum.
--/
-def validOutputs (outputs : List V2.TxOut) : Bool :=
-  Recursor.all x in outputs => V2.validTxOutValue x.txOutValue
-
 /-- [LEDGER-RULE]: Ledger rules for transaction's redeemer map (V3).
     The redeemer map is valid if and only if one of the following conditions is satisfied:
       1. Redeemer map is empty
@@ -1196,7 +1185,7 @@ def isBalanced (ctx : ScriptContext) : Bool :=
         - validReferenceInputs ctx
 
     3. All transaction's outputs are valid, i.e.,
-        - validOutputs ctx.scriptContextTxInfo.txInfoOutputs
+        - V2.validOutputs ctx.scriptContextTxInfo.txInfoOutputs
 
     4. ctx.txInfoFees > 0
 
@@ -1231,7 +1220,7 @@ def isBalanced (ctx : ScriptContext) : Bool :=
 def validTxInfo (ctx : ScriptContext) : Bool :=
   validInputs ctx &&
   validReferenceInputs ctx &&
-  validOutputs ctx.scriptContextTxInfo.txInfoOutputs &&
+  V2.validOutputs ctx.scriptContextTxInfo.txInfoOutputs &&
   ctx.scriptContextTxInfo.txInfoFee > 0 &&
   validMintValue ctx.scriptContextTxInfo.txInfoMint &&
   validWithdrawals ctx.scriptContextTxInfo.txInfoWdrl &&
