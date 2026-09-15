@@ -20,7 +20,7 @@ clean_cardano_ledger_api:
 	lake clean CardanoLedgerApi
 
 .PHONY: check_cardano_ledger_api
-check_cardano_ledger_api:
+check_cardano_ledger_api: clean_cardano_ledger_api
 	./scripts/check_lean_project_compilation.sh CardanoLedgerApi
 
 .PHONY: build_tests
