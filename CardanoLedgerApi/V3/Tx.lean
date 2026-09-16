@@ -9,16 +9,47 @@ open PlutusCore.Data (Data)
 open PlutusCore.Integer (Integer)
 
 /-- Transaction ID, i.e. the hash of a transaction. Hashed with BLAKE2b-256. 32 byte. -/
-abbrev TxId := ByteString
+def TxId : Type := ByteString
 
-/-- IsData instance for TxId
-    In V3, TxId is encoded as Data.B
--/
-instance : IsData TxId where
-  toData := Data.B
-  fromData
-  | Data.B tid => some tid
-  | _ => none
+instance : Repr TxId := inferInstanceAs (Repr ByteString)
+
+/-- BEq instance for TxId -/
+instance : BEq TxId := inferInstanceAs (BEq ByteString)
+
+/-! DecidableEq instance for TxId -/
+instance : DecidableEq TxId := inferInstanceAs (DecidableEq ByteString)
+
+/-- LT instance for TxId -/
+instance : LT TxId := inferInstanceAs (LT ByteString)
+
+/-- DecidableLT instance for TxOutRef -/
+instance : DecidableLT (TxId) := inferInstanceAs (DecidableLT ByteString)
+
+@[simp] theorem beqTxId_iff_eq (x y : TxId) : x == y ↔ x = y := by simp [BEq.beq]
+
+@[simp] theorem beqTxId_false_iff_not_eq (x y : TxId) : (x == y) = false ↔ x ≠ y := by simp [BEq.beq]
+
+@[simp] theorem TxId.lt_irrefl (x : TxId) : ¬ x < x := by apply ByteString.lt_irrefl
+
+/-- Std.Irrefl instance for TxId -/
+instance : Std.Irrefl (. < . : TxId → TxId → Prop) :=
+  inferInstanceAs (Std.Irrefl (. < . : ByteString → ByteString → Prop))
+
+/-- LE instance for TxId -/
+instance : LE TxId := inferInstanceAs (LE ByteString)
+
+/-- DecidableLE instance for TxId -/
+instance : DecidableLE TxId := inferInstanceAs (DecidableLE ByteString)
+
+/-- ToString instance for TxId -/
+instance : ToString TxId := inferInstanceAs (ToString ByteString)
+
+/-- String to TxId coercion to mimick OverloadedString in Haskell -/
+instance : Coe String TxId := inferInstanceAs (Coe String ByteString)
+
+/-- IsData instance for TxId -/
+instance : IsData TxId := inferInstanceAs (IsData ByteString)
+
 
 /-- A reference to a transaction output.
    This is a pair of a transaction ID (`TxId`), and an index indicating which of the outputs

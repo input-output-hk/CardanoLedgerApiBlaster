@@ -38,7 +38,7 @@ def unsafe_redeemer_imp_successful : Prop :=
     isVoidDatum input →
     isSuccessful (appliedHelloWorld.prop input)
 
-#blaster (gen-cex: 0) (solve-result: 1) [unsafe_redeemer_imp_successful]
+#blaster (gen-cex: 0) (solve-result: 1) (random-seed: 2) [unsafe_redeemer_imp_successful]
 
 -- Counterexample expected: There exists at least one valid SpendingInput for which helloWorld is successful.
 def cannot_break_pwd : Prop :=

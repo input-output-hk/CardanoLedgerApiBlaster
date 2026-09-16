@@ -15,7 +15,45 @@ open Scripts
 open Value
 
 /-- Transaction ID, i.e. the hash of a transaction. Hashed with BLAKE2b-256. 32 byte. -/
-abbrev TxId := ByteString
+def TxId : Type := ByteString
+
+instance : Repr TxId := inferInstanceAs (Repr ByteString)
+
+/-- BEq instance for TxId -/
+instance : BEq TxId := inferInstanceAs (BEq ByteString)
+
+/-! LawfulBEq instance for TxId -/
+instance : LawfulBEq TxId := inferInstanceAs (LawfulBEq ByteString)
+
+/-! DecidableEq instance for TxId -/
+instance : DecidableEq TxId := inferInstanceAs (DecidableEq ByteString)
+
+/-- LT instance for TxId -/
+instance : LT TxId := inferInstanceAs (LT ByteString)
+
+/-- DecidableLT instance for TxOutRef -/
+instance : DecidableLT (TxId) := inferInstanceAs (DecidableLT ByteString)
+
+@[simp] theorem beqTxId_iff_eq (x y : TxId) : x == y ↔ x = y := by simp [BEq.beq]
+
+@[simp] theorem beqTxId_false_iff_not_eq (x y : TxId) : (x == y) = false ↔ x ≠ y := by simp [BEq.beq]
+
+@[simp] theorem TxId.lt_irrefl (x : TxId) : ¬ x < x := by apply ByteString.lt_irrefl
+
+/-- Std.Irrefl instance for TxId -/
+instance : Std.Irrefl (. < . : TxId → TxId → Prop) := inferInstanceAs (Std.Irrefl (. < . : ByteString → ByteString → Prop))
+
+/-- LE instance for TxId -/
+instance : LE TxId := inferInstanceAs (LE ByteString)
+
+/-- DecidableLE instance for TxId -/
+instance : DecidableLE TxId := inferInstanceAs (DecidableLE ByteString)
+
+/-- ToString instance for TxId -/
+instance : ToString TxId := inferInstanceAs (ToString ByteString)
+
+/-- String to TxId coercion to mimick OverloadedString in Haskell -/
+instance : Coe String TxId := inferInstanceAs (Coe String ByteString)
 
 /-- IsData instance for TxId
     In V1 and V2, TxId is encoded as Data.Constr 0 [Data.B txid]
@@ -44,11 +82,11 @@ instance : BEq TxOutRef := ⟨beqTxOutRef⟩
 /-! DecidableEq instance for TxOutRef -/
 @[simp] theorem beqTxOutRef_iff_eq (x y : TxOutRef) : beqTxOutRef x y ↔ x = y := by
   match x, y with
-  | TxOutRef.mk tid1 idx1, TxOutRef.mk tid2 idx2 => simp [beqTxOutRef]
+  | TxOutRef.mk tid1 idx1, TxOutRef.mk tid2 idx2 => simp [beqTxOutRef, BEq.beq]
 
 @[simp] theorem beqTxOutRef_false_iff_not_eq (x y : TxOutRef) : beqTxOutRef x y = false ↔ x ≠ y := by
   match x, y with
-  | TxOutRef.mk .., TxOutRef.mk .. => simp [beqTxOutRef]
+  | TxOutRef.mk .., TxOutRef.mk .. => simp [beqTxOutRef, BEq.beq]
 
 def TxOutRef.decEq (x y : TxOutRef) : Decidable (Eq x y) :=
   match h:(beqTxOutRef x y) with
@@ -58,7 +96,7 @@ def TxOutRef.decEq (x y : TxOutRef) : Decidable (Eq x y) :=
 instance : DecidableEq TxOutRef := TxOutRef.decEq
 
 /-! LawfulBEq instance for TxOutRef -/
-theorem beqTxOutRef_reflexive (x : TxOutRef) : beqTxOutRef x x = true := by simp [beqTxOutRef]
+theorem beqTxOutRef_reflexive (x : TxOutRef) : beqTxOutRef x x = true := by simp [beqTxOutRef, BEq.beq]
 
 instance : LawfulBEq TxOutRef where
   eq_of_beq {a b} := (beqTxOutRef_iff_eq a b).1
@@ -92,7 +130,7 @@ instance : DecidableLT (TxOutRef) := TxOutRef.decLt
 @[simp] theorem ltTxOutRef_same_false (x : TxOutRef) : ltTxOutRef x x = false := by
   match x with
   | TxOutRef.mk .. =>
-     simp only [ltTxOutRef, LT.lt]; simp <;> constructor
+     simp only [ltTxOutRef, LT.lt, BEq.beq]; simp <;> constructor
      . apply String.le_refl
      . apply Int.lt_irrefl
 
@@ -107,7 +145,7 @@ instance : LE TxOutRef where
   le x y := ¬ (y < x)
 
 /-! DecidableLE instance for TxOutRef -/
-instance : DecidableLE (TxOutRef) :=
+instance : DecidableLE TxOutRef :=
   fun x y => inferInstanceAs (Decidable (¬ (y < x)))
 
 

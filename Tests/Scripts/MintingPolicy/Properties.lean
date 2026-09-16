@@ -28,20 +28,19 @@ def mintingLogicInWithdrawalMap (pparamsCs : ByteString) (ctx : ScriptContext) :
   | some cred => credentialInWithdrawals cred ctx.scriptContextTxInfo.txInfoWdrl
   | none => false
 
-
 /-- Minting Policy successful → scriptInfo = minting logic is in withdrawal map -/
 theorem minting_policy_success_imp_mintScript_info_withdrawal :
   ∀ (pparamsCs : ByteString) (ctx : ScriptContext),
       validMintingContext ctx →
       isSuccessful (appliedMintingPolicy.prop pparamsCs ctx) →
-      mintingLogicInWithdrawalMap pparamsCs ctx := by blaster
+      mintingLogicInWithdrawalMap pparamsCs ctx := by blaster (random-seed: 1)
 
 /-- Minting logic not present in withdrawal map → Minting Policy must fail -/
 theorem logic_not_in_withdrawal_imp_minting_policy_fail :
   ∀ (pparamsCs : ByteString) (ctx : ScriptContext),
      validMintingContext ctx →
      ¬ mintingLogicInWithdrawalMap pparamsCs ctx →
-     isUnsuccessful (appliedMintingPolicy.prop pparamsCs ctx) := by blaster
+     isUnsuccessful (appliedMintingPolicy.prop pparamsCs ctx) := by blaster (random-seed: 1)
 
 /-- Counterexample expected if minting logic not in withdrawal map when minting policy is successful -/
 def minting_policy_success_imp_logic_not_in_withdrawal : Prop :=
