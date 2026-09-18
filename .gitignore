@@ -12,3 +12,6 @@ build.log
 # vscode
 /.vscode/
 *.orig
+
+# lake manifest
+lake-manifest.json
