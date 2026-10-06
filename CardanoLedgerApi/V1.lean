@@ -9,6 +9,9 @@ import CardanoLedgerApi.V1.Value
 
 
 namespace CardanoLedgerApi.V1
+  -- Data encoding
+  export IsData.Class (toLedgerData)
+
   -- Addresses
   export Address (
     Address
@@ -81,6 +84,7 @@ namespace CardanoLedgerApi.V1
     validTxInfo
     validTxInInfo
     validTxRange
+    txRangeStartsAt
     validWithdrawals
     validTxOutValue
     validMintValue
@@ -126,6 +130,7 @@ namespace CardanoLedgerApi.V1
     contains
     isEntirelyAfter
     isEntirelyBefore
+    startsAt
   )
   -- Tx
   export Tx (
@@ -154,6 +159,11 @@ namespace CardanoLedgerApi.V1
     valueOf
     add
     merge
+    ofTypedValue
+    keys
+    checkBinRel
+    geq
+    leq
     hasCurrencySymbol
     hasOnlyCurrencySymbol
     hasOnlyNonZeroAda

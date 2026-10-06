@@ -161,11 +161,20 @@ instance : LE Credential where
 instance : DecidableLE Credential :=
   fun x y => inferInstanceAs (Decidable (¬ (y < x)))
 
-/-- IsData instance for Credential -/
-instance : IsData Credential where
-  toData
+/-- `toData` for `Credential`, named and tagged so Blaster keeps it folded
+    on symbolic values (see `CardanoLedgerApi.IsData.Class.optionToData`). -/
+def credentialToData : Credential → Data
   | .PubKeyCredential pk => mkDataConstr 0 [Data.B pk]
   | .ScriptCredential sh => mkDataConstr 1 [Data.B sh]
+
+open Lean Elab Command in
+run_cmd liftTermElabM do
+  discard <| Lean.Meta.getUnfoldEqnFor? ``credentialToData (nonRec := true)
+  Lean.Meta.markAsRecursive ``credentialToData
+
+/-- IsData instance for Credential -/
+instance : IsData Credential where
+  toData := credentialToData
   fromData
   | Data.Constr 0 [Data.B pk] => some (.PubKeyCredential pk)
   | Data.Constr 1 [Data.B sh] => some (.ScriptCredential sh)
@@ -257,11 +266,20 @@ instance : LE StakingCredential where
 instance : DecidableLE StakingCredential :=
   fun x y => inferInstanceAs (Decidable (¬ (y < x)))
 
-/-- IsData instance for StakingCredential -/
-instance : IsData StakingCredential where
-  toData
+/-- `toData` for `StakingCredential`, named and tagged so Blaster keeps it
+    folded on symbolic values (see `CardanoLedgerApi.IsData.Class.optionToData`). -/
+def stakingCredentialToData : StakingCredential → Data
   | .StakingHash cred => mkDataConstr 0 [IsData.toData cred]
   | .StakingPtr n1 n2 n3 => mkDataConstr 1 [Data.I n1, Data.I n2, Data.I n3]
+
+open Lean Elab Command in
+run_cmd liftTermElabM do
+  discard <| Lean.Meta.getUnfoldEqnFor? ``stakingCredentialToData (nonRec := true)
+  Lean.Meta.markAsRecursive ``stakingCredentialToData
+
+/-- IsData instance for StakingCredential -/
+instance : IsData StakingCredential where
+  toData := stakingCredentialToData
   fromData
   | Data.Constr 0 [r_cred] =>
        match IsData.fromData r_cred with

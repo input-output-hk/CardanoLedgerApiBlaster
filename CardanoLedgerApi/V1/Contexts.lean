@@ -189,13 +189,22 @@ instance : LE ScriptPurpose where
 instance : DecidableLE ScriptPurpose :=
   fun x y => inferInstanceAs (Decidable (¬ (y < x)))
 
-/-- IsData instance for ScriptPurpose -/
-instance : IsData ScriptPurpose where
-  toData
+/-- `toData` for `ScriptPurpose`, named and tagged so Blaster keeps it folded
+    on symbolic values (see `CardanoLedgerApi.IsData.Class.optionToData`). -/
+def scriptPurposeToData : ScriptPurpose → Data
   | .Minting cs => mkDataConstr 0 [IsData.toData cs]
   | .Spending ref => mkDataConstr 1 [IsData.toData ref]
   | .Rewarding cred => mkDataConstr 2 [IsData.toData cred]
   | .Certifying cert => mkDataConstr 3 [IsData.toData cert]
+
+open Lean Elab Command in
+run_cmd liftTermElabM do
+  discard <| Lean.Meta.getUnfoldEqnFor? ``scriptPurposeToData (nonRec := true)
+  Lean.Meta.markAsRecursive ``scriptPurposeToData
+
+/-- IsData instance for ScriptPurpose -/
+instance : IsData ScriptPurpose where
+  toData := scriptPurposeToData
   fromData
   | Data.Constr 0 [Data.B cs] => some (.Minting cs)
   | Data.Constr 1 [r_ref] =>
@@ -1005,6 +1014,21 @@ def validWithdrawals (withdrawals : Withdrawals) : Bool :=
 def validTxRange (r_range : Data) : Bool :=
   match IsData.fromData r_range with
   | some range => !(isEmpty range)
+  | none => false
+
+/-- Does the validity range encoded in `r_range` begin, inclusively, at `t`?
+
+`false` for a range that does not decode, as `validTxRange` is for one that is
+empty: a caller asking where a range starts has no answer for something that is
+not a range.
+
+The predicate a deadline property wants. It pins the schedule to a single time,
+which `includes (after t) range` — the range begins at or *after* `t` — does
+not: under the weaker reading two different `t` both hold, and the schedule they
+select need not agree. -/
+def txRangeStartsAt (t : POSIXTime) (r_range : Data) : Bool :=
+  match IsData.fromData r_range with
+  | some range => startsAt t range
   | none => false
 
 /-- [LEDGER-RULE]: Ledger rules for transaction's signers.
