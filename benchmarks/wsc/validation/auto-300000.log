@@ -1,0 +1,24 @@
+WSC reference runtime; unchanged containment benchmark except fuel=300000
+Starting automatic-induction proof
+[explore 0s] proving 1 goal
+[explore 34s] explored: states=25757 templates=25757 joins=424 loops=88 widenings=66 cross=7613 restarts=68 splits=1489 gens=501 conds=0 accepts=2 rejects=1479 leaves=0 aborts=0 unreachables=0 procs=2 calls=36 exits=29 growths=2 nodes=29399
+[explore 46s] plan cuts=104; observer patterns=71
+[explore 85s] proved 18 observer facts and 8 links; inferring invariants
+[chc] 906253 candidates for 106 relations, 232 clauses
+[chc] 49075 candidates hold after 9496 checks, 0 unknown (30 s)
+[chc] 1157 conjuncts needed (42 s)
+[explore 281s] replayed 283 statements: 193 obligations
+[explore 324s] checked replay reconstruction for 193 obligations; proving their conditions
+[explore 339s] proved 190/190 grouped conditions (11 with extended facts)
+[explore 339s] all conditions proved; assembling the case proof
+[explore 343s] assembled all obligations; checking the case theorem
+[explore 343s] case proved
+'WscContainment.successful_implies_programmable_token_containment_original' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blaster.Tactic.blasterProven]
+'WscContainment.successful_implies_containment_or_exemption_original' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound,
+ Blaster.Tactic.blasterProven]
+Lean exit: 0 elapsed_seconds: 419.27
