@@ -2,7 +2,8 @@
 """Recompile/generate and check the detached Plutus Auction bundle.
 Run from CardanoLedgerApiBlaster: lake env python3 Tests/BlueprintVerify/run_auction.py GENERATOR OUTPUT
 The generator is Plutus's example-ual-auction executable. Build the checker and
-CardanoLedgerApi.Examples.Auction before running. No stored evidence is trusted.
+CardanoLedgerApi.V3 before running. Scenario definitions come from FormalSpec.hs.
+No stored evidence is trusted.
 """
 import copy
 import os
@@ -27,7 +28,16 @@ lean_args = lean_command()
 native = os.environ.get('ASSURANCE_NATIVE_LIBRARY')
 child_env = os.environ.copy()
 
-header = 'import PlutusCore.UPLC.BlueprintEncoding.Assurance\nimport CardanoLedgerApi.Examples.Auction\n'
+header = '''import PlutusCore.UPLC.BlueprintEncoding.Assurance
+import CardanoLedgerApi.V3
+open PlutusCore.ByteString
+open PlutusCore.Integer
+open PlutusCore.Data (Data)
+open CardanoLedgerApi.IsData.Class
+open CardanoLedgerApi.V3
+open CardanoLedgerApi.V3.Contexts
+open CardanoLedgerApi.V3.Tx
+'''
 
 def run(name, source, timeout=1200):
     path = out / (name + '.lean')
@@ -48,14 +58,16 @@ if code: raise RuntimeError(log)
 subprocess.run([str(generator), 'environment.json'], cwd=out, check=True, timeout=120)
 doc = json.loads((out / 'assurance.json').read_text())
 bp = json.loads((out / 'plutus.json').read_text())
+environment = json.loads((out / 'environment.json').read_text())
+fragments = '\n'.join(fragment['source'] for fragment in doc['formalFragments'])
+assert 'def newBidContext ' in fragments
+assert 'def payoutContext ' in fragments
+assert 'CardanoLedgerApi.Examples.Auction' not in json.dumps(doc)
+assert 'CardanoLedgerApi.Examples.Auction' not in environment['modules']
+assert 'Tests.Scripts.Auction.Auction' not in environment['modules']
 assert set(doc['functions']) == {'outbids'}
 assert [v['id'] for v in bp['validators']] == ['auction']
 assert 'functions' not in bp
-evaluation = (repo / 'Tests/BlueprintVerify/EvaluateAuction.lean').read_text().replace('"plutus.json"', json.dumps(str(out / 'plutus.json')))
-code, log = run('Evaluate', evaluation)
-print(log, end='', flush=True)
-if code: raise RuntimeError('Concrete Auction execution failed')
-
 expected = {'outbids_exact', 'first_bid_exact', 'existing_bid_exact', 'payout_exact', 'malformed_context'}
 expected.update({'audit_newBid_success_requires_output_locks_bid', 'audit_valid_newBid_succeeds', 'audit_demo_valid_bid_accepted', 'audit_newBid_accepts_dust_tokens', 'audit_payout_success_pays_seller_highest_bid', 'audit_newBid_success_requires_before_deadline', 'audit_nb_wrong_policy_rejected', 'audit_payout_staked_outputs_accepted', 'audit_newBid_success_requires_sufficient_bid', 'audit_payout_success_requires_after_deadline', 'audit_newBid_accepts_minimal_increment', 'audit_valid_payout_with_bid_succeeds', 'audit_payout_double_satisfaction', 'audit_newBid_success_requires_bigger_bid', 'audit_nb_datum_wrong_bid_rejected', 'audit_nb_other_redeemer_rejected', 'audit_nb_datum_hash_rejected', 'audit_valid_payout_no_bid_succeeds', 'audit_payout_success_positive_seller_payment', 'audit_nb_wrong_token_name_rejected', 'audit_newBid_success_requires_single_nft', 'audit_newBid_ignores_minting', 'audit_nb_datum_missing_rejected', 'audit_newBid_success_positive_bid', 'audit_payout_success_transfers_asset', 'audit_payout_success_positive_asset'})
 def check_property(prop):
@@ -172,7 +184,7 @@ def revision(path):
 plutus = next((p for p in generator.parents if (p / 'plutus-tx').is_dir()), None)
 checker = next((Path(p).resolve().parents[3] for p in os.environ.get('LEAN_PATH','').split(os.pathsep)
                 if (Path(p) / 'PlutusCore/UPLC/BlueprintEncoding/Assurance.olean').is_file()), None)
-source_inputs = [Path(__file__), repo / 'Tests/BlueprintVerify/EvaluateAuction.lean', repo / 'CardanoLedgerApi/Examples/Auction.lean']
+source_inputs = [Path(__file__), repo / 'CardanoLedgerApi/V3.lean']
 if plutus:
     source_inputs += list((plutus / 'doc/docusaurus/static/code/Example/Ual/Auction').glob('*.hs'))
     source_inputs += [plutus / 'doc/docusaurus/static/code/AuctionValidator.hs', plutus / 'plutus-tx/src/PlutusTx/Assurance/Interface.hs']
