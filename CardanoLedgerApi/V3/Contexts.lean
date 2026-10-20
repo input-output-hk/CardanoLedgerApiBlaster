@@ -677,6 +677,45 @@ def findOwnInput (ctx : ScriptContext) : Option TxInInfo :=
   | .SpendingScript ownTxOutRef _ => resolveInput ownTxOutRef ctx.scriptContextTxInfo.txInfoInputs
   | _ => none
 
+/-- The outputs that pay back to the address of the input being spent — the
+"continuing" outputs. The counterpart of
+`PlutusLedgerApi.V3.Contexts.getContinuingOutputs`.
+
+Returns `none`, rather than erroring, when there is no own input to take an
+address from: the Haskell version calls `traceError "Lf"` there, and a script
+that does so fails, but a Lean rendering has to be total. A caller that wants
+the ledger's behaviour treats `none` as failure. Keeping the case distinct
+matters for proofs — a property about a script that rejects contexts with no own
+input needs to tell "no continuing outputs" from "not a spending script". -/
+def getContinuingOutputs (ctx : ScriptContext) : Option (List V2.TxOut) :=
+  match findOwnInput ctx with
+  | some ownInput =>
+      let ownAddress := ownInput.txInInfoResolved.txOutAddress
+      some (Recursor.findAll o in ctx.scriptContextTxInfo.txInfoOutputs =>
+              o.txOutAddress == ownAddress)
+  | none => none
+
+/-- The total value carried by a list of outputs. `valueProduced` is this over
+every output of the transaction; this takes an arbitrary sublist, which is what
+a caller filtering by address needs. -/
+def totalValue (outputs : List V2.TxOut) : V2.Value :=
+  let rec visit (outs : List V2.TxOut) (acc : V2.Value) : V2.Value :=
+    match outs with
+    | [] => acc
+    | x :: xs => visit xs (V2.merge x.txOutValue acc)
+  visit outputs V2.null
+
+/-- The total value the transaction pays back to the address of the input being
+spent. `none` in exactly the cases `getContinuingOutputs` is `none`: there is no
+own input to take an address from.
+
+Kept as an `Option` rather than defaulted to `null`. A script with no own input
+fails, and collapsing that case into "a continuing value of zero" would let a
+property about the value check silently absorb a property about the shape of the
+context — the two would no longer be separable claims. -/
+def continuingValue (ctx : ScriptContext) : Option V2.Value :=
+  (getContinuingOutputs ctx).map totalValue
+
 /-- Find all inputs associated to the given public key hash. -/
 def findPubKeyInputs (pk : V2.PubKeyHash) (inputs : List TxInInfo) : List TxInInfo :=
   Recursor.findAll x in inputs => V2.hasPubKeyAddress pk x.txInInfoResolved

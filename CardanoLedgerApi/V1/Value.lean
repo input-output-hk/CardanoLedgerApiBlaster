@@ -250,6 +250,60 @@ def merge (v1 : Value) (v2 : Value) : Value :=
  cs_visit v1 v2
 
 
+/-- Convert the schema-typed rendering of a `Value` into the `Data`-keyed one
+the functions here take.
+
+A CIP-57 blueprint describes a `Value` as a map of currency symbol to a map of
+token name to quantity, so code generated from a blueprint types that field as
+`List (CurrencySymbol × List (TokenName × Integer))` — the same information as a
+`Value`, in a different Lean type. A property that mentions both a blueprint
+type and a ledger function needs to cross between them, and this is the
+crossing. Total and injective: every typed map denotes exactly one `Value`.
+
+Does not sort or normalise, so the caller keeps the obligation every other
+function here places on a `Value`: `validTxOutValue` or `validMintValue`. This
+matters downstream — `merge` walks both arguments assuming their currency
+symbols and token names are ordered, and falls through to its last branch when
+they are not. A typed map whose keys are out of order therefore crosses over
+unchanged and merges wrongly, rather than being silently repaired here. -/
+def ofTypedValue (v : List (CurrencySymbol × List (TokenName × Integer))) : Value :=
+  v.map fun entry =>
+    (Data.B entry.1, Data.Map (entry.2.map fun token => (Data.B token.1, Data.I token.2)))
+
+/-! Comparison -/
+
+/-- The `(CurrencySymbol, TokenName)` pairs a `Value` mentions.
+
+Duplicates are possible in a malformed `Value`; every consumer here folds over
+the list with a predicate, so a repeated key costs a repeated check and nothing
+else. -/
+def keys (v : Value) : List (CurrencySymbol × TokenName) :=
+  v.flatMap fun entry =>
+    match entry with
+    | (Data.B cs, Data.Map tokens) =>
+        tokens.filterMap fun token =>
+          match token with
+          | (Data.B tn, _) => some (cs, tn)
+          | _ => none
+    | _ => []
+
+/-- Compare two `Value`s pointwise, treating an absent token as a quantity of
+zero. The counterpart of `PlutusLedgerApi.V1.Value.checkBinRel`.
+
+Absence and zero are the same quantity in a `Value`, so a token present in one
+side and missing from the other is compared against `0` rather than skipped.
+Comparing two empty values is vacuously true, as it is in the ledger. -/
+def checkBinRel (f : Integer → Integer → Bool) (l : Value) (r : Value) : Bool :=
+  (keys l ++ keys r).all fun k => f (valueOf k.1 k.2 l) (valueOf k.1 k.2 r)
+
+/-- Is every quantity in `l` at least the corresponding quantity in `r`?
+The counterpart of `PlutusLedgerApi.V1.Value.geq`. -/
+def geq (l : Value) (r : Value) : Bool := checkBinRel (· >= ·) l r
+
+/-- Is every quantity in `l` at most the corresponding quantity in `r`?
+The counterpart of `PlutusLedgerApi.V1.Value.leq`. -/
+def leq (l : Value) (r : Value) : Bool := checkBinRel (· <= ·) l r
+
 /-! Predicates -/
 
 /-- Check if the currency symbol `cs` is present in Value `v`. -/
