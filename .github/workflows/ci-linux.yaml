@@ -78,9 +78,51 @@ jobs:
           name: cardano-ledger-api-build
           path: CardanoLedgerApiBlaster/build.log
 
+      - name: Check Auction proofs and HelloWorld compilation
+        timeout-minutes: 20
+        run: lake build Tests.Scripts.Auction.Properties Tests.Scripts.HelloWorld.HelloWorld
+
+  legacy-tests:
+    # The assurance solver's recfun-finder path makes unrelated legacy proofs
+    # take hours. Keep their full coverage on the revisions used by green main.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: CardanoLedgerApiBlaster
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          path: CardanoLedgerApiBlaster
+      - name: Checkout legacy Blaster
+        uses: actions/checkout@v6
+        with:
+          repository: input-output-hk/Lean-blaster
+          ref: bafdd4f7976037cd7bd8e443df04af096dc5b96e
+          path: Lean-blaster
+      - name: Checkout legacy Core
+        uses: actions/checkout@v6
+        with:
+          repository: input-output-hk/PlutusCoreBlaster
+          ref: 41fe7eadf460dc66bef22b85656bc36408638bdc
+          path: PlutusCoreBlaster
+      - name: Setup Lean
+        run: |
+          curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y
+          echo "/home/runner/.elan/bin" >> "$GITHUB_PATH"
+      - name: Fix Elan version
+        run: |
+          elan toolchain install "${{ env.LEAN_VERSION }}"
+          elan default "${{ env.LEAN_VERSION }}"
+      - name: Install released Z3
+        run: |
+          cd /home/runner
+          wget -q https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-x64-glibc-2.39.zip
+          unzip -q z3-4.15.2-x64-glibc-2.39.zip
+          echo "/home/runner/z3-4.15.2-x64-glibc-2.39/bin" >> "$GITHUB_PATH"
       - name: Execute and Validate Tests
         run: make check_tests
-
       - name: Upload Tests log
         if: failure()
         uses: actions/upload-artifact@v6
