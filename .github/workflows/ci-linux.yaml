@@ -70,3 +70,6 @@ jobs:
         with:
           name: tests-build
           path: build.log
+
+      - name: Build equivalence CLI and run integration tests
+        run: make check_equivalence
