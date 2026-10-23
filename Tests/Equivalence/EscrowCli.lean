@@ -13,7 +13,7 @@ def scenario : Exploration := {
   label := "Escrow"
   directory := "equivalence/examples/two_party_escrow"
   legacySeed := "ESCROW_SEED"
-  config := { Support.config with language := "PlutusV3", steps := 100000 }
+  config := acceptanceConfig
   modes := #["escrow-refund", "escrow-accept", "escrow-deposit"]
   variationGroups := (_root_.Equivalence.Escrow.variationGroups.map List.toArray).toArray
   caseCount := _root_.Equivalence.Escrow.cases.size }

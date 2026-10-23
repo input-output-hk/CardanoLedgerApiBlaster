@@ -17,6 +17,12 @@ elab "toolchain_root%" : term => do
 
 def toolchainRoot : String := toolchain_root%
 
+/-- Include path dependencies as well as Lake's git-package cache. -/
+elab "module_search_path%" : term => do
+  return toExpr ((← searchPathRef.get).map FilePath.toString)
+
+def moduleSearchPath : List String := module_search_path%
+
 -- Same runtime guard used by Lean's --memory option (private in Lean.Shell).
 @[extern "lean_internal_set_max_memory"]
 opaque setWorkerMaxMemory (bytes : USize) : BaseIO Unit
@@ -27,7 +33,9 @@ structure Config where
   leftFormat : Option String := none
   rightFormat : Option String := none
   language : String := "PlutusV3"
-  inputs : String := "integer"
+  inputs : String := "data"
+  equivalence : Bool := false
+  budget : Option (Nat × Nat) := none
   steps : Nat := 1000
   leftSteps : Option Nat := none
   rightSteps : Option Nat := none
@@ -43,32 +51,37 @@ def specificVariationNames (choices : Array (String × String)) : String :=
   ", ".intercalate (choices.toList.filterMap fun (name, _) =>
     if Context.sharedVariations.any (fun variation => variation.name == name) then none else some name)
 
-def usage : String := "Usage: lake exe uplc_equiv SCRIPT1 SCRIPT2 [options]
+def usage : String := "Usage: lake exe uplc_equiv OLD NEW --budget CPU MEMORY [options]
 
-Compare UPLC functions or validators using Blaster.
-  --inputs MODE                                        integer (default), data (V3 context), data3 (V2 arguments)
-  --inputs htlc-refund|htlc-claim                      Restricted CAPE HTLC boundary domains (claim: fixed correct preimage)
-  --inputs vesting-full|vesting-partial                CAPE vesting domains (full: unbounded lists; partial: bounded inspected lists)
-  --inputs escrow-deposit|escrow-accept|escrow-refund  CAPE escrow boundary domains
-  --case N                                             Restrict the selected input mode to boundary case N
-  --variation NAMES                                    Comma-separated variations, applied left to right (default baseline)
-  --format FORMAT                                      textual, flat, flat_hex, single_cbor_hex (default), double_cbor_hex
-  --format-left FORMAT                                 Override the left script format
-  --format-right FORMAT                                Override the right script format
-  --language VERSION                                   PlutusV1, PlutusV2, PlutusV3 (default)
-  --max-steps N                                        Execution fuel for each script (default 1000)
-  --left-steps N                                       Override the left execution fuel
-  --right-steps N                                      Override the right execution fuel
-  --timeout SECONDS                                    Z3 timeout per query (default 20)
-  --wall-timeout SECONDS                               Limit the complete check, including preprocessing (default 180)
-  --emit-lean FILE                                     Save equivalent Lean queries for inspection
-  --json                                               Emit a JSON report
-  --help                                               Show this help
+Check that NEW accepts every input accepted by OLD within the same budget.
+Uses the bundled post-Conway cost model (V3: E; V1/V2: D).
+  --inputs MODE                                         data (default, V3 context), data3 (V2 arguments), integer
+  --inputs spending                                     Generic spending context; arbitrary datum, redeemer, interval and lists
+  --inputs htlc-refund|htlc-claim                       Restricted CAPE HTLC boundary domains (claim: fixed correct preimage)
+  --inputs vesting-full|vesting-partial                 CAPE vesting domains (full: unbounded lists; partial: bounded inspected lists)
+  --inputs escrow-deposit|escrow-accept|escrow-refund   CAPE escrow boundary domains
+  --case N                                              Restrict the selected input mode to boundary case N
+  --variation NAMES                                     Comma-separated variations, applied left to right (default baseline)
+  --format FORMAT                                       textual, flat, flat_hex, single_cbor_hex (default), double_cbor_hex
+  --format-left FORMAT                                  Override the left script format
+  --format-right FORMAT                                 Override the right script format
+  --language VERSION                                    PlutusV1, PlutusV2, PlutusV3 (default)
+  --budget CPU MEMORY                                   Shared execution-unit limits (required for acceptance)
+  --equivalence                                         Check symmetric output equivalence with step limits instead
+  --max-steps N                                         Equivalence only: execution fuel per script (default 1000)
+  --left-steps N                                        Override the left execution fuel
+  --right-steps N                                       Override the right execution fuel
+  --timeout SECONDS                                     Z3 timeout per query (default 20)
+  --wall-timeout SECONDS                                Limit the complete check, including preprocessing (default 180)
+  --emit-lean FILE                                      Save the checked Lean queries for inspection
+  --json                                                Emit a JSON report
+  --help                                                Show this help
 
-Exit codes: 0 equivalent, 1 inequivalent, 2 inconclusive, 3 tool/usage error.
-Shared-output agreement alone does not establish termination or full equivalence.
-Fuel exhaustion is inconclusive; matching actual execution errors are equivalent.
-Counterexamples include the input and both outcomes, replayed with the configured fuel.
+Exit codes: 0 preserved/equivalent, 1 regression/inequivalent, 2 inconclusive, 3 tool/usage error.
+Budget exhaustion is rejection; the internal analysis guard is inconclusive.
+V3 acceptance requires a unit result; V1/V2 accept any successful result.
+Budgets are per-script allocations; cost coefficients are bundled, not network parameters.
+Counterexamples include the input and both outcomes, replayed with the same limits.
 Verification uses Blaster's SMT results without reconstructed Lean proof terms.\n\nShared variations: " ++
   ", ".intercalate (Context.sharedVariations.map Context.Variation.name)
   ++ "\nAvailability depends on the selected input mode."
@@ -89,22 +102,22 @@ structure Scenario where
   modes : Array String
   caseCount : String → Nat
   variations : Array (String × String)
-  families : String → List String → Array (Context.Family × Expr)
+  families : String → List String → Array (Context.GeneralFamily × Expr)
 
 def registerScenario [ToExpr α] (modes : Array String) (cases : String → Array α)
     (variations : Array (String × String))
-    (family : α → String → List String → Context.Family) (declaration : Name) : Scenario :=
+    (family : α → String → List String → Context.GeneralFamily) (declaration : Name) : Scenario :=
   { modes, variations, caseCount := fun mode => (cases mode).size,
     families := fun mode selection => (cases mode).map fun c =>
       (family c mode selection, mkApp3 (mkConst declaration) (toExpr c) (toExpr mode) (toExpr selection)) }
 
 def scenarios : Array Scenario := #[
   registerScenario #["htlc-refund", "htlc-claim"] (fun _ => HTLC.cases)
-    HTLC.variations HTLC.family ``HTLC.family,
+    HTLC.variations HTLC.generalizedFamily ``HTLC.generalizedFamily,
   registerScenario #["vesting-full", "vesting-partial"] (fun mode => Vesting.cases (mode == "vesting-partial"))
-    Vesting.variations Vesting.family ``Vesting.family,
+    Vesting.variations Vesting.generalizedFamily ``Vesting.generalizedFamily,
   registerScenario #["escrow-deposit", "escrow-accept", "escrow-refund"] (fun _ => Escrow.cases)
-    Escrow.variations Escrow.family ``Escrow.family]
+    Escrow.variations Escrow.generalizedFamily ``Escrow.generalizedFamily]
 
 def scenarioFor (mode : String) : Option Scenario :=
   scenarios.find? (fun scenario => scenario.modes.contains mode)
@@ -125,19 +138,29 @@ def natOption (key value : String) (positive := false) : Except String Nat := do
 
 def parse (c : Config) : List String → Except String Config
   | [] => do
-    unless c.scripts.size == 2 do throw "expected two script paths"
-    unless ["integer", "data", "data3"].contains c.inputs || isContextMode c.inputs do throw s!"unsupported input mode: {c.inputs}"
+    unless c.scripts.size == 2 do throw "expected old and new script paths"
+    unless c.equivalence || c.budget.isSome do throw "acceptance checking requires --budget CPU MEMORY"
+    if c.equivalence && c.budget.isSome then
+      throw "--budget cannot be combined with --equivalence"
+    unless c.equivalence || (c.leftSteps.isNone && c.rightSteps.isNone && c.steps == 1000) do
+      throw "step options require --equivalence; acceptance uses a shared --budget"
+    unless ["integer", "data", "data3", "spending"].contains c.inputs || isContextMode c.inputs do throw s!"unsupported input mode: {c.inputs}"
     if let some index := c.caseIndex then
       unless isContextMode c.inputs do throw "--case requires a contract input mode"
       unless index < caseCount c.inputs do throw "--case is outside the selected mode's case range"
     for variation in Context.variationNames c.variation do
       unless (variationChoices c.inputs).any (fun entry => entry.1 == variation) do
         throw s!"unsupported variation for {c.inputs}: {variation}"
+    if c.inputs == "spending" && c.language != "PlutusV3" then
+      throw "--inputs spending requires --language PlutusV3"
     unless ["PlutusV1", "PlutusV2", "PlutusV3"].contains c.language do
       throw s!"unsupported language: {c.language}"
     for f in [c.format, c.leftFormat.getD c.format, c.rightFormat.getD c.format] do
       unless formats.contains f do throw s!"unsupported format: {f}"
     return c
+  | "--equivalence" :: rest => parse { c with equivalence := true } rest
+  | "--budget" :: cpu :: memory :: rest => do
+    parse { c with budget := some (← natOption "--budget CPU" cpu, ← natOption "--budget MEMORY" memory) } rest
   | "--json" :: rest => parse { c with json := true } rest
   | "--worker" :: rest => parse { c with worker := true, json := true } rest
   | "--format" :: v :: rest => parse { c with format := v } rest
@@ -172,33 +195,48 @@ def readProgram (path format : String) : IO PlutusCore.UPLC.Term.Program := do
   | .error error => throw <| IO.userError s!"Cannot import {path}: {error}"
 
 /-- One query description drives solving, reports and emitted Lean source.
-    Side indices select the left (0) or right (1) program and its fuel. -/
+    Side indices select the old/left (0) or new/right (1) program. -/
 structure Query where
   name : String
   declaration : Name
   sides : Array Nat
 
+def Query.wantsCounterexample (query : Query) : Bool :=
+  ["no_completed_mismatch", "no_acceptance_regression"].contains query.name
+
+/-- Domains choose declarations; the check determines query names and sides. -/
 def queries (c : Config) : Array Query :=
-  if isContextMode c.inputs then #[
-    ⟨"no_completed_mismatch", ``Context.familyNoCompletedMismatch, #[0, 1]⟩,
-    ⟨"total_equivalence", ``Context.familyTotalEquivalence, #[0, 1]⟩,
-    ⟨"left_sometimes_output", ``Context.familySometimesOutput, #[0]⟩,
-    ⟨"right_sometimes_output", ``Context.familySometimesOutput, #[1]⟩]
-  else if c.inputs == "data" then #[
-    ⟨"no_completed_mismatch", ``Queries.contextNoCompletedMismatch, #[0, 1]⟩,
-    ⟨"total_equivalence", ``Queries.contextTotalEquivalence, #[0, 1]⟩,
-    ⟨"left_sometimes_output", ``Queries.contextSometimesOutput, #[0]⟩,
-    ⟨"right_sometimes_output", ``Queries.contextSometimesOutput, #[1]⟩]
-  else if c.inputs == "data3" then #[
-    ⟨"no_completed_mismatch", ``Queries.validatorNoCompletedMismatch, #[0, 1]⟩,
-    ⟨"total_equivalence", ``Queries.validatorTotalEquivalence, #[0, 1]⟩,
-    ⟨"left_sometimes_output", ``Queries.validatorSometimesOutput, #[0]⟩,
-    ⟨"right_sometimes_output", ``Queries.validatorSometimesOutput, #[1]⟩] else #[
-    ⟨"shared_integer_outputs", ``Queries.sharedIntegerOutputs, #[0, 1]⟩,
-    ⟨"no_completed_mismatch", ``Queries.noCompletedMismatch, #[0, 1]⟩,
-    ⟨"total_equivalence", ``Queries.totalEquivalence, #[0, 1]⟩,
-    ⟨"left_sometimes_output", ``Queries.sometimesOutput, #[0]⟩,
-    ⟨"right_sometimes_output", ``Queries.sometimesOutput, #[1]⟩]
+  let (noRegression, preserved, noMismatch, total, sometimes) :=
+    if c.inputs == "spending" then
+      (``Context.spendingNoAcceptanceRegression, ``Context.spendingAcceptancePreserved,
+       ``Context.spendingNoCompletedMismatch, ``Context.spendingTotalEquivalence,
+       ``Context.spendingSometimesOutput)
+    else if isContextMode c.inputs then
+      (``Context.generalizedNoAcceptanceRegression, ``Context.generalizedAcceptancePreserved,
+       ``Context.generalizedNoCompletedMismatch, ``Context.generalizedTotalEquivalence,
+       ``Context.generalizedSometimesOutput)
+    else if c.inputs == "data" then
+      (``Queries.contextNoAcceptanceRegression, ``Queries.contextAcceptancePreserved,
+       ``Queries.contextNoCompletedMismatch, ``Queries.contextTotalEquivalence,
+       ``Queries.contextSometimesOutput)
+    else if c.inputs == "data3" then
+      (``Queries.validatorNoAcceptanceRegression, ``Queries.validatorAcceptancePreserved,
+       ``Queries.validatorNoCompletedMismatch, ``Queries.validatorTotalEquivalence,
+       ``Queries.validatorSometimesOutput)
+    else
+      (``Queries.integerNoAcceptanceRegression, ``Queries.integerAcceptancePreserved,
+       ``Queries.noCompletedMismatch, ``Queries.totalEquivalence, ``Queries.sometimesOutput)
+  if c.equivalence then
+    let shared := if noMismatch == ``Queries.noCompletedMismatch then
+      #[⟨"shared_integer_outputs", ``Queries.sharedIntegerOutputs, #[0, 1]⟩] else #[]
+    shared ++ #[
+      ⟨"no_completed_mismatch", noMismatch, #[0, 1]⟩,
+      ⟨"total_equivalence", total, #[0, 1]⟩,
+      ⟨"left_sometimes_output", sometimes, #[0]⟩,
+      ⟨"right_sometimes_output", sometimes, #[1]⟩]
+  else #[
+    ⟨"no_acceptance_regression", noRegression, #[0, 1]⟩,
+    ⟨"acceptance_preserved", preserved, #[0, 1]⟩]
 
 def queryNames (c : Config) : Array String := (queries c).map Query.name
 
@@ -220,6 +258,8 @@ def escrowCases (c : Config) : Array Escrow.Case :=
 
 def baseInputDomain (c : Config) : String :=
   if c.inputs == "integer" then "all integers, encoded as raw UPLC integer constants"
+  else if c.inputs == "spending" then
+    "Generic V3 spending context: constructor 0 with a 16-field TxInfo, arbitrary redeemer and spending ScriptInfo; arbitrary-length independent input, reference-input, output and signer lists; arbitrary nested Data; nonnegative integer fee; map/list/bytes outer encodings for the other common TxInfo fields; independent arbitrary Data for the interval, spending reference, datum option, treasury and donation; no fixed keys, assets, amounts, schedule or boundary cases; no ledger-validity restriction on nested Data or transaction relationships"
   else if isEscrowMode c.inputs then
     let selected := match c.caseIndex, (escrowCases c)[0]? with
       | some index, some choice =>
@@ -274,7 +314,7 @@ def status : Blaster.Smt.Result → String
   | .Undetermined => "undetermined"
 
 /-- Select concrete cases and parse composition before symbolic translation. -/
-def selectedFamilies (c : Config) : Array (Context.Family × Expr) :=
+def selectedFamilies (c : Config) : Array (Context.GeneralFamily × Expr) :=
   match scenarioFor c.inputs with
   | some scenario =>
     let families := scenario.families c.inputs (Context.variationNames c.variation)
@@ -283,13 +323,16 @@ def selectedFamilies (c : Config) : Array (Context.Family × Expr) :=
     | none => families
   | none => #[]
 
-def contextFamilies (c : Config) : Array Context.Family := (selectedFamilies c).map Prod.fst
+def contextFamilies (c : Config) : Array Context.GeneralFamily := (selectedFamilies c).map Prod.fst
 
 def contextFamilyExprs (c : Config) : Array Expr := (selectedFamilies c).map Prod.snd
 
 def queryPropositions (c : Config) (query : Query) (programs fuels : Array Expr)
     (families : Array Expr := contextFamilyExprs c) : Array Expr :=
-  let arguments := query.sides.map (programs[·]!) ++ query.sides.map (fuels[·]!)
+  let limits := if c.equivalence then query.sides.map (fuels[·]!) else
+    let (cpu, memory) := c.budget.getD (0, 0)
+    #[mkRawNatLit cpu, mkRawNatLit memory, toExpr (c.language == "PlutusV3")]
+  let arguments := query.sides.map (programs[·]!) ++ limits
   if families.isEmpty then #[mkAppN (mkConst query.declaration) arguments]
   else families.map fun family => mkAppN (mkConst query.declaration) (#[family] ++ arguments)
 
@@ -310,7 +353,9 @@ def prepareContextFamilies (env : Environment) (c : Config) : IO (Array Expr) :=
     (contextFamilyExprs c).mapM (fun family => Meta.reduce family (explicitOnly := false))
   let (families, _) ← action.run' |>.toIO
     { fileName := "<uplc_equiv>", fileMap := default, maxRecDepth := 0, maxHeartbeats := 0 } { env }
-  return families
+  -- Widening can erase case distinctions. Solve each remaining family once.
+  return families.foldl (fun unique family =>
+    if unique.contains family then unique else unique.push family) #[]
 
 /-- Call Blaster in-process on propositions constructed from decoded programs.
     Results are consumed as an inductive type, without parsing diagnostic text. -/
@@ -331,7 +376,7 @@ def solve (env : Environment) (c : Config) (left right : PlutusCore.UPLC.Term.Pr
       for proposition in queryPropositions c query programs fuels families do
         let solverEnv := { (default : Blaster.Optimize.TranslateEnv) with
           optEnv.options.solverOptions.timeout := some c.timeout
-          optEnv.options.solverOptions.generateCex := query.name == "no_completed_mismatch" }
+          optEnv.options.solverOptions.generateCex := query.wantsCounterexample }
         let ((result, _), _) ← Blaster.Smt.Translate.main proposition |>.run solverEnv
         checked := checked.push result
         combined := combineResults existential combined result
@@ -360,6 +405,16 @@ def outcomeJson : PlutusCore.UPLC.CekMachine.State → Json
   | .Halt value => Json.mkObj [("kind", toJson "non_integer"), ("value", toJson (reprStr value))]
   | .Error => Json.mkObj [("kind", toJson "error")]
   | _ => Json.mkObj [("kind", toJson "unfinished")]
+
+def budgetOutcomeJson (v3 : Bool) (result : Acceptance.Result) : Json :=
+  let fields := match result with
+    | .success value spent => [("result", outcomeJson (.Halt value)),
+        ("spent_cpu", toJson spent.exBudgetCPU.unExCPU),
+        ("spent_memory", toJson spent.exBudgetMemory.unExMemory)]
+    | .error => [("kind", toJson "error")]
+    | .budgetExhausted => [("kind", toJson "budget_exhausted")]
+    | .unfinished => [("kind", toJson "unfinished")]
+  Json.mkObj (("accepts", toJson (Acceptance.accepts v3 result)) :: fields)
 
 /-- Reconstruct each independently quantified unused field from its SMT binding.
     Unmentioned fields use the original minimal context, including simplified
@@ -398,38 +453,69 @@ def modelContextUnusedTxInfo (model : List String) : Context.UnusedTxInfo :=
       treasury := (raw.lookup "rawTreasury").getD defaults.treasury
       donation := (raw.lookup "rawDonation").getD defaults.donation } }
 
+def modelGeneralFields (model : List String) : Context.GeneralFields :=
+  let integers := model.filterMap Model.integerBinding
+  let data := model.filterMap Model.dataBinding
+  { lower := (integers.lookup "lowerTimestamp").getD 0
+    upper := (integers.lookup "upperTimestamp").getD 0
+    datum := (data.lookup "arbitraryDatum").getD (.I 0)
+    redeemer := (data.lookup "arbitraryRedeemer").getD (.I 0)
+    interval := (data.lookup "arbitraryInterval").getD (.I 0)
+    reference := (data.lookup "arbitraryReference").getD (.I 0) }
+
 /-- A solver witness is only advertised as replayed after native CEK execution
-    reproduces a completed mismatch with the original, independent fuel limits. -/
+    reproduces the regression or mismatch under the original limits. -/
 def replayCounterexample (c : Config) (left right : PlutusCore.UPLC.Term.Program)
     (model : List String) : Json := Id.run do
   let replay := fun args input values => do
-    let l := execute left args (c.leftSteps.getD c.steps)
-    let r := execute right args (c.rightSteps.getD c.steps)
-    if compareRuns values l r == .inequivalent then
-      some (Json.mkObj [("input", input), ("left", outcomeJson l),
-        ("right", outcomeJson r), ("replayed", toJson true)])
-    else none
+    if !c.equivalence then
+      let (cpu, memory) := c.budget.getD (0, 0)
+      let v3 := c.language == "PlutusV3"
+      let old := Acceptance.execute left args cpu memory v3
+      let new := Acceptance.execute right args cpu memory v3
+      if Acceptance.regression v3 old new then
+        some (Json.mkObj [("input", input), ("old", budgetOutcomeJson v3 old),
+          ("new", budgetOutcomeJson v3 new), ("replayed", toJson true)])
+      else none
+    else
+      let l := execute left args (c.leftSteps.getD c.steps)
+      let r := execute right args (c.rightSteps.getD c.steps)
+      if compareRuns values l r == .inequivalent then
+        some (Json.mkObj [("input", input), ("left", outcomeJson l),
+          ("right", outcomeJson r), ("replayed", toJson true)])
+      else none
+  let replayContext := fun args => do
+    let [.Const (.Data context)] := args | none
+    replay args (Model.dataJson context) (fun _ _ => true)
   -- Optimization can reduce a universally false query to False without asking
   -- Z3 for a model. Try zero inputs too, but still require a successful replay.
   let families := contextFamilies c
-  if !families.isEmpty then
+  if c.inputs == "spending" || !families.isEmpty then
     let lists := model.filterMap Model.listBinding
     let inputs := (lists.lookup "inputs").getD []
     let outputs := (lists.lookup "outputs").getD []
     let signatureTail := (lists.lookup "signatureTail").getD []
-    let timestamps := ((model.filterMap Model.integerBinding).lookup "timestamp").toList ++ [0]
-    for unused in [modelContextUnusedTxInfo model, {}] do
-      if unused.fee < 0 || unused.treasury < 0 || unused.donation < 0 then continue
-      for timestamp in timestamps do
-        for family in families do
-          let args := family unused inputs outputs signatureTail timestamp
-          if let [.Const (.Data context)] := args then
-            if let some witness := replay args (Model.dataJson context) (fun _ _ => true) then
-              return witness
+    let unused := modelContextUnusedTxInfo model
+    if c.inputs == "spending" then
+      let bindings := model.filterMap Model.dataBinding
+      let find := fun name => (bindings.lookup name).getD (.I 0)
+      let family := Context.spendingFamily (find "spendingReference") (find "spendingDatumOption")
+        (find "spendingRedeemer") (find "validRange") (find "treasuryField") (find "donationField")
+      if let some witness := replayContext (family unused inputs outputs signatureTail 0) then
+        return witness
+    else
+      let general := modelGeneralFields model
+      let timestamps := ((model.filterMap Model.integerBinding).lookup "timestamp").toList ++ [0]
+      for candidate in [unused, {}] do
+        if candidate.fee < 0 || candidate.treasury < 0 || candidate.donation < 0 then continue
+        for timestamp in timestamps do
+          for family in families do
+            let args := family general candidate inputs outputs signatureTail timestamp
+            if let some witness := replayContext args then return witness
   else if c.inputs == "data" then
     let candidates := (model.filterMap Model.dataBinding).map Prod.snd ++ [.I 0]
     for context in candidates do
-      if let some witness := replay (Queries.contextArgs context) (Model.dataJson context) (fun _ _ => true) then
+      if let some witness := replayContext (Queries.contextArgs context) then
         return witness
   else if c.inputs == "data3" then
     let bindings := model.filterMap Model.dataBinding
@@ -452,23 +538,37 @@ def replayCounterexample (c : Config) (left right : PlutusCore.UPLC.Term.Program
     ("reason", toJson s!"Could not extract and replay {kind} witness from Blaster's model.")]
 
 def classify (c : Config) (results : Array Blaster.Smt.Result)
-    (left right : PlutusCore.UPLC.Term.Program) : Json := Id.run do
-  let mismatch := results[(queryNames c).idxOf "no_completed_mismatch"]?.getD .Undetermined
-  let total := results[(queryNames c).idxOf "total_equivalence"]?.getD .Undetermined
-  let (verdict, explanation) :=
-    if let .Falsified _ := mismatch then
-      ("inequivalent", "A common input produces completed, inequivalent outcomes.")
-    else if let .Valid := total then
-      ("equivalent", "Every input in the declared domain terminates on both sides with equivalent outcomes.")
-    else ("inconclusive", "Full equivalence is unestablished: fuel or symbolic reasoning may be insufficient. Agreement between completed runs does not establish termination or full equivalence.")
+    (left right : PlutusCore.UPLC.Term.Program) : Json :=
+  let names := queryNames c
+  let (mismatchName, totalName) := if c.equivalence then
+    ("no_completed_mismatch", "total_equivalence") else
+    ("no_acceptance_regression", "acceptance_preserved")
+  let mismatch := results[names.idxOf mismatchName]?.getD .Undetermined
+  let total := results[names.idxOf totalName]?.getD .Undetermined
+  let (verdict, explanation) := if c.equivalence then
+    match mismatch, total with
+    | .Falsified _, _ => ("inequivalent", "A common input produces completed, inequivalent outcomes.")
+    | _, .Valid => ("equivalent", "Every input in the declared domain terminates on both sides with equivalent outcomes.")
+    | _, _ => ("inconclusive", "Full equivalence is unestablished: fuel or symbolic reasoning may be insufficient. Agreement between completed runs does not establish termination or full equivalence.")
+  else
+    match mismatch, total with
+    | .Falsified _, _ => ("regression", "An input accepted by OLD is rejected by NEW under the same budget.")
+    | _, .Valid => ("preserved", "NEW accepts every input accepted by OLD in the declared domain under the supplied budget.")
+    | _, _ => ("inconclusive", "Acceptance preservation is unestablished: analysis or symbolic reasoning did not finish.")
+  let details := if c.equivalence then [
+    ("output_relation", toJson (if c.inputs == "integer" then "integer equality or matching errors" else "acceptance/rejection")),
+    ("left_steps", toJson (c.leftSteps.getD c.steps)), ("right_steps", toJson (c.rightSteps.getD c.steps))]
+  else
+    let (cpu, memory) := c.budget.getD (0, 0)
+    [("check", toJson "old acceptance implies new acceptance"),
+     ("budget", Json.mkObj [("cpu", toJson cpu), ("memory", toJson memory)]),
+     ("cost_model", toJson (if c.language == "PlutusV3" then "bundled post-Conway E" else "bundled post-Conway D")),
+     ("language", toJson c.language)]
   let counterexample := match mismatch with
     | .Falsified model => [("counterexample", replayCounterexample c left right model)]
     | _ => []
-  return report verdict explanation ([
-    ("input_domain", toJson (inputDomain c)),
-    ("output_relation", toJson (if c.inputs == "integer" then "integer equality or matching errors" else "acceptance/rejection")),
-    ("left_steps", toJson (c.leftSteps.getD c.steps)), ("right_steps", toJson (c.rightSteps.getD c.steps)),
-    ("queries", Json.mkObj ((queryNames c).toList.zip (results.toList.map (toJson ∘ status)))),
+  report verdict explanation ([("input_domain", toJson (inputDomain c))] ++ details ++ [
+    ("queries", Json.mkObj (names.toList.zip (results.toList.map (toJson ∘ status)))),
     ("verification", toJson "Blaster SMT result; no reconstructed Lean proof term")] ++ counterexample)
 
 def emitSource (env : Environment) (c : Config) (caseResults : Array (Array Blaster.Smt.Result) := #[])
@@ -505,7 +605,7 @@ def emitSource (env : Environment) (c : Config) (caseResults : Array (Array Blas
             PrettyPrinter.ppExpr proposition
       let (rendered, _) ← action.run' |>.toIO
         { fileName := "<uplc_equiv>", fileMap := default, maxRecDepth := 0, maxHeartbeats := 0 } { env }
-      return some s!"\n-- {query.name}, case {j + 1}\n#blaster (timeout: {c.timeout}){expected} (gen-cex: {if query.name == "no_completed_mismatch" then 1 else 0}) [{rendered.pretty}]\n"
+      return some s!"\n-- {query.name}, case {j + 1}\n#blaster (timeout: {c.timeout}){expected} (gen-cex: {if query.wantsCounterexample then 1 else 0}) [{rendered.pretty}]\n"
   IO.FS.writeFile file (header ++ String.join chunks)
 
 def run (c : Config) : IO Json := do
@@ -513,10 +613,7 @@ def run (c : Config) : IO Json := do
   let left ← readProgram c.scripts[0]! (c.leftFormat.getD c.format)
   let right ← readProgram c.scripts[1]! (c.rightFormat.getD c.format)
   -- Keep working when the binary is invoked outside the repository or without `lake env`.
-  let root := (← IO.appDir) / ".." / ".." / ".."
-  initSearchPath toolchainRoot [root / ".lake/build/lib/lean",
-    root / ".lake/packages/PlutusCore/.lake/build/lib/lean",
-    root / ".lake/packages/Blaster/.lake/build/lib/lean"]
+  initSearchPath toolchainRoot (moduleSearchPath.map FilePath.mk)
   let env ← importModules #[{ module := `Equivalence.Queries }, { module := `Equivalence.HTLC }, { module := `Equivalence.Vesting }, { module := `Equivalence.Escrow }, { module := `Blaster }] {} (loadExts := true)
   let families ← prepareContextFamilies env c
   emitSource env c #[] families
@@ -557,8 +654,8 @@ def supervise (args : List String) (c : Config) : IO Json := do
 
 def exitCode (r : Json) : UInt32 :=
   match (r.getObjValAs? String "verdict").toOption with
-  | some "equivalent" => 0
-  | some "inequivalent" => 1
+  | some "preserved" | some "equivalent" => 0
+  | some "regression" | some "inequivalent" => 1
   | some "inconclusive" => 2
   | _ => 3
 
@@ -568,8 +665,12 @@ def printReport (json : Bool) (r : Json) : IO Unit := do
     IO.println s!"{(r.getObjValAs? String "verdict").toOption.getD "error"}: {(r.getObjValAs? String "explanation").toOption.getD ""}"
     if let .ok domain := r.getObjValAs? String "input_domain" then
       IO.println s!"Input domain: {domain}"
+    if let .ok budget := r.getObjVal? "budget" then
+      IO.println s!"Budget: {budget.compress}"
+    if let .ok model := r.getObjValAs? String "cost_model" then
+      IO.println s!"Cost model: {model}"
     if let .ok queries := r.getObjVal? "queries" then
-      for name in #["shared_integer_outputs", "no_completed_mismatch", "total_equivalence", "left_sometimes_output", "right_sometimes_output"] do
+      for name in #["no_acceptance_regression", "acceptance_preserved", "shared_integer_outputs", "no_completed_mismatch", "total_equivalence", "left_sometimes_output", "right_sometimes_output"] do
         if let .ok value := queries.getObjValAs? String name then IO.println s!"  {name}: {value}"
       IO.println "Blaster SMT result; no reconstructed Lean proof term"
     if let .ok witness := r.getObjVal? "counterexample" then

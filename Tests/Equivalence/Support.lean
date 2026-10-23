@@ -4,7 +4,11 @@ namespace Tests.Equivalence.Support
 
 open Lean System
 
-def config : _root_.Equivalence.Cli.Config := { steps := 40, timeout := 5 }
+def config : _root_.Equivalence.Cli.Config := { equivalence := true, inputs := "integer", steps := 40, timeout := 5 }
+
+/-- Shared budgeted settings for random CAPE explorations. -/
+def acceptanceConfig : _root_.Equivalence.Cli.Config :=
+  { config with equivalence := false, steps := 1000, budget := some (10000000000, 14000000) }
 
 def check (report : Json) (condition : Bool) (message : String) : IO Unit :=
   unless condition do throw <| IO.userError s!"{message}\n{report.pretty}"
@@ -49,7 +53,9 @@ def runBounded (c : _root_.Equivalence.Cli.Config) : IO Json := do
       "--format-left", c.leftFormat.getD c.format,
       "--format-right", c.rightFormat.getD c.format,
       "--variation", c.variation,
-      "--max-steps", toString c.steps, "--timeout", toString c.timeout] ++
+      "--timeout", toString c.timeout] ++
+      (if c.equivalence then #["--equivalence", "--max-steps", toString c.steps] else #[]) ++
+      (c.budget.toArray.flatMap fun (cpu, memory) => #["--budget", toString cpu, toString memory]) ++
       (c.caseIndex.toArray.flatMap fun index => #["--case", toString index]) ++
       (c.leftSteps.toArray.flatMap fun steps => #["--left-steps", toString steps]) ++
       (c.rightSteps.toArray.flatMap fun steps => #["--right-steps", toString steps]) ++ c.scripts
@@ -65,11 +71,11 @@ def runBounded (c : _root_.Equivalence.Cli.Config) : IO Json := do
   let stderr ← IO.ofExcept errors.get
   unless finished do
     return _root_.Equivalence.Cli.report "inconclusive"
-      "Equivalence check reached its 60-second wall-clock limit, including preprocessing."
+      "Script check reached its 60-second wall-clock limit, including preprocessing."
       [("input_domain", toJson (_root_.Equivalence.Cli.inputDomain c))]
   match Json.parse stdout with
   | .ok report => return report
-  | .error error => throw <| IO.userError s!"Equivalence worker failed: {error}\n{stdout}\n{stderr}"
+  | .error error => throw <| IO.userError s!"Checker worker failed: {error}\n{stdout}\n{stderr}"
 
 /-- Keep synthetic regressions isolated too: repeated in-process SMT runs retain
     substantial compiler state in the test module's elaboration process. -/
@@ -80,7 +86,7 @@ def comparePrograms (left right : String) (c : _root_.Equivalence.Cli.Config := 
 /-- Select distinct decoded programs with the same ordering and seed handling
 for every CLI exploration. Legacy seed names remain fallback aliases. -/
 def randomPaths (label : String) (directory : FilePath) (legacySeed : String)
-    (fuel : Nat) : IO (Array String) := do
+    (limits : String) : IO (Array String) := do
   let seed ← match (← IO.getEnv "SEED") <|> (← IO.getEnv legacySeed) with
     | some value => match value.toNat? with
       | some seed => pure seed
@@ -100,7 +106,7 @@ def randomPaths (label : String) (directory : FilePath) (legacySeed : String)
     if representation != reprStr other then candidates := candidates.push path
   if candidates.isEmpty then throw <| IO.userError s!"{label} requires two distinct programs"
   let right := candidates[← IO.rand 0 (candidates.size - 1)]!
-  progress s!"SEED={seed}: {paths[left]!} vs {right} ({fuel} fuel each)"
+  progress s!"SEED={seed}: {paths[left]!} vs {right} ({limits})"
   return #[paths[left]!, right]
 
 structure Exploration where
@@ -120,7 +126,10 @@ def selectFamily (c : _root_.Equivalence.Cli.Config) (mode : String)
 /-- One runner owns sampling, deadlines, verdicts, replay requirements and domain
 checks. Only fixture data and the finite case mapping vary between contracts. -/
 def runExploration (scenario : Exploration) : IO Unit := do
-  let paths ← randomPaths scenario.label scenario.directory scenario.legacySeed scenario.config.steps
+  let limits := if scenario.config.equivalence then s!"{scenario.config.steps} fuel each" else
+    let (cpu, memory) := scenario.config.budget.getD (0, 0)
+    s!"shared budget: CPU {cpu}, memory {memory}"
+  let paths ← randomPaths scenario.label scenario.directory scenario.legacySeed limits
   let mut inconclusive : Array String := #[]
   for (group, round) in scenario.variationGroups.toList.zipIdx do
     let sampledCase ← IO.rand 0 (scenario.caseCount - 1)
@@ -134,6 +143,10 @@ def runExploration (scenario : Exploration) : IO Unit := do
       progress s!"{mode}: {report.pretty}"
       let result ← IO.ofExcept ((← field report ["verdict"]).getStr?)
       match result with
+      | "preserved" =>
+        expect report ["queries", "acceptance_preserved"] "valid"
+        noCounterexample report
+      | "regression" => discard <| witness report
       | "equivalent" =>
         for query in ["no_completed_mismatch", "total_equivalence"] do
           expect report ["queries", query] "valid"

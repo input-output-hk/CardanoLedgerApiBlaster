@@ -117,10 +117,10 @@ private def signersBoth : Context.Variation :=
   .txInfo "signers-both" "signatories replaced by payer and recipient"
     (fun _ tx => setField tx 8 (.List [.B payer, .B recipient]))
 
-def Case.catalog (c : Case) : List Context.Variation := c.variationGroups.flatten ++ [signersBoth]
+def Case.catalog (c : Case) : List Context.Variation := c.variationGroups.flatten ++ [signersBoth] ++ Context.generalizationGroup
 
 def variations : Array (String × String) :=
-  (variationGroups.flatten ++ [signersBoth]).toArray.map Context.Variation.describe
+  (variationGroups.flatten ++ [signersBoth] ++ Context.generalizationGroup).toArray.map Context.Variation.describe
 
 /-- One supplied fixture is used by every shared or contract-specific mutation. -/
 def Case.fixture (c : Case) (isClaim : Bool) (p : Context.Parameters) : Context.Sample :=
@@ -137,7 +137,11 @@ def Case.exploreArgs (c : Case) (isClaim : Bool) (selection : String) : Context.
   Context.explore (c.fixture isClaim) c.catalog (Context.variationNames selection)
 
 /-- Uniform entry point for native replay and symbolic CLI queries. -/
+def generalizedFamily (c : Case) (mode : String) (selection : List String) : Context.GeneralFamily :=
+  fun general => Context.explore (c.fixture (mode == "htlc-claim")) c.catalog selection general
+
+/-- Existing callers retain the fixture-only argument builder. -/
 def family (c : Case) (mode : String) (selection : List String) : Context.Family :=
-  Context.explore (c.fixture (mode == "htlc-claim")) c.catalog selection
+  generalizedFamily c mode selection {}
 
 end Equivalence.HTLC

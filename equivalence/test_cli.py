@@ -14,20 +14,31 @@ ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / ".lake/build/bin/uplc_equiv"
 
 
-def reject_data_at(path, expected):
+def data_at(path):
     term = "c"
     for index in path:
         fields = f"[(force (force (builtin sndPair))) [(builtin unConstrData) {term}]]"
         for _ in range(index):
             fields = f"[(force (builtin tailList)) {fields}]"
         term = f"[(force (builtin headList)) {fields}]"
-    return ("(lam c (force [[[(force (builtin ifThenElse)) "
-            f"[[(builtin equalsData) {term}] (con data ({expected}))]] "
-            "(delay (error))] (delay (con unit ()))]))")
+    return term
+
+
+def reject_if(condition):
+    return ("(lam c (force [[[(force (builtin ifThenElse)) " + condition +
+            "] (delay (error))] (delay (con unit ()))]))")
+
+
+def reject_data_at(path, expected):
+    return reject_if(f"[[(builtin equalsData) {data_at(path)}] (con data ({expected}))]")
+
+
+def integer_at_equals(path, value):
+    return f"[[(builtin equalsInteger) [(builtin unIData) {data_at(path)}]] (con integer {value})]"
 
 
 class CheckerProcess(unittest.TestCase):
-    def invoke(self, left, right, *flags, json_output=True):
+    def invoke(self, left, right, *flags, json_output=True, equivalence=True):
         with tempfile.TemporaryDirectory(prefix="uplc cli tests ") as directory:
             # Exercise spaces and quotes while running outside the repository.
             paths = [Path(directory) / 'left "script".uplc', Path(directory) / 'right.uplc']
@@ -36,10 +47,182 @@ class CheckerProcess(unittest.TestCase):
             result = subprocess.run(
                 [str(CLI),
                  *(str(path) for path in paths), "--format", "textual",
-                 "--max-steps", "40", "--wall-timeout", "30",
+                 *(["--equivalence", "--inputs", "integer", "--max-steps", "40"]
+                   if equivalence else ["--budget", "1000000", "10000"]),
+                 "--wall-timeout", "30",
                  *(["--json"] if json_output else []), *flags],
                 cwd=directory, capture_output=True, text=True, timeout=90)
             return result.returncode, json.loads(result.stdout) if json_output else result.stdout
+
+    def test_acceptance_is_directional(self):
+        accept, reject = "(lam c (con unit ()))", "(lam c (error))"
+        for old, new, code, verdict in [
+                (reject, accept, 0, "preserved"),
+                (accept, reject, 1, "regression"),
+                (accept, accept, 0, "preserved"),
+                (reject, reject, 0, "preserved")]:
+            with self.subTest(verdict=verdict, old=old, new=new):
+                actual_code, report = self.invoke(old, new, equivalence=False)
+                self.assertEqual(actual_code, code, report)
+                self.assertEqual(report["verdict"], verdict)
+                if code == 1:
+                    witness = report["counterexample"]
+                    self.assertTrue(witness["replayed"])
+                    self.assertTrue(witness["old"]["accepts"])
+                    self.assertFalse(witness["new"]["accepts"])
+
+    def test_budget_boundaries_and_slower_replacement(self):
+        accept = "(lam c (con unit ()))"
+        slower = "(lam c [(lam x (con unit ())) c])"
+        # Applying the validator costs four machine nodes plus startup.
+        for cpu, memory, expected in [(64100, 500, "regression"),
+                                      (64099, 500, "preserved"),
+                                      (64100, 499, "preserved")]:
+            code, report = self.invoke(accept, "(lam c (error))", "--budget", str(cpu), str(memory),
+                                       equivalence=False)
+            self.assertEqual((code, report["verdict"]),
+                             (1 if expected == "regression" else 0, expected), report)
+        for budget, code in [("64100", 1), ("1000000", 0)]:
+            actual, report = self.invoke(accept, slower, "--budget", budget, "10000",
+                                         equivalence=False)
+            self.assertEqual(actual, code, report)
+            if code == 1:
+                witness = report["counterexample"]
+                self.assertTrue(witness["replayed"])
+                self.assertEqual(witness["new"]["kind"], "budget_exhausted")
+                self.assertEqual(witness["old"]["spent_cpu"], 64100)
+                self.assertEqual(witness["old"]["spent_memory"], 500)
+
+    def test_builtin_cost_is_included_in_shared_budget(self):
+        accept = "(lam c (con unit ()))"
+        addition = "(lam c [(lam x (con unit ())) [[(builtin addInteger) (con integer 1)] (con integer 2)]])"
+        # Eleven machine nodes, startup, and AddInteger E (CPU 101208, memory 2).
+        for cpu, memory, code in [(277308, 1202, 0), (277307, 1202, 1), (277308, 1201, 1)]:
+            with self.subTest(cpu=cpu, memory=memory):
+                actual, report = self.invoke(accept, addition, "--budget", str(cpu), str(memory),
+                                             equivalence=False)
+                self.assertEqual(actual, code, report)
+                if code:
+                    self.assertTrue(report["counterexample"]["replayed"])
+                    self.assertEqual(report["counterexample"]["new"]["kind"], "budget_exhausted")
+
+    def test_language_return_rule(self):
+        for language, code in [("PlutusV3", 1), ("PlutusV2", 0), ("PlutusV1", 0)]:
+            actual, report = self.invoke("(lam c (con unit ()))", "(lam c (con integer 42))",
+                                         "--language", language, equivalence=False)
+            self.assertEqual(actual, code, report)
+
+    def test_directional_composed_context_witness_and_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            emitted = Path(directory) / "acceptance.lean"
+            old, new = Path(directory) / "old.uplc", Path(directory) / "new.uplc"
+            old.write_text("(program 1.1.0 (lam c (con unit ())))")
+            new.write_text("(program 1.1.0 " + reject_data_at([2, 1, 0, 2], "I 1001") + ")")
+            result = subprocess.run([str(CLI), str(old), str(new), "--format", "textual",
+                "--inputs", "vesting-partial", "--case", "81",
+                "--variation", "datum-total,fee-positive", "--budget", "100000000", "1000000",
+                "--emit-lean", str(emitted), "--json"],
+                cwd=ROOT, capture_output=True, text=True, timeout=60)
+            code, report = result.returncode, json.loads(result.stdout)
+            self.assertEqual(code, 1, report)
+            witness = report["counterexample"]
+            self.assertTrue(witness["replayed"], report)
+            self.assertTrue(witness["old"]["accepts"])
+            self.assertFalse(witness["new"]["accepts"])
+            checked = subprocess.run(["lake", "env", "lean", "--memory=8192", str(emitted)],
+                                     cwd=ROOT, capture_output=True, text=True, timeout=60)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
+    def test_three_argument_acceptance(self):
+        accept = "(lam d (lam r (lam c (con integer 42))))"
+        reject = "(lam d (lam r (lam c (error))))"
+        for old, new, code in [(accept, reject, 1), (reject, accept, 0)]:
+            actual, report = self.invoke(old, new, "--inputs", "data3", "--language", "PlutusV2",
+                                         equivalence=False)
+            self.assertEqual(actual, code, report)
+            if code:
+                witness = report["counterexample"]
+                self.assertTrue(witness["replayed"])
+                self.assertEqual(set(witness["input"]), {"datum", "redeemer", "context"})
+                self.assertTrue(witness["old"]["accepts"])
+                self.assertFalse(witness["new"]["accepts"])
+
+    def test_acceptance_text_report_identifies_budget_and_model(self):
+        code, output = self.invoke("(lam c (con unit ()))", "(lam c (con unit ()))",
+                                   equivalence=False, json_output=False)
+        self.assertEqual(code, 0, output)
+        self.assertIn("preserved:", output)
+        self.assertIn('Budget: {"cpu":1000000,"memory":10000}', output)
+        self.assertIn("Cost model: bundled post-Conway E", output)
+
+    def test_generalized_times_are_independent_and_replayed(self):
+        lower = integer_at_equals([0, 7, 0, 0, 0], 42)
+        upper = integer_at_equals([0, 7, 1, 0, 0], -17)
+        condition = f"[[[(force (builtin ifThenElse)) {lower}] {upper}] (con bool False)]"
+        code, report = self.invoke("(lam c (con unit ()))", reject_if(condition),
+            "--inputs", "vesting-partial", "--case", "81", "--variation", "time-any",
+            "--budget", "100000000", "1000000", equivalence=False)
+        self.assertEqual(code, 1, report)
+        witness = report["counterexample"]
+        self.assertTrue(witness["replayed"], report)
+        bounds = witness["input"]["fields"][0]["fields"][7]["fields"]
+        self.assertEqual(bounds[0]["fields"][0]["fields"][0], {"int": 42})
+        self.assertEqual(bounds[1]["fields"][0]["fields"][0], {"int": -17})
+
+    def test_generalized_data_symbols_do_not_alias_unused_fields(self):
+        conditions = [integer_at_equals([2, 1, 0], 11),
+                      integer_at_equals([1], 22), integer_at_equals([0, 3], 33)]
+        condition = "(con bool True)"
+        for item in reversed(conditions):
+            condition = f"[[[(force (builtin ifThenElse)) {item}] {condition}] (con bool False)]"
+        # Only this exact triple can be accepted by OLD. A malformed Data value
+        # errors in OLD and cannot supply a spurious regression.
+        only_accept = ("(lam c (force [[[(force (builtin ifThenElse)) " + condition +
+                       "] (delay (con unit ()))] (delay (error))]))")
+        code, report = self.invoke(only_accept, "(lam c (error))", "--inputs", "htlc-refund",
+            "--case", "0", "--variation", "datum-any,redeemer-any,raw-unused",
+            "--budget", "100000000", "1000000", equivalence=False)
+        self.assertEqual(code, 1, report)
+        witness = report["counterexample"]
+        self.assertTrue(witness["replayed"], report)
+        fields = witness["input"]["fields"]
+        self.assertEqual(fields[2]["fields"][1]["fields"][0], {"int": 11})
+        self.assertEqual(fields[1], {"int": 22})
+        self.assertEqual(fields[0]["fields"][3], {"int": 33})
+
+    def test_widening_deduplicates_erased_case_distinctions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old, new, emitted = root / "old.uplc", root / "new.uplc", root / "check.lean"
+            for path in [old, new]:
+                path.write_text("(program 1.1.0 (lam c (con unit ())))")
+            result = subprocess.run([str(CLI), str(old), str(new), "--format", "textual",
+                "--inputs", "vesting-partial", "--variation", "time-any,inputs-any,outputs-any,signers-any",
+                "--budget", "100000000", "1000000", "--wall-timeout", "30",
+                "--emit-lean", str(emitted), "--json"],
+                cwd=ROOT, capture_output=True, text=True, timeout=60)
+            report = json.loads(result.stdout)
+            self.assertEqual(result.returncode, 0, report)
+            # 96 cases collapse to four treasury/donation combinations, each
+            # with two universal queries. The checked export must still compile.
+            self.assertEqual(emitted.read_text().count("#blaster"), 8)
+            checked = subprocess.run(["lake", "env", "lean", "--memory=8192", str(emitted)],
+                                     cwd=ROOT, capture_output=True, text=True, timeout=60)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
+    def test_generic_spending_context_preserves_shape_and_replays(self):
+        code, report = self.invoke("(lam c (con unit ()))", "(lam c (error))",
+            "--inputs", "spending", equivalence=False)
+        self.assertEqual(code, 1, report)
+        witness = report["counterexample"]
+        self.assertTrue(witness["replayed"])
+        context = witness["input"]
+        self.assertEqual(context["constructor"], 0)
+        self.assertEqual(len(context["fields"]), 3)
+        self.assertEqual(len(context["fields"][0]["fields"]), 16)
+        self.assertEqual(context["fields"][2]["constructor"], 1)
+        self.assertEqual(len(context["fields"][2]["fields"]), 2)
+        self.assertNotIn("restricted to case", report["input_domain"])
 
     def test_verdict_exit_codes(self):
         for left, right, flags, expected_code, expected_verdict in [
@@ -53,6 +236,12 @@ class CheckerProcess(unittest.TestCase):
 
     def test_invalid_arguments_are_tool_errors(self):
         for args in [
+                ["old", "new"],
+                ["old", "new", "--inputs", "spending", "--language", "PlutusV2"],
+                ["old", "new", "--inputs", "spending", "--case", "0"],
+                ["old", "new", "--budget", "1", "1", "--left-steps", "1"],
+                ["old", "new", "--budget", "-1", "1"],
+                ["old", "new", "--budget", "1", "1", "--equivalence"],
                 ["--unknown-option"],
                 ["left", "right", "--inputs", "integer", "--case", "0"],
                 ["left", "right", "--inputs", "escrow-refund", "--case", "72"],
@@ -62,6 +251,8 @@ class CheckerProcess(unittest.TestCase):
                 ["left", "right", "--inputs", "vesting-full", "--variation", "fee-positive,"],
                 ["left", "right", "--inputs", "vesting-full", "--variation", ""]]:
             with self.subTest(args=args):
+                if args != ["old", "new"] and "--budget" not in args:
+                    args += ["--budget", "1", "1"]
                 result = subprocess.run(
                     [str(CLI), *args, "--json"],
                     capture_output=True, text=True, timeout=10)
@@ -118,7 +309,7 @@ class CheckerProcess(unittest.TestCase):
             right.write_text("(program 1.1.0 (lam c (con unit ())))")
             result = subprocess.run(
                 [str(CLI), str(left), str(right), "--format", "textual", "--inputs", "vesting-partial",
-                 "--case", "81", "--variation", "datum-total,fee-positive", "--max-steps", "600",
+                 "--case", "81", "--variation", "datum-total,fee-positive", "--equivalence", "--max-steps", "600",
                  "--timeout", "5", "--wall-timeout", "30", "--emit-lean", str(emitted), "--json"],
                 cwd=ROOT, capture_output=True, text=True, timeout=40)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
@@ -170,7 +361,7 @@ class CheckerProcess(unittest.TestCase):
             os.mkfifo(blocked)
             result = subprocess.run(
                 [str(CLI), str(blocked), str(blocked), "--format", "textual",
-                 "--wall-timeout", "1", "--json"],
+                 "--budget", "1000000", "10000", "--wall-timeout", "1", "--json"],
                 capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 2, result.stdout)
             self.assertEqual(json.loads(result.stdout)["verdict"], "inconclusive")

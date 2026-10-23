@@ -5,9 +5,9 @@ package «CardanoLedgerApi» where
   -- add package configuration options here
   moreGlobalServerArgs := #["--threads=4"]
   moreLeanArgs := #["--threads=4"]
-  -- These revisions are tested together with Z3 4.15.2 in CI. Moving branch
-  -- heads may require solver extensions absent from that release.
-  require PlutusCore from git "https://github.com/input-output-hk/PlutusCoreBlaster" @ "5249a39bd39c854ce5cef1b70113c51aac1e4f0a"
+  -- Use execution-cost support from cek-machine-exunits. Keep Blaster pinned
+  -- to the revision tested with Z3 4.15.2.
+  require PlutusCore from git "https://github.com/input-output-hk/PlutusCoreBlaster" @ "7a5a0b1ce37defc343640d985bab62e63f7744eb"
   require Blaster from git "https://github.com/input-output-hk/Lean-blaster" @ "bafdd4f7976037cd7bd8e443df04af096dc5b96e"
 
 @[default_target]

@@ -93,7 +93,11 @@ def Case.variationGroups (c : Case) (mode : String) : List (List Context.Variati
 def variationGroups : List (List Context.Variation) :=
   (cases[0]?.map (fun c => c.variationGroups "escrow-refund")).getD []
 
-def variations : Array (String × String) := variationGroups.flatten.toArray.map Context.Variation.describe
+def Case.catalog (c : Case) (mode : String) : List Context.Variation :=
+  (c.variationGroups mode).flatten ++ Context.generalizationGroup
+
+def variations : Array (String × String) :=
+  (variationGroups.flatten ++ Context.generalizationGroup).toArray.map Context.Variation.describe
 
 /-- Raw integer actions: Deposit=0, Accept=1, Refund=2. Relevant lists are
     bounded templates; the unused endpoint and unused fields remain symbolic. -/
@@ -110,9 +114,13 @@ def Case.fixture (c : Case) (mode : String) (p : Context.Parameters) : Context.S
   ⟨p, Context.spendingContext tx redeemer Context.ownRef datum, signer, c.signed, ownInput, secondInput⟩
 
 def Case.args (c : Case) (mode selection : String) : Context.Family :=
-  Context.explore (c.fixture mode) (c.variationGroups mode).flatten (Context.variationNames selection)
+  Context.explore (c.fixture mode) (c.catalog mode) (Context.variationNames selection)
 
+def generalizedFamily (c : Case) (mode : String) (selection : List String) : Context.GeneralFamily :=
+  fun general => Context.explore (c.fixture mode) (c.catalog mode) selection general
+
+/-- Existing callers retain the fixture-only argument builder. -/
 def family (c : Case) (mode : String) (selection : List String) : Context.Family :=
-  Context.explore (c.fixture mode) (c.variationGroups mode).flatten selection
+  generalizedFamily c mode selection {}
 
 end Equivalence.Escrow

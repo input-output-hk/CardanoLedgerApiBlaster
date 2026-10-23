@@ -26,6 +26,7 @@ CardanoLedgerApi provides a formal Lean4 model of the Cardano Ledger API — the
   - [SellNFT](#sellnft)
   - [ParamFeed](#paramfeed)
   - [Functions: Fibonacci](#functions-fibonacci)
+- [Script acceptance preservation](#script-acceptance-preservation)
 - [General Description](#general-description)
   - [API Versions and Types](#api-versions-and-types)
   - [Ledger Rules as Decidable Predicates](#ledger-rules-as-decidable-predicates)
@@ -237,6 +238,85 @@ theorem fibonacci_equiv :
   ∀ (n : Integer),
     (fromFrameToInt $ compiledNaiveRecursion.prop n) = (fromFrameToInt $ compiledSeungheonOhSize.prop n) := by blaster
 ```
+
+## Script acceptance preservation
+
+The `uplc_equiv` CLI checks whether a replacement validator accepts every input
+accepted by the old validator under the same CPU and memory budget:
+
+```sh
+lake build uplc_equiv
+lake exe uplc_equiv old.cbor_hex new.cbor_hex --budget 10000000 100000
+```
+
+The budget above is illustrative. Supply the execution-unit allocation for one
+script invocation, rather than a transaction-wide maximum shared by several
+scripts. The default input mode supplies an arbitrary V3 `ScriptContext` Data
+argument. Use `--inputs data3 --language PlutusV2` for three-argument validators,
+or select a restricted CAPE domain such as `--inputs htlc-refund`,
+`vesting-partial`, or `escrow-accept`. `--case` and composable `--variation` values
+restrict or modify those domains; the report states the checked domain. Context
+shapes do not establish full ledger validity of a transaction.
+
+Results are `preserved` (exit 0), `regression` (exit 1), or `inconclusive` (exit 2).
+A regression means the old script accepts an input while the new script errors,
+returns an invalid result, or exceeds the supplied budget. Counterexamples are
+replayed with the same limits and report each script's acceptance and outcome.
+Additional acceptance is allowed; a slower replacement is allowed if it remains
+within budget. An old script that rejects every input is preserved vacuously.
+V3 requires a unit return; V1/V2 accept any successful return.
+
+This implementation uses PlutusCoreBlaster's **bundled post-Conway cost model**
+(E for V3, D for V1/V2), not cost coefficients fetched from network protocol
+parameters. Results are relative to that model and the supplied budget, not a
+certification against current network parameters. Development currently requires
+the sibling `../PlutusCoreBlaster` checkout on `cek-machine-exunits`, including
+its remaining symbolic logarithm workaround. Blaster remains pinned to the
+revision tested with Z3 4.15.2.
+
+The acceptance wrapper uses the branch's charging helpers incrementally. Direct
+use of its deferred-cost runner currently triggers an unsupported `Fin` datatype
+in two symbolic-context regression tests with the pinned Blaster.
+
+Budget exhaustion is rejection. The separate internal guard of 100000 CEK
+transitions, solver timeout, and wall-clock timeout are analysis limits and can
+only make the check inconclusive. `--emit-lean FILE` saves the checked queries;
+`--json` includes the budget, cost-model identity, and query results. Verification
+uses Blaster's SMT results without reconstructed Lean proof terms.
+
+To widen a contract domain without adding scenario-specific templates, compose
+shared variations such as:
+
+```sh
+lake exe uplc_equiv old.cbor_hex new.cbor_hex --budget 10000000 100000 \
+  --inputs vesting-partial --variation time-any,inputs-any,outputs-any,signers-any
+```
+
+`time-any` gives independent unbounded integer endpoints. `inputs-any`,
+`outputs-any`, and `signers-any` allow arbitrary-length lists with arbitrary Data
+contents, including the absence of required entries. `datum-any`, `redeemer-any`,
+`interval-any`, and `reference-any` use separate arbitrary Data symbols. These
+symbols are independent of the unused transaction fields, and compositions still
+apply left to right. Structurally identical families are checked once when
+widening erases boundary-case distinctions.
+
+`--inputs spending` removes the contract fixture entirely. It retains the common
+16-field TxInfo and spending ScriptInfo structure, typed list/map/bytes outer
+encodings and a nonnegative fee. Datum option, reference, redeemer, interval,
+treasury and donation are independent arbitrary Data. It has no keys, assets,
+amounts, schedule, boundary cases or variations. Missing or malformed nested
+values are included; this is not a ledger-validity predicate.
+
+These wider domains are opt-in. Fully generic checks for the sampled HTLC,
+vesting and escrow pairs remained inconclusive even with a 30-minute wall-clock
+limit. Budgets bound execution work, not ignored context size or symbolic
+reasoning. Narrower boundary domains remain available; timeouts never establish
+preservation or silently narrow an unbounded claim.
+
+The previous symmetric output check remains available with `--equivalence`.
+For example, compare integer functions using `--equivalence --inputs integer
+--max-steps 1000`. Its independent step limits and unfinished-run semantics remain
+separate from the default budgeted acceptance check.
 
 ## General Description
 

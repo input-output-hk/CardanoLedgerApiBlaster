@@ -12,7 +12,7 @@ def scenario : Exploration := {
   label := "Vesting"
   directory := "equivalence/examples/linear_vesting"
   legacySeed := "VESTING_SEED"
-  config := { Support.config with language := "PlutusV3", steps := 100000 }
+  config := acceptanceConfig
   modes := #["vesting-full", "vesting-partial"]
   variationGroups := (_root_.Equivalence.Vesting.variationGroups.map List.toArray).toArray
   caseCount := (_root_.Equivalence.Vesting.cases true).size

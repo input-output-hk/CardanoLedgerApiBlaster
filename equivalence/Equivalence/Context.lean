@@ -141,6 +141,18 @@ def modifyField (value : Data) (index : Nat) (change : Data → Data) : Data :=
   | .Constr tag fields => .Constr tag (fields.modify index change)
   | other => other
 
+/-- Independent symbols for widening inspected fields. They never borrow an
+    unused TxInfo field, so composing variations cannot accidentally couple them. -/
+structure GeneralFields where
+  lower : Int := 0
+  upper : Int := 0
+  datum : Data := .I 0
+  redeemer : Data := .I 0
+  interval : Data := .I 0
+  reference : Data := .I 0
+
+abbrev GeneralFamily := GeneralFields → Family
+
 /-- Named symbolic inputs remain flat in the solver quantifiers and are bundled
     only while building and transforming a fixture. -/
 structure Parameters where
@@ -149,6 +161,7 @@ structure Parameters where
   outputs : List Data
   signatureTail : List Data
   timestamp : Int
+  general : GeneralFields := {}
 
 /-- A supplied context and the fixture information used by generic mutations. -/
 structure Sample where
@@ -230,6 +243,26 @@ def inputGroup : List Variation := [
     (fun s tx => setField tx 0 (.List [s.ownInput, s.secondInput,
       setField s.secondInput 0 (outputReference "third-ref")]))]
 
+/-- Widen fields independently; composing these removes fixture restrictions
+    without replacing the whole context by unconstrained Data. -/
+def generalizationGroup : List Variation := [
+  .txInfo "time-any" "independent arbitrary integer lower and upper timestamps"
+    (fun s tx => setField tx 7 (range s.parameters.general.lower s.parameters.general.upper)),
+  .txInfo "inputs-any" "input list replaced by arbitrary-length arbitrary Data"
+    (fun s tx => setField tx 0 (.List s.parameters.inputs)),
+  .txInfo "outputs-any" "output list replaced by arbitrary-length arbitrary Data"
+    (fun s tx => setField tx 2 (.List s.parameters.outputs)),
+  .txInfo "signers-any" "signer list replaced by arbitrary-length arbitrary Data, without a required prefix"
+    (fun s tx => setField tx 8 (.List s.parameters.signatureTail)),
+  .context "datum-any" "present spending datum replaced by independent arbitrary Data"
+    (fun s => modifyField s.context 2 (mapSpendingDatum (fun _ => s.parameters.general.datum))),
+  .context "redeemer-any" "redeemer replaced by independent arbitrary Data"
+    (fun s => setField s.context 1 s.parameters.general.redeemer),
+  .txInfo "interval-any" "entire validity interval replaced by independent arbitrary Data"
+    (fun s tx => setField tx 7 s.parameters.general.interval),
+  .context "reference-any" "spending reference replaced by independent arbitrary Data"
+    (fun s => modifyField s.context 2 (fun info => setField info 0 s.parameters.general.reference))]
+
 def malformedDatum : Variation :=
   .datum "datum-malformed" "spending datum replaced by an integer" (fun _ => .I 0)
 def constructorRedeemerGroup : List Variation := [
@@ -253,7 +286,7 @@ def infiniteBoundsGroup : List Variation := [
 
 /-- Common catalog; each fixture exposes the variations applicable to its domain. -/
 def sharedVariations : List Variation :=
-  baselineGroup ++ feeGroup ++ signerGroup ++ inputGroup ++ [malformedDatum] ++
+  baselineGroup ++ feeGroup ++ signerGroup ++ inputGroup ++ generalizationGroup ++ [malformedDatum] ++
     constructorRedeemerGroup ++ [emptyOutputs, inclusiveUpper] ++ infiniteBoundsGroup
 
 /-- Compositions run from left to right; a later write to the same field wins. -/
@@ -267,9 +300,10 @@ def applyVariations (catalog : List Variation) (selection : List String) (sample
     | none => s) sample
 
 /-- Solving, replay and emitted queries use the same fixture and composition. -/
-def explore (fixture : Parameters → Sample) (catalog : List Variation) (selection : List String) : Family :=
+def explore (fixture : Parameters → Sample) (catalog : List Variation) (selection : List String)
+    (general : GeneralFields := {}) : Family :=
   fun unused inputs outputs signatureTail timestamp =>
-    let sample := fixture ⟨unused, inputs, outputs, signatureTail, timestamp⟩
+    let sample := fixture ⟨unused, inputs, outputs, signatureTail, timestamp, general⟩
     Queries.contextArgs (applyVariations catalog selection sample).context
 
 /-- Flat, named binders let the CLI reconstruct the exact model for replay. -/
@@ -300,6 +334,86 @@ def familySome (args : Family) (p : List Term → Prop) : Prop :=
       ⟨rawReferenceInputs, rawOutputs, rawFee, rawMint, rawCertificates, rawWithdrawals,
         rawRedeemers, rawDatums, rawTxId, rawVotes, rawProposals, rawTreasury, rawDonation⟩⟩
       inputs outputs signatureTail timestamp)
+
+/-- Keep symbols flat and named in SMT models, constructing the record only
+    after quantification. Unused symbols disappear from narrower queries. -/
+def generalizedAll (args : GeneralFamily) (p : List Term → Prop) : Prop :=
+  ∀ (lowerTimestamp upperTimestamp : Int)
+    (arbitraryDatum arbitraryRedeemer arbitraryInterval arbitraryReference : Data),
+    familyAll (args ⟨lowerTimestamp, upperTimestamp, arbitraryDatum, arbitraryRedeemer,
+      arbitraryInterval, arbitraryReference⟩) p
+
+def generalizedSome (args : GeneralFamily) (p : List Term → Prop) : Prop :=
+  ∃ (lowerTimestamp upperTimestamp : Int)
+    (arbitraryDatum arbitraryRedeemer arbitraryInterval arbitraryReference : Data),
+    familySome (args ⟨lowerTimestamp, upperTimestamp, arbitraryDatum, arbitraryRedeemer,
+      arbitraryInterval, arbitraryReference⟩) p
+
+def generalizedAcceptancePreserved (args : GeneralFamily) (old new : Program)
+    (cpu memory : Nat) (v3 : Bool) : Prop :=
+  generalizedAll args fun parameters => Queries.acceptancePreserved parameters old new cpu memory v3
+
+def generalizedNoAcceptanceRegression (args : GeneralFamily) (old new : Program)
+    (cpu memory : Nat) (v3 : Bool) : Prop :=
+  generalizedAll args fun parameters => Queries.noAcceptanceRegression parameters old new cpu memory v3
+
+def generalizedTotalEquivalence (args : GeneralFamily) (old new : Program) (oldSteps newSteps : Nat) : Prop :=
+  generalizedAll args fun parameters => RunsEquivalent Queries.validatorValues
+    (execute old parameters oldSteps) (execute new parameters newSteps)
+
+def generalizedNoCompletedMismatch (args : GeneralFamily) (old new : Program) (oldSteps newSteps : Nat) : Prop :=
+  generalizedAll args fun parameters => ¬ RunsMismatch Queries.validatorValues
+    (execute old parameters oldSteps) (execute new parameters newSteps)
+
+def generalizedSometimesOutput (args : GeneralFamily) (program : Program) (steps : Nat) : Prop :=
+  generalizedSome args fun parameters => PlutusCore.UPLC.Utils.isSuccessful (execute program parameters steps)
+
+/-- Contract-independent spending domain. Only the common outer encodings are
+    fixed: lists/maps/bytes and a nonnegative fee, a 16-field TxInfo, and spending
+    ScriptInfo. The interval, reference, datum option and redeemer are arbitrary
+    independent Data, including missing or malformed options. -/
+def spendingFamily (spendingReference spendingDatumOption spendingRedeemer validRange
+    treasuryField donationField : Data) : Family :=
+  fun unused inputs outputs signatureTail _ =>
+    let tx := (unused.raw outputs false false).txInfo inputs signatureTail 0 0
+    let tx := setField (setField (setField tx 7 validRange) 14 treasuryField) 15 donationField
+    Queries.contextArgs (.Constr 0 [tx, spendingRedeemer,
+      .Constr 1 [spendingReference, spendingDatumOption]])
+
+def spendingAll (p : List Term → Prop) : Prop :=
+  ∀ spendingReference spendingDatumOption spendingRedeemer validRange treasuryField donationField : Data,
+    familyAll (spendingFamily spendingReference spendingDatumOption spendingRedeemer
+      validRange treasuryField donationField) p
+
+def spendingSome (p : List Term → Prop) : Prop :=
+  ∃ spendingReference spendingDatumOption spendingRedeemer validRange treasuryField donationField : Data,
+    familySome (spendingFamily spendingReference spendingDatumOption spendingRedeemer
+      validRange treasuryField donationField) p
+
+def spendingAcceptancePreserved (old new : Program) (cpu memory : Nat) (v3 : Bool) : Prop :=
+  spendingAll fun args => Queries.acceptancePreserved args old new cpu memory v3
+
+def spendingNoAcceptanceRegression (old new : Program) (cpu memory : Nat) (v3 : Bool) : Prop :=
+  spendingAll fun args => Queries.noAcceptanceRegression args old new cpu memory v3
+
+def spendingTotalEquivalence (old new : Program) (oldSteps newSteps : Nat) : Prop :=
+  spendingAll fun args => RunsEquivalent Queries.validatorValues
+    (execute old args oldSteps) (execute new args newSteps)
+
+def spendingNoCompletedMismatch (old new : Program) (oldSteps newSteps : Nat) : Prop :=
+  spendingAll fun args => ¬ RunsMismatch Queries.validatorValues
+    (execute old args oldSteps) (execute new args newSteps)
+
+def spendingSometimesOutput (program : Program) (steps : Nat) : Prop :=
+  spendingSome fun args => PlutusCore.UPLC.Utils.isSuccessful (execute program args steps)
+
+def familyAcceptancePreserved (args : Family) (old new : Program)
+    (cpu memory : Nat) (v3 : Bool) : Prop :=
+  familyAll args fun parameters => Queries.acceptancePreserved parameters old new cpu memory v3
+
+def familyNoAcceptanceRegression (args : Family) (old new : Program)
+    (cpu memory : Nat) (v3 : Bool) : Prop :=
+  familyAll args fun parameters => Queries.noAcceptanceRegression parameters old new cpu memory v3
 
 def familyNoCompletedMismatch (args : Family) (left right : Program) (leftSteps rightSteps : Nat) : Prop :=
   familyAll args fun parameters => ¬ RunsMismatch Queries.validatorValues

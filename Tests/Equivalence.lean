@@ -1,3 +1,5 @@
+import Tests.Equivalence.Generalization
+import Tests.Equivalence.Acceptance
 import Tests.Equivalence.Factorial
 import Tests.Equivalence.Model
 import Tests.Equivalence.Cli

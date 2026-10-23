@@ -155,7 +155,9 @@ def variationGroups : List (List Context.Variation) := [
   [⟨"lists-eight", "signed partial unlock at time 50 with 500 remaining; seven unrelated inputs, outputs and signers precede the required entries", (scanProbe 7)⟩,
     ⟨"lists-thirty-two", "signed partial unlock at time 50 with 500 remaining; thirty-one unrelated inputs, outputs and signers precede the required entries", (scanProbe 31)⟩]]
 
-def variations : Array (String × String) := variationGroups.flatten.toArray.map Context.Variation.describe
+def catalog : List Context.Variation := variationGroups.flatten ++ Context.generalizationGroup
+
+def variations : Array (String × String) := catalog.toArray.map Context.Variation.describe
 
 def Case.fixture (c : Case) (isPartial : Bool) (p : Context.Parameters) : Context.Sample :=
   let inputs := if isPartial then (if c.doubleInput then [ownInput, secondInput] else [ownInput]) else p.inputs
@@ -165,9 +167,13 @@ def Case.fixture (c : Case) (isPartial : Bool) (p : Context.Parameters) : Contex
   ⟨p, ctx, beneficiary, c.signed, ownInput, secondInput⟩
 
 def Case.variedArgs (c : Case) (isPartial : Bool) (selection : String) : Family :=
-  Context.explore (c.fixture isPartial) variationGroups.flatten (Context.variationNames selection)
+  Context.explore (c.fixture isPartial) catalog (Context.variationNames selection)
 
-def family (c : Case) (mode : String) (selection : List String) : Family :=
-  Context.explore (c.fixture (mode == "vesting-partial")) variationGroups.flatten selection
+def generalizedFamily (c : Case) (mode : String) (selection : List String) : Context.GeneralFamily :=
+  fun general => Context.explore (c.fixture (mode == "vesting-partial")) catalog selection general
+
+/-- Existing callers retain the fixture-only argument builder. -/
+def family (c : Case) (mode : String) (selection : List String) : Context.Family :=
+  generalizedFamily c mode selection {}
 
 end Equivalence.Vesting

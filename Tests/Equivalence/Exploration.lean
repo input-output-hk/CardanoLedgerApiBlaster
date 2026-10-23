@@ -7,7 +7,7 @@ open Support
 set_option stderrAsMessages false
 
 -- Distinct closed programs returning closures without inspecting their input.
--- Both accept every context; zero fuel makes every comparison inconclusive.
+-- Both finish successfully; zero fuel makes every comparison inconclusive.
 -- Exercise the actual sampler and Lean workers across all contract input modes.
 #eval show IO Unit from IO.FS.withTempDir fun directory => do
   IO.FS.writeFile (directory / "left.cbor_hex") "480100002221200101"
