@@ -1,0 +1,12 @@
+import Tests.Equivalence.Generalization
+import Tests.Equivalence.Acceptance
+import Tests.Equivalence.Factorial
+import Tests.Equivalence.Model
+import Tests.Equivalence.Cli
+import Tests.Equivalence.CapeCli
+import Tests.Equivalence.VestingCli
+import Tests.Equivalence.Context
+import Tests.Equivalence.Exploration
+import Tests.Equivalence.EscrowCli
+import Tests.Equivalence.HtlcCli
+import Tests.Equivalence.Variations
