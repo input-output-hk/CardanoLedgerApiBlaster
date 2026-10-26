@@ -5,8 +5,10 @@ package «CardanoLedgerApi» where
   -- add package configuration options here
   moreGlobalServerArgs := #["--threads=4"]
   moreLeanArgs := #["--threads=4"]
-  require PlutusCore from git "https://github.com/input-output-hk/PlutusCoreBlaster" @ "main"
-  require Blaster from git "https://github.com/input-output-hk/Lean-blaster" @ "beta-lambda-cache-optimization"
+  -- Execution costs from cek-machine-exunits; Fin translation from split/285-fin.
+  -- Blaster requires Z3 5.3.1 with the recfun-finder simplifier.
+  require PlutusCore from git "https://github.com/input-output-hk/PlutusCoreBlaster" @ "7a5a0b1ce37defc343640d985bab62e63f7744eb"
+  require Blaster from git "https://github.com/input-output-hk/Lean-blaster" @ "01ae099a4e84e4e82f68394e9f57e180d0b85d84"
 
 @[default_target]
 lean_lib «CardanoLedgerApi» where
@@ -14,4 +16,10 @@ lean_lib «CardanoLedgerApi» where
 
 @[test_driver]
 lean_lib «Tests» where
-  -- add library configuration options here
+  moreLeanArgs := #["--memory=8192"]
+
+lean_lib «UplcEquivalence» where
+  srcDir := "equivalence"
+  roots := #[`Equivalence]
+  globs := #[.one `Equivalence, .submodules `Equivalence]
+
