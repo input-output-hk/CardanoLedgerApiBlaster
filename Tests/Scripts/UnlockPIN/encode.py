@@ -4,8 +4,8 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parent
 flat = (root / "out/out.flat").read_bytes()
-if flat[:3] != bytes([1, 1, 0]):
-    raise SystemExit("Expected UPLC 1.1.0 for the Plutus V3 validator")
+if flat[:3] != bytes([1, 0, 0]):
+    raise SystemExit("Expected UPLC 1.0.0 for the Plutus V2 validator")
 size = len(flat)
 if size < 24:
     header = bytes([0x40 + size])

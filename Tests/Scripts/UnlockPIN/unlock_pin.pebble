@@ -1,13 +1,11 @@
-// Plutus V3 spending validator: one ScriptContext argument.
-// Check the complete Data encodings, including constructor tags and arities.
+// Plutus V2 spending validator: datum, redeemer, script context.
+// Compare complete Data encodings, including constructor tags and arities.
 data struct VoidDatum {}
 data struct Redeemer { pin: int }
 
-export function unlockPIN(ctx: ScriptContext): void {
-    const Spend{ optionalDatum } = ctx.purpose;
-    const Some{ value: datum } = optionalDatum;
+export function unlockPIN(datum: VoidDatum, redeemer: Redeemer, _context: ScriptContext): void {
     const expectedDatum: VoidDatum = {};
     const expectedRedeemer: Redeemer = { pin: 6781988 };
-    assert (datum as VoidDatum) == expectedDatum;
-    assert (ctx.redeemer as Redeemer) == expectedRedeemer;
+    assert datum == expectedDatum;
+    assert redeemer == expectedRedeemer;
 }

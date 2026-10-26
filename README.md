@@ -180,14 +180,14 @@ The example also uses `#blaster (solve-result: 1)` to confirm that the validator
 ### UnlockPIN
 
 `Tests/Scripts/UnlockPIN` — a [Pebble validator](Tests/Scripts/UnlockPIN/README.md)
-targeting Plutus V3. The redeemer must be `Constr 0 [I 6781988]` and the spending
+targeting Plutus V2. The redeemer must be `Constr 0 [I 6781988]` and the spending
 datum must be `Constr 0 []`. The Pebble source, pinned compiler dependencies, and
 build instructions reproduce the imported UPLC.
 
 ```lean4
-/-- unlockPIN successful ↔ expected redeemer ∧ datum is void (V3) -/
+/-- unlockPIN successful ↔ expected redeemer ∧ datum is void -/
 theorem successful_iff_valid_pin_and_void_datum :
-  ∀ (input : ScriptContext),
+  ∀ (input : SpendingInput),
     validSpendingContext input →
     (isSuccessful (appliedUnlockPIN.prop input) ↔ isExpectedRedeemer input ∧ isVoidDatum input) := by blaster
 ```

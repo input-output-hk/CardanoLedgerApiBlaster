@@ -5,7 +5,7 @@
     "build": "pebble export --function-name unlockPIN --config pebble.config.json && python3 encode.py"
   },
   "devDependencies": {
-    "@harmoniclabs/pebble": "0.1.10",
-    "@harmoniclabs/pebble-cli": "0.1.10"
+    "@harmoniclabs/pebble": "0.1.1",
+    "@harmoniclabs/pebble-cli": "0.1.1"
   }
 }

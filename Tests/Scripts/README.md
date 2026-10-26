@@ -15,8 +15,8 @@ Lean proof command.
 | MintingPolicy | Source repository requires access | No public reproduction guide |
 | ParamFeed | Source unidentified | No source build recipe yet |
 
-The CTF scripts use the original Plutus V2 interface. UnlockPIN uses Plutus V3,
-as do Auction, Governance, MintingPolicy, and ParamFeed. In this tree most `.flat`
+The CTF scripts and UnlockPIN use the original Plutus V2 interface. Auction,
+Governance, MintingPolicy, and ParamFeed use Plutus V3. In this tree most `.flat`
 files are ASCII hex with a single CBOR wrapper; ParamFeed instead uses `flat_hex`.
 Always follow the `#import_uplc` declaration rather than inferring the encoding
 from the filename.
