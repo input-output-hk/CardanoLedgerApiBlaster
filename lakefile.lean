@@ -17,9 +17,13 @@ lean_lib «CardanoLedgerApi» where
 @[test_driver]
 lean_lib «Tests» where
   moreLeanArgs := #["--memory=8192"]
+  extraDepTargets := #[`uplc_equiv]
 
 lean_lib «UplcEquivalence» where
   srcDir := "equivalence"
   roots := #[`Equivalence]
   globs := #[.one `Equivalence, .submodules `Equivalence]
 
+lean_exe uplc_equiv where
+  srcDir := "equivalence"
+  root := `Equivalence.Cli
