@@ -59,11 +59,11 @@ With the project's Lean dependencies and the Z3 version required by Blaster:
 lake build Tests.Scripts.UnlockPIN.Properties
 ```
 
-The main theorem proves, for every valid V3 spending context, that execution
-succeeds iff the PIN redeemer and void datum match exactly. A stronger theorem
-establishes that equivalence without ledger-validity assumptions. Two explicit
-transaction witnesses refute the original claims that arbitrary integer PINs
-work and that every valid context fails; `native_decide` checks their ledger
-validity. Blaster and its SMT backend carry the same trust assumptions as the
-other examples, and the witness validity checks additionally trust Lean's native
-evaluation.
+The theorem uses Blaster directly to prove, for every context satisfying
+`validSpendingContext`, that execution succeeds iff the PIN redeemer and void
+datum match exactly. The original two `#blaster (solve-result: 1)` checks ask
+Blaster to find counterexamples to the claims that arbitrary integer PINs work
+and that every valid context fails. All three checks retain the ledger-validity
+predicate and quantify over the full context, without fixing transaction lists
+or supplying witnesses. The proofs use Blaster and its SMT backend with the same
+trust assumptions as the other examples.

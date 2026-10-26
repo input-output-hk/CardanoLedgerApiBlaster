@@ -189,9 +189,7 @@ build instructions reproduce the imported UPLC.
 theorem successful_iff_valid_pin_and_void_datum :
   ∀ (input : ScriptContext),
     validSpendingContext input →
-    (isSuccessful (appliedUnlockPIN.prop input) ↔ isExpectedRedeemer input ∧ isVoidDatum input) := by
-  intro input _
-  exact successful_iff_expected_data input
+    (isSuccessful (appliedUnlockPIN.prop input) ↔ isExpectedRedeemer input ∧ isVoidDatum input) := by blaster
 ```
 
 ### SellNFT
