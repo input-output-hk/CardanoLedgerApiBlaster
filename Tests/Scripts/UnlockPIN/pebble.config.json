@@ -1,0 +1,8 @@
+{
+  "entry": "./unlock_pin.pebble",
+  "outDir": "./out",
+  "compilerVersion": "0.1.10",
+  "targetUplcVersion": [1, 1, 0],
+  "removeTraces": true,
+  "addMarker": false
+}
