@@ -3,6 +3,35 @@ import Tests.Equivalence.Support
 namespace Tests.Equivalence.Cli
 open Support Lean
 
+-- An eager unused ifThenElse argument divides by zero at x=0. The optimized
+-- program returns 1. This is additional acceptance, so only the reverse
+-- implication fails; integer return values require the V2 acceptance rules.
+#eval show IO Unit from do
+  let settings : _root_.Equivalence.Cli.Config := {
+    scripts := #["equivalence/examples/ifthenelse/ifthenelse.uplc",
+      "equivalence/examples/ifthenelse/ifthenelseopt.uplc"]
+    format := "textual"
+    inputs := "integer"
+    language := "PlutusV2"
+    budget := some (100000000, 1000000)
+    equivalence := true
+    skipOldRejected := true
+    timeout := 5
+    wallTimeout := 5 }
+  -- The smaller budget used to select expensive symbolic builtin-cost guards.
+  for budget in [(1000000, 10000), (100000000, 1000000)] do
+    let report ← runBounded { settings with budget := some budget }
+    verdict report "inequivalent"
+    let counterexample ← witness report
+    expect counterexample ["input"] (0 : Int)
+    expect counterexample ["direction"] "new_to_old"
+    expect counterexample ["old", "kind"] "error"
+    expect counterexample ["new", "accepts"] true
+    expect counterexample ["new", "result", "value"] (1 : Int)
+  let forward ← runBounded { settings with equivalence := false, skipOldRejected := false }
+  verdict forward "preserved"
+  expect forward ["old_acceptance_witness", "old", "accepts"] true
+
 -- Successful values may differ: equivalence compares accepted inputs.
 #eval do
   let report ← comparePrograms "(lam n (con integer 1))" "(lam n (con integer 2))"
@@ -46,8 +75,8 @@ open Support Lean
 #eval do
   let accept := "(lam c (con unit ()))"
   let reject := "(lam c (error))"
-  for (old, new, expected) in [(reject, accept, "preserved"), (accept, reject, "regression"),
-      (accept, accept, "preserved"), (reject, reject, "preserved")] do
+  for (old, new, expected) in [(reject, accept, "vacuously_preserved"), (accept, reject, "regression"),
+      (accept, accept, "preserved"), (reject, reject, "vacuously_preserved")] do
     let report ← comparePrograms old new acceptanceConfig
     verdict report expected
     if expected == "regression" then
@@ -59,7 +88,7 @@ open Support Lean
 #eval do
   let accept := "(lam c (con unit ()))"
   for (cpu, memory, expected) in [(64100, 500, "regression"),
-      (64099, 500, "preserved"), (64100, 499, "preserved")] do
+      (64099, 500, "vacuously_preserved"), (64100, 499, "vacuously_preserved")] do
     let report ← comparePrograms accept "(lam c (error))"
       { acceptanceConfig with budget := some (cpu, memory) }
     verdict report expected
@@ -86,7 +115,7 @@ open Support Lean
     expect w ["old", "accepts"] oldAccepts
     expect w ["new", "accepts"] (!oldAccepts)
   let report ← comparePrograms accept "(lam c (error))" { config with budget := some (0, 0) }
-  verdict report "equivalent"
+  verdict report "vacuously_equivalent"
   noCounterexample report
 
 -- Builtin charges are additional to the CEK machine-node charges.
@@ -107,5 +136,50 @@ open Support Lean
     let report ← comparePrograms "(lam c (con unit ()))" "(lam c (con integer 42))"
       { acceptanceConfig with language }
     verdict report expected
+
+-- Skip only the rejection query; comparisons and the accepting-witness
+-- requirement still apply to integer and ledger-checked contexts.
+#eval show IO Unit from do
+  let settings : _root_.Equivalence.Cli.Config := {
+    budget := some (1000000, 10000), timeout := 5, skipOldRejected := true }
+  for mode in ["integer", "valid-context"] do
+    let report ← comparePrograms "(lam c (con unit ()))" "(lam c (con unit ()))"
+      { settings with inputs := mode }
+    verdict report "preserved"
+    let queries ← field report ["queries"]
+    check report (queries.getObjVal? "old_rejected").toOption.isNone "OLD rejection query was not skipped"
+    expect report ["queries", "acceptance_preserved"] "valid"
+    expect report ["old_acceptance_witness", "replayed"] true
+    expect report ["old_acceptance_witness", "old", "accepts"] true
+  let report ← comparePrograms "(lam c (error))" "(lam c (error))"
+    { settings with inputs := "integer" }
+  verdict report "inconclusive"
+  expect report ["inconclusive_reason"] "old_acceptance_unestablished"
+
+-- The OLD-acceptance witness must come from the model, not just the zero input.
+#eval show IO Unit from do
+  let only42 := acceptIf "[[(builtin equalsInteger) c] (con integer 42)]"
+  let report ← comparePrograms only42 "(lam c (con unit ()))"
+    { acceptanceConfig with budget := some (1000000, 10000) }
+  verdict report "preserved"
+  expect report ["old_acceptance_witness", "input"] (42 : Int)
+  expect report ["old_acceptance_witness", "replayed"] true
+  expect report ["old_acceptance_witness", "old", "accepts"] true
+
+-- Rejection discharges only the direction starting at the rejected script.
+#eval show IO Unit from do
+  let settings := selectFamily config "htlc-claim" 45 "baseline"
+  let report ← comparePrograms "(lam c (error))" "(lam c (error))" settings
+  verdict report "vacuously_equivalent"
+  expect report ["derived_queries", "acceptance_preserved"] "old_rejected"
+  expect report ["derived_queries", "reverse_acceptance_preserved"] "new_rejected"
+  noCounterexample report
+  let report ← comparePrograms "(lam c (error))" "(lam c (con unit ()))" settings
+  verdict report "inequivalent"
+  let counterexample ← witness report
+  expect counterexample ["direction"] "new_to_old"
+  let derived ← field report ["derived_queries"]
+  check report (derived.getObjVal? "reverse_acceptance_preserved").toOption.isNone
+    "Forward rejection discharged reverse preservation"
 
 end Tests.Equivalence.Cli

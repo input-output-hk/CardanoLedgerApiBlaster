@@ -28,12 +28,17 @@ def moduleSearchPath : List String := module_search_path%
 opaque setWorkerMaxMemory (bytes : USize) : BaseIO Unit
 
 structure Config where
+  mode : String := "validator"
+  bounded : Bool := false
+  steps : Nat := 100000
+  inputsSpecified : Bool := false
+  formatSpecified : Bool := false
   scripts : Array String := #[]
   format : String := "single_cbor_hex"
   leftFormat : Option String := none
   rightFormat : Option String := none
   language : String := "PlutusV3"
-  inputs : String := "data"
+  inputs : String := "valid-context"
   equivalence : Bool := false
   budget : Option (Nat × Nat) := none
   timeout : Nat := 20
@@ -43,39 +48,59 @@ structure Config where
   worker : Bool := false
   caseIndex : Option Nat := none
   variation : String := "baseline"
+  rawContext : Bool := false
+  skipOldRejected : Bool := false
+
+/-- Progress is separate from the final report, including in JSON mode. -/
+def progress (message : String) : IO Unit := do
+  let stderr ← IO.getStderr
+  stderr.putStrLn s!"[uplc_equiv] {message}"
+  stderr.flush
 
 def specificVariationNames (choices : Array (String × String)) : String :=
   ", ".intercalate (choices.toList.filterMap fun (name, _) =>
     if Context.sharedVariations.any (fun variation => variation.name == name) then none else some name)
 
-def usage : String := "Usage: lake exe uplc_equiv OLD NEW --budget CPU MEMORY [options]
+def usage : String := "Usage: lake exe uplc_equiv OLD NEW [options]
 
-Check that NEW accepts every input accepted by OLD within the same budget.
-Uses the bundled post-Conway cost model (V3: E; V1/V2: D).
-  --inputs MODE                                         data (default, V3 context), data3 (V2 arguments), integer
+Validator mode checks that NEW accepts every input accepted by OLD within the same budget.
+Function mode compares returned constants and success/error outcomes, ignoring execution costs.
+  --mode validator|function                             Default validator; function defaults to integer inputs, no budget
+  --steps N                                             Function analysis step limit (default 100000)
+  --bounded                                             Function: preserve OLD constant results within limits; allow additional NEW results
+Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D).
+  --inputs valid-context                                Validator default: generic V3 contexts; model-valid witnesses/replays, Data-superset proofs
+  --inputs MODE                                         data (unrestricted Data), data3 (V2 arguments), integer
   --inputs spending                                     Generic spending context; arbitrary datum, redeemer, interval and lists
   --inputs htlc-refund|htlc-claim                       Restricted CAPE HTLC boundary domains (claim: fixed correct preimage)
   --inputs vesting-full|vesting-partial                 CAPE vesting domains (full: unbounded lists; partial: bounded inspected lists)
   --inputs escrow-deposit|escrow-accept|escrow-refund   CAPE escrow boundary domains
   --case N                                              Restrict the selected input mode to boundary case N
   --variation NAMES                                     Comma-separated variations, applied left to right (default baseline)
-  --format FORMAT                                       textual, flat, flat_hex, single_cbor_hex (default), double_cbor_hex
+  --format FORMAT                                       textual, flat, flat_hex, single_cbor_hex (default), double_cbor_hex; .uplc paths default to textual
   --format-left FORMAT                                  Override the left script format
   --format-right FORMAT                                 Override the right script format
   --language VERSION                                    PlutusV1, PlutusV2, PlutusV3 (default)
-  --budget CPU MEMORY                                   Shared execution-unit limits (required for acceptance)
-  --equivalence                                         Check acceptance preservation in both directions
+  --budget CPU MEMORY                                   Shared execution-unit limits (required for validators; optional for functions)
+  --equivalence                                         Check both directions (validators or --bounded functions)
+  --skip-old-rejected                                   Skip the preliminary OLD rejection query; OLD acceptance still needs a witness
   --timeout SECONDS                                     Z3 timeout per query (default 20)
   --wall-timeout SECONDS                                Limit the complete check, including preprocessing (default 180)
+  --raw-context                                         Allow ledger-inconsistent HTLC/vesting/escrow contexts
   --emit-lean FILE                                      Save the checked Lean queries for inspection
   --json                                                Emit a JSON report
   --help                                                Show this help
 
-Exit codes: 0 preserved/equivalent, 1 regression/inequivalent, 2 inconclusive, 3 tool/usage error.
-Budget exhaustion is rejection; the internal analysis guard is inconclusive.
-V3 acceptance requires a unit result; V1/V2 accept any successful result.
+Strict function comparisons require observable outcomes. --bounded maps errors, nonconstant returns and exhausted limits to none.
+Exit codes: 0 preserved/equivalent/bounded_preserved/bounded_equivalent (validator: OLD acceptance witnessed),
+1 regression/inequivalent/bounded_regression/bounded_inequivalent,
+2 inconclusive, 3 tool/usage error, 4 vacuously_preserved/vacuously_equivalent.
+Validator budget exhaustion is rejection; strict function budget exhaustion is inconclusive.
+Analysis exhaustion is inconclusive, except that --bounded observes it as none.
+Validator V3 acceptance requires a unit result; V1/V2 accept any successful result.
 Budgets are per-script allocations; cost coefficients are bundled, not network parameters.
 Counterexamples include the input and both outcomes, replayed with the same limits.
+Progress is printed live on stderr; the final text or JSON report is printed on stdout.
 Verification uses Blaster's SMT results without reconstructed Lean proof terms.\n\nShared variations: " ++
   ", ".intercalate (Context.sharedVariations.map Context.Variation.name)
   ++ "\nAvailability depends on the selected input mode."
@@ -118,6 +143,15 @@ def scenarioFor (mode : String) : Option Scenario :=
 
 def isContextMode (mode : String) : Bool := (scenarioFor mode).isSome
 
+def checksLedger (c : Config) : Bool :=
+  c.inputs == "valid-context" || (isContextMode c.inputs && !c.rawContext)
+
+def validLedgerContext (c : Config) (raw : PlutusCore.Data.Data) : Bool :=
+  if c.inputs == "valid-context" then Ledger.validScriptContext raw else Ledger.validContext raw
+
+def auditLedgerContext (c : Config) (raw : PlutusCore.Data.Data) : Json :=
+  Ledger.audit raw (c.inputs != "valid-context")
+
 def caseCount (mode : String) : Nat :=
   ((scenarioFor mode).map (fun scenario => scenario.caseCount mode)).getD 0
 
@@ -133,8 +167,27 @@ def natOption (key value : String) (positive := false) : Except String Nat := do
 def parse (c : Config) : List String → Except String Config
   | [] => do
     unless c.scripts.size == 2 do throw "expected old and new script paths"
-    unless c.budget.isSome do throw "acceptance checking requires --budget CPU MEMORY"
-    unless ["integer", "data", "data3", "spending"].contains c.inputs || isContextMode c.inputs do throw s!"unsupported input mode: {c.inputs}"
+    unless ["validator", "function"].contains c.mode do throw s!"unsupported mode: {c.mode}"
+    let c := if c.mode == "function" && !c.inputsSpecified && c.inputs == "valid-context" then
+      { c with inputs := "integer" } else c
+    let c := if c.formatSpecified then c else
+      { c with
+        leftFormat := c.leftFormat.orElse fun _ => if c.scripts[0]!.endsWith ".uplc" then some "textual" else none
+        rightFormat := c.rightFormat.orElse fun _ => if c.scripts[1]!.endsWith ".uplc" then some "textual" else none }
+    if c.bounded && c.mode != "function" then throw "--bounded requires --mode function"
+    if c.mode == "validator" && c.budget.isNone then
+      throw "acceptance checking requires --budget CPU MEMORY"
+    if c.mode == "function" then
+      unless ["integer", "data", "data3"].contains c.inputs do
+        throw "function mode supports --inputs integer, data or data3"
+      if c.equivalence && !c.bounded then
+        throw "function --equivalence requires --bounded; strict function mode already compares both outcomes"
+      if c.skipOldRejected || c.rawContext then
+        throw "--skip-old-rejected and --raw-context are validator options"
+    unless ["integer", "data", "data3", "spending", "valid-context"].contains c.inputs || isContextMode c.inputs do throw s!"unsupported input mode: {c.inputs}"
+    if c.inputs == "valid-context" then
+      if c.rawContext then throw "--inputs valid-context cannot be combined with --raw-context; use --inputs data for raw Data"
+      if c.language != "PlutusV3" then throw "--inputs valid-context requires --language PlutusV3"
     if let some index := c.caseIndex then
       unless isContextMode c.inputs do throw "--case requires a contract input mode"
       unless index < caseCount c.inputs do throw "--case is outside the selected mode's case range"
@@ -143,21 +196,28 @@ def parse (c : Config) : List String → Except String Config
         throw s!"unsupported variation for {c.inputs}: {variation}"
     if c.inputs == "spending" && c.language != "PlutusV3" then
       throw "--inputs spending requires --language PlutusV3"
+    if isContextMode c.inputs && !c.rawContext && c.language != "PlutusV3" then
+      throw "ledger-model context checks require --language PlutusV3; use --raw-context for other languages"
     unless ["PlutusV1", "PlutusV2", "PlutusV3"].contains c.language do
       throw s!"unsupported language: {c.language}"
     for f in [c.format, c.leftFormat.getD c.format, c.rightFormat.getD c.format] do
       unless formats.contains f do throw s!"unsupported format: {f}"
     return c
+  | "--bounded" :: rest => parse { c with bounded := true } rest
+  | "--mode" :: v :: rest => parse { c with mode := v } rest
+  | "--steps" :: v :: rest => do parse { c with steps := ← natOption "--steps" v true } rest
   | "--equivalence" :: rest => parse { c with equivalence := true } rest
   | "--budget" :: cpu :: memory :: rest => do
     parse { c with budget := some (← natOption "--budget CPU" cpu, ← natOption "--budget MEMORY" memory) } rest
   | "--json" :: rest => parse { c with json := true } rest
   | "--worker" :: rest => parse { c with worker := true, json := true } rest
-  | "--format" :: v :: rest => parse { c with format := v } rest
+  | "--raw-context" :: rest => parse { c with rawContext := true } rest
+  | "--skip-old-rejected" :: rest => parse { c with skipOldRejected := true } rest
+  | "--format" :: v :: rest => parse { c with format := v, formatSpecified := true } rest
   | "--format-left" :: v :: rest => parse { c with leftFormat := some v } rest
   | "--format-right" :: v :: rest => parse { c with rightFormat := some v } rest
   | "--language" :: v :: rest => parse { c with language := v } rest
-  | "--inputs" :: v :: rest => parse { c with inputs := v } rest
+  | "--inputs" :: v :: rest => parse { c with inputs := v, inputsSpecified := true } rest
   | "--case" :: v :: rest => do parse { c with caseIndex := some (← natOption "--case" v) } rest
   | "--variation" :: v :: rest => parse { c with variation := v } rest
   | "--emit-lean" :: v :: rest => parse { c with emitLean := some v } rest
@@ -188,31 +248,82 @@ structure Query where
   declaration : Name
   sides : Array Nat
 
+def functionQueryName (c : Config) : String :=
+  if c.bounded then
+    if c.equivalence then "bounded_function_equivalent" else "bounded_function_preserved"
+  else "function_equivalent"
+
 def Query.wantsCounterexample (query : Query) : Bool :=
-  query.name.endsWith "no_acceptance_regression"
+  query.name == "function_equivalent" || query.name == "bounded_function_equivalent" || query.name == "bounded_function_preserved" || query.name.endsWith "no_acceptance_regression" || query.name == "old_rejected"
+
+def Query.description (query : Query) : String :=
+  match query.name with
+  | "function_equivalent" => "comparing function outcomes and returned values"
+  | "bounded_function_preserved" => "preserving OLD constant results within the supplied limits"
+  | "bounded_function_equivalent" => "comparing bounded function observations (constant or none)"
+  | "old_rejected" => "checking whether OLD rejects every input"
+  | "new_rejected" => "checking whether NEW rejects every input"
+  | "no_acceptance_regression" => "checking for an OLD-to-NEW acceptance regression"
+  | "acceptance_preserved" => "proving OLD-to-NEW acceptance preservation"
+  | "reverse_no_acceptance_regression" => "checking for a NEW-to-OLD acceptance regression"
+  | "reverse_acceptance_preserved" => "proving NEW-to-OLD acceptance preservation"
+  | _ => query.name
 
 /-- Domains choose declarations; the check determines query names and sides. -/
 def queries (c : Config) : Array Query :=
-  let (noRegression, preserved) :=
-    if c.inputs == "spending" then
-      (``Context.spendingNoAcceptanceRegression, ``Context.spendingAcceptancePreserved)
-    else if isContextMode c.inputs then
-      (``Context.generalizedNoAcceptanceRegression, ``Context.generalizedAcceptancePreserved)
-    else if c.inputs == "data" then
-      (``Queries.contextNoAcceptanceRegression, ``Queries.contextAcceptancePreserved)
-    else if c.inputs == "data3" then
-      (``Queries.validatorNoAcceptanceRegression, ``Queries.validatorAcceptancePreserved)
-    else
-      (``Queries.integerNoAcceptanceRegression, ``Queries.integerAcceptancePreserved)
-  let forward : Array Query := #[
-    ⟨"no_acceptance_regression", noRegression, #[0, 1]⟩,
-    ⟨"acceptance_preserved", preserved, #[0, 1]⟩]
-  if c.equivalence then forward ++ #[
-    ⟨"reverse_no_acceptance_regression", noRegression, #[1, 0]⟩,
-    ⟨"reverse_acceptance_preserved", preserved, #[1, 0]⟩]
-  else forward
+  if c.mode == "function" then
+    let declaration := if c.bounded && !c.equivalence then
+        if c.inputs == "data" then ``Queries.dataBoundedFunctionPreserved
+        else if c.inputs == "data3" then ``Queries.data3BoundedFunctionPreserved
+        else ``Queries.integerBoundedFunctionPreserved
+      else if c.bounded then
+        if c.inputs == "data" then ``Queries.dataBoundedFunctionEquivalent
+        else if c.inputs == "data3" then ``Queries.data3BoundedFunctionEquivalent
+        else ``Queries.integerBoundedFunctionEquivalent
+      else if c.inputs == "data" then ``Queries.dataFunctionEquivalent
+      else if c.inputs == "data3" then ``Queries.data3FunctionEquivalent
+      else ``Queries.integerFunctionEquivalent
+    #[⟨functionQueryName c, declaration, #[0, 1]⟩]
+  else
+    let (noRegression, preserved) :=
+      if c.inputs == "spending" then
+        (``Context.spendingNoAcceptanceRegression, ``Context.spendingAcceptancePreserved)
+      else if isContextMode c.inputs then
+        (``Context.generalizedNoAcceptanceRegression, ``Context.generalizedAcceptancePreserved)
+      else if c.inputs == "data" || c.inputs == "valid-context" then
+        (``Queries.contextNoAcceptanceRegression, ``Queries.contextAcceptancePreserved)
+      else if c.inputs == "data3" then
+        (``Queries.validatorNoAcceptanceRegression, ``Queries.validatorAcceptancePreserved)
+      else
+        (``Queries.integerNoAcceptanceRegression, ``Queries.integerAcceptancePreserved)
+    let forward : Array Query := #[
+      ⟨"no_acceptance_regression", noRegression, #[0, 1]⟩,
+      ⟨"acceptance_preserved", preserved, #[0, 1]⟩]
+    let rejectedDeclaration :=
+      if c.inputs == "spending" then ``Context.spendingRejected
+      else if isContextMode c.inputs then ``Context.generalizedRejected
+      else if c.inputs == "data" || c.inputs == "valid-context" then ``Queries.contextRejected
+      else if c.inputs == "data3" then ``Queries.validatorRejected
+      else ``Queries.integerRejected
+    let rejected := fun (name : String) (side : Nat) =>
+      #[Query.mk name rejectedDeclaration #[side]]
+    let forward := (if c.skipOldRejected then #[] else rejected "old_rejected" 0) ++ forward
+    if c.equivalence then forward ++ rejected "new_rejected" 1 ++ #[
+      ⟨"reverse_no_acceptance_regression", noRegression, #[1, 0]⟩,
+      ⟨"reverse_acceptance_preserved", preserved, #[1, 0]⟩]
+    else forward
 
 def queryNames (c : Config) : Array String := (queries c).map Query.name
+
+/-- A completed rejection proof settles only the direction starting at that script.
+    The pointwise implications are `Acceptance.preserved_of_rejected` and
+    `Acceptance.no_regression_of_rejected`. -/
+def rejectionEvidence (c : Config) (query : Query) (results : Array Blaster.Smt.Result) : Option String :=
+  let name := if query.sides[0]? == some 0 then "old_rejected" else "new_rejected"
+  if query.name == name then none
+  else match results[(queryNames c).idxOf name]? with
+    | some .Valid => some name
+    | _ => none
 
 def vestingCases (c : Config) : Array Vesting.Case :=
   let choices := Vesting.cases (c.inputs == "vesting-partial")
@@ -232,6 +343,8 @@ def escrowCases (c : Config) : Array Escrow.Case :=
 
 def baseInputDomain (c : Config) : String :=
   if c.inputs == "integer" then "all integers, encoded as raw UPLC integer constants"
+  else if c.inputs == "valid-context" then
+    "Generic V3 script contexts satisfying the ledger model's validScriptContext predicate, for all script purposes; no contract template; concrete model-valid domain and OLD-acceptance witnesses and counterexample replays required; preservation is proved over the unrestricted Data superset because symbolic ledger filtering is unavailable; model validity does not establish on-chain reachability"
   else if c.inputs == "spending" then
     "Generic V3 spending context: constructor 0 with a 16-field TxInfo, arbitrary redeemer and spending ScriptInfo; arbitrary-length independent input, reference-input, output and signer lists; arbitrary nested Data; nonnegative integer fee; map/list/bytes outer encodings for the other common TxInfo fields; independent arbitrary Data for the interval, spending reference, datum option, treasury and donation; no fixed keys, assets, amounts, schedule or boundary cases; no ledger-validity restriction on nested Data or transaction relationships"
   else if isEscrowMode c.inputs then
@@ -239,7 +352,7 @@ def baseInputDomain (c : Config) : String :=
       | some index, some choice =>
         s!"; restricted to case {index}: time offset {choice.time.value - 100}, signed={choice.signed}, amount delta={choice.amountDelta}, hasTreasury={choice.hasTreasury}, hasDonation={choice.hasDonation}"
       | _, _ => ""
-    s!"CAPE two-party escrow {c.inputs}: price 75000000 lovelace; deposit time 1000000, deadline 2800000; amount price-1/price/price+1; one own escrow input and one output; fixed keys, ASCII script hash, references and Deposited datum; raw integer redeemer; no signer or required signer first with arbitrary Data tail; Deposit upper endpoint 1000000/1000001/1000002 (exclusive), arbitrary lower endpoint; Accept/Refund lower endpoint 2799999/2800000/2800001, arbitrary upper endpoint" ++ selected
+    s!"CAPE two-party escrow {c.inputs}: price 75000000 lovelace; deposit time 1000000, deadline 2800000; amount price-1/price/price+1; one own escrow input, a separate funding input and one output; fixed keys, ASCII script hash, references and Deposited datum; raw integer redeemer; no signer or required signer first with arbitrary Data tail; Deposit upper endpoint 1000000/1000001/1000002 (exclusive), arbitrary lower endpoint; Accept/Refund lower endpoint 2799999/2800000/2800001, arbitrary upper endpoint" ++ selected
   else if c.inputs == "htlc-claim" then
     "CAPE HTLC claim template: effective upper timestamp 99/100/101, arbitrary integer lower timestamp; one own input and optional second same-address input; zero or one recipient signature; fixed correct preimage, datum (timeout 100), references, addresses; unused fields share the typed outer encodings described below"
   else if c.inputs == "htlc-refund" then
@@ -263,14 +376,20 @@ def baseInputDomain (c : Config) : String :=
   else "all triples of Plutus Data (datum, redeemer, context), without ledger-validity restrictions"
 
 def inputDomain (c : Config) : String :=
-  let base := if !isHtlcMode c.inputs then baseInputDomain c else
+  let base := if c.mode == "function" && c.inputs == "data" then
+    "all Plutus Data values as a single function argument"
+    else if c.mode == "function" && c.inputs == "data3" then
+      "all triples of Plutus Data as function arguments"
+    else if !isHtlcMode c.inputs then baseInputDomain c else
     match c.caseIndex, (htlcCases c)[0]? with
     | some index, some choice =>
       baseInputDomain c ++ s!"; restricted to case {index}: boundary timestamp {choice.time.value}, signed={choice.signed}, doubleInput={choice.doubleInput}, hasTreasury={choice.hasTreasury}, hasDonation={choice.hasDonation}"
     | _, _ => baseInputDomain c
   let base := if isContextMode c.inputs then
     base ++ "; shared list/map/bytestring/integer outer encodings; nonnegative fee and treasury/donation amounts; " ++
-      "unbounded unused list/map contents and signature tail; no ledger-validity restriction on nested Data or transaction relationships"
+      "unbounded unused list/map contents and signature tail; " ++
+      (if c.rawContext then "raw context mode: ledger validity is not required"
+       else "ledger-model checks require a concrete valid-domain witness and valid counterexample replays; preservation is proved over the raw-context superset")
     else base
   let variation := c.variation
   let choices := variationChoices c.inputs
@@ -299,12 +418,49 @@ def selectedFamilies (c : Config) : Array (Context.GeneralFamily × Expr) :=
 
 def contextFamilies (c : Config) : Array Context.GeneralFamily := (selectedFamilies c).map Prod.fst
 
+/-- A bounded search can establish nonemptiness, never emptiness. Each candidate
+    is rebuilt through the actual family so mutations are not silently repaired. -/
+def nativeDomainWitness (c : Config)
+    (matchesCandidate : PlutusCore.Data.Data → Bool := fun _ => true) : Option PlutusCore.Data.Data := Id.run do
+  if c.inputs == "valid-context" then
+    return if Ledger.validScriptContext Context.genericValidContext && matchesCandidate Context.genericValidContext then
+      some Context.genericValidContext else none
+  let input := if isVestingMode c.inputs then Vesting.ownInput
+    else if isEscrowMode c.inputs then Escrow.ownInput else HTLC.ownInput
+  let general : Context.GeneralFields := {
+    lower := 0, upper := 3000000, datum := .I 0, redeemer := .I 0,
+    reference := Context.ownRef, interval := Context.range 0 3000000 }
+  for family in contextFamilies c do
+    for timestamp in [0, 200, 3000000] do
+      let seed : Context.UnusedTxInfo := { fee := 1, treasury := 1, donation := 1 }
+      let [.Const (.Data initial)] := family general seed [input] [] [] timestamp | continue
+      let some initialBalance := Ledger.balancing initial | continue
+      let changeValue := CardanoLedgerApi.V2.add "" "" (-1) initialBalance.spent
+      let change := Context.txOutput
+        (Context.pubKeyAddress ⟨String.mk (List.replicate 28 'c')⟩) (.Map changeValue)
+      for outputs in [[], [change]] do
+        let seed := { seed with rawUnused := { seed.rawUnused with outputs := .List outputs } }
+        let [.Const (.Data raw)] := family general seed [input] outputs [] timestamp | continue
+        let some balance := Ledger.balancing raw | continue
+        if balance.fee ≤ 0 then continue
+        let unused := { seed with
+          fee := balance.fee
+          mint := balance.mint
+          rawUnused := { seed.rawUnused with
+            fee := .I balance.fee
+            mint := .Map balance.mint
+            redeemers := balance.redeemers } }
+        let [.Const (.Data candidate)] := family general unused [input] outputs [] timestamp | continue
+        if Ledger.validContext candidate && matchesCandidate candidate then return some candidate
+  return none
+
 def contextFamilyExprs (c : Config) : Array Expr := (selectedFamilies c).map Prod.snd
 
 def queryPropositions (c : Config) (query : Query) (programs : Array Expr)
     (families : Array Expr := contextFamilyExprs c) : Array Expr :=
   let (cpu, memory) := c.budget.getD (0, 0)
   let limits := #[mkRawNatLit cpu, mkRawNatLit memory, toExpr (c.language == "PlutusV3")]
+  let limits := if c.mode == "function" then limits ++ #[toExpr c.budget.isSome, mkRawNatLit c.steps] else limits
   let arguments := query.sides.map (programs[·]!) ++ limits
   if families.isEmpty then #[mkAppN (mkConst query.declaration) arguments]
   else families.map fun family => mkAppN (mkConst query.declaration) (#[family] ++ arguments)
@@ -339,9 +495,18 @@ def solve (env : Environment) (c : Config) (left right : PlutusCore.UPLC.Term.Pr
   let action : MetaM (Array Blaster.Smt.Result) := do
     let mut results := #[]
     for query in queries c do
+      if let some evidence := rejectionEvidence c query results then
+        progress s!"Skipping: {query.name} (derived from {evidence})"
+        results := results.push .Valid
+        if let some ref := caseResults then ref.modify (·.push #[])
+        continue
       let mut checked := #[]
       let mut combined : Blaster.Smt.Result := .Valid
-      for proposition in queryPropositions c query programs families do
+      progress s!"Starting: {query.description} [{query.name}]"
+      let propositions := queryPropositions c query programs families
+      for (proposition, index) in propositions.toList.zipIdx do
+        if propositions.size > 1 then
+          progress s!"Starting: {query.name}, case {index + 1}/{propositions.size}"
         let solverEnv := { (default : Blaster.Optimize.TranslateEnv) with
           optEnv.options.solverOptions.timeout := some c.timeout
           optEnv.options.solverOptions.generateCex := query.wantsCounterexample }
@@ -353,6 +518,7 @@ def solve (env : Environment) (c : Config) (left right : PlutusCore.UPLC.Term.Pr
         | _ => pure ()
       if let some ref := caseResults then ref.modify (·.push checked)
       results := results.push combined
+      progress s!"Finished: {query.name}: {status combined}"
     return results
   let (results, _) ← action.run' |>.toIO
     { fileName := "<uplc_equiv>", fileMap := default, maxRecDepth := 0, maxHeartbeats := 0 }
@@ -381,6 +547,15 @@ def budgetOutcomeJson (v3 : Bool) (result : Acceptance.Result) : Json :=
     | .budgetExhausted => [("kind", toJson "budget_exhausted")]
     | .unfinished => [("kind", toJson "unfinished")]
   Json.mkObj (("accepts", toJson (Acceptance.accepts v3 result)) :: fields)
+
+def functionOutcomeJson (budgeted : Bool) (result : Acceptance.Result) : Json :=
+  match result with
+  | .success value spent => Json.mkObj ([("kind", toJson "success"), ("result", valueJson value)] ++
+      (if budgeted then [("spent_cpu", toJson spent.exBudgetCPU.unExCPU),
+        ("spent_memory", toJson spent.exBudgetMemory.unExMemory)] else []))
+  | .error => Json.mkObj [("kind", toJson "error")]
+  | .budgetExhausted => Json.mkObj [("kind", toJson "budget_exhausted")]
+  | .unfinished => Json.mkObj [("kind", toJson "unfinished")]
 
 /-- Reconstruct each independently quantified unused field from its SMT binding.
     Unmentioned fields use the original minimal context, including simplified
@@ -429,24 +604,54 @@ def modelGeneralFields (model : List String) : Context.GeneralFields :=
     interval := (data.lookup "arbitraryInterval").getD (.I 0)
     reference := (data.lookup "arbitraryReference").getD (.I 0) }
 
+def modelFamilyArguments (c : Config) (model : List String) : List (List PlutusCore.UPLC.Term.Term) := Id.run do
+  let lists := model.filterMap Model.listBinding
+  let inputs := (lists.lookup "inputs").getD []
+  let outputs := (lists.lookup "outputs").getD []
+  let signatureTail := (lists.lookup "signatureTail").getD []
+  let general := modelGeneralFields model
+  let timestamps := ((model.filterMap Model.integerBinding).lookup "timestamp").toList ++ [0]
+  let mut candidates := []
+  for unused in [modelContextUnusedTxInfo model, {}] do
+    if unused.fee < 0 || unused.treasury < 0 || unused.donation < 0 then continue
+    for timestamp in timestamps do
+      for family in contextFamilies c do
+        candidates := family general unused inputs outputs signatureTail timestamp :: candidates
+  return candidates.reverse
+
 /-- A solver witness is only advertised as replayed after native CEK execution
     reproduces the acceptance difference under the shared budget. -/
-def replayCounterexample (c : Config) (left right : PlutusCore.UPLC.Term.Program)
-    (model : List String) (reverse := false) : Json := Id.run do
+def replayWitness (c : Config) (left right : PlutusCore.UPLC.Term.Program)
+    (model : List String) (reverse := false) (acceptanceOnly := false) : Json := Id.run do
   let (cpu, memory) := c.budget.getD (0, 0)
   let v3 := c.language == "PlutusV3"
   let replay := fun args input => do
-    let old := Acceptance.execute left args cpu memory v3
-    let new := Acceptance.execute right args cpu memory v3
-    let regression := if reverse then Acceptance.regression v3 new old else Acceptance.regression v3 old new
-    if regression then
-      some (Json.mkObj [("input", input), ("old", budgetOutcomeJson v3 old),
-        ("new", budgetOutcomeJson v3 new),
-        ("direction", toJson (if reverse then "new_to_old" else "old_to_new")), ("replayed", toJson true)])
+    let execute := if c.mode == "function" then
+      fun program => Function.execute program args cpu memory v3 c.budget.isSome c.steps
+      else fun program => Acceptance.execute program args cpu memory v3
+    let old := execute left
+    let new := execute right
+    let reproduces := if c.mode == "function" then
+        if c.bounded then
+          if c.equivalence then !Function.boundedSame old new else !Function.boundedPreserved old new
+        else Function.same old new == some false
+      else if acceptanceOnly then Acceptance.accepts v3 old == some true
+      else if reverse then Acceptance.regression v3 new old else Acceptance.regression v3 old new
+    if reproduces then
+      let outcome := if c.mode == "function" then functionOutcomeJson c.budget.isSome
+        else budgetOutcomeJson v3
+      let validity := if c.mode == "function" then [] else match args with
+        | [.Const (.Data context)] => [("ledger_validity", auditLedgerContext c context)]
+        | _ => []
+      some (Json.mkObj ([("input", input), ("old", outcome old),
+        ("new", outcome new),
+        ("direction", toJson (if c.mode == "function" then "function_outcomes" else if acceptanceOnly then "old_acceptance" else if reverse then "new_to_old" else "old_to_new")),
+        ("replayed", toJson true)] ++ validity))
     else none
   let replayContext := fun args => do
     let [.Const (.Data context)] := args | none
-    replay args (Model.dataJson context)
+    if checksLedger c && !validLedgerContext c context then none
+    else replay args (Model.dataJson context)
   -- Optimization can reduce a universally false query to False without asking
   -- Z3 for a model. Try zero inputs too, but still require a successful replay.
   let families := contextFamilies c
@@ -464,16 +669,19 @@ def replayCounterexample (c : Config) (left right : PlutusCore.UPLC.Term.Program
       if let some witness := replayContext (family unused inputs outputs signatureTail 0) then
         return witness
     else
-      let general := modelGeneralFields model
-      let timestamps := ((model.filterMap Model.integerBinding).lookup "timestamp").toList ++ [0]
-      for candidate in [unused, {}] do
-        if candidate.fee < 0 || candidate.treasury < 0 || candidate.donation < 0 then continue
-        for timestamp in timestamps do
-          for family in families do
-            let args := family general candidate inputs outputs signatureTail timestamp
-            if let some witness := replayContext args then return witness
-  else if c.inputs == "data" then
-    let candidates := (model.filterMap Model.dataBinding).map Prod.snd ++ [.I 0]
+      for args in modelFamilyArguments c model do
+        if let some witness := replayContext args then return witness
+      if !c.rawContext then
+        -- A valid context need not be accepted by this script (the first
+        -- template case is often unsigned). Keep searching all selected
+        -- families until the candidate also reproduces the desired outcome.
+        let candidate := nativeDomainWitness c fun raw =>
+          (replayContext (Queries.contextArgs raw)).isSome
+        if let some context := candidate then
+          if let some witness := replayContext (Queries.contextArgs context) then return witness
+  else if c.inputs == "data" || c.inputs == "valid-context" then
+    let candidates := (model.filterMap Model.dataBinding).map Prod.snd ++ [.I 0] ++
+      (if checksLedger c then (nativeDomainWitness c).toList else [])
     for context in candidates do
       if let some witness := replayContext (Queries.contextArgs context) then
         return witness
@@ -497,10 +705,72 @@ def replayCounterexample (c : Config) (left right : PlutusCore.UPLC.Term.Program
   return Json.mkObj [("replayed", toJson false), ("model", toJson (model.map String.trim)),
     ("reason", toJson s!"Could not extract and replay {kind} witness from Blaster's model.")]
 
+def replayCounterexample (c : Config) (left right : PlutusCore.UPLC.Term.Program)
+    (model : List String) (reverse := false) : Json :=
+  replayWitness c left right model reverse
+
+def replayOldAcceptance (c : Config) (left right : PlutusCore.UPLC.Term.Program)
+    (model : List String) : Json :=
+  replayWitness c left right model false true
+
+def classifyFunction (c : Config) (results : Array Blaster.Smt.Result)
+    (left right : PlutusCore.UPLC.Term.Program) : Json := Id.run do
+  let result := results[0]?.getD .Undetermined
+  let queryName := functionQueryName c
+  let equivalent := if c.bounded then
+    if c.equivalence then "bounded_equivalent" else "bounded_preserved"
+    else "equivalent"
+  let inequivalent := if c.bounded then
+    if c.equivalence then "bounded_inequivalent" else "bounded_regression"
+    else "inequivalent"
+  let details := [("mode", toJson "function"), ("function_check", toJson (if c.bounded then if c.equivalence then "bounded_equivalence" else "bounded_preservation" else "strict")),
+    ("check", toJson (if c.bounded then if c.equivalence then "bounded constant-or-none observation equality" else "OLD constant observations preserved by NEW within supplied limits" else "function outcome and returned-value equality")),
+    ("input_domain", toJson (inputDomain c)), ("language", toJson c.language),
+    ("steps", toJson c.steps),
+    ("budget", c.budget.map (fun (cpu, memory) => Json.mkObj [("cpu", toJson cpu), ("memory", toJson memory)]) |>.getD Json.null)]
+  if left = right then
+    return report equivalent "The decoded UPLC programs are identical; their behavior is identical for every input."
+      (details ++ [("queries", Json.mkObj [("program_identity", toJson "valid"),
+        (queryName, toJson "valid")]),
+        ("derived_queries", Json.mkObj [(queryName, toJson "program_identity")]),
+        ("verification", toJson "Decoded UPLC program equality; no SMT query required")])
+  let details := details ++ [
+    ("queries", Json.mkObj [(queryName, toJson (status result))]),
+    ("verification", toJson "Blaster SMT result; no reconstructed Lean proof term")]
+  match result with
+  | .Valid =>
+    let explanation := if c.bounded && !c.equivalence then
+      "NEW preserves every constant result produced by OLD within the supplied limits; additional NEW results are allowed."
+      else if c.bounded then
+      "Both functions have equal constant-or-none observations within the supplied limits for every input; this does not establish unrestricted equivalence."
+      else "Both functions return equal constants or both fail for every input in the declared domain."
+    return report equivalent explanation details
+  | .Falsified model =>
+    let witness := replayCounterexample c left right model
+    if (witness.getObjValAs? Bool "replayed").toOption == some true then
+      return report inequivalent (if c.bounded then if c.equivalence then "The functions have different bounded observations on a replayed input." else "NEW fails to preserve an OLD constant result within the supplied limits on a replayed input." else "The functions produce different outcomes or returned values on a replayed input.")
+        (details ++ [("counterexample", witness)])
+    return report "inconclusive" "Function equivalence is unestablished: a limit, unsupported return value, or unreplayed countermodel prevented comparison."
+      (details ++ [("diagnostic_counterexample", witness)])
+  | .Undetermined => return report "inconclusive" "Function equivalence is unestablished: symbolic reasoning did not finish." details
+
 def classify (c : Config) (results : Array Blaster.Smt.Result)
-    (left right : PlutusCore.UPLC.Term.Program) : Json :=
+    (left right : PlutusCore.UPLC.Term.Program)
+    (domainWitness : Option PlutusCore.Data.Data := none) : Json := Id.run do
+  if c.mode == "function" then return classifyFunction c results left right
   let names := queryNames c
   let result := fun name => results[names.idxOf name]?.getD .Undetermined
+  let mut ledgerFields := []
+  if checksLedger c then
+    let domainIssue := fun state message => report "inconclusive" message
+      [("domain_status", toJson state), ("input_domain", toJson (inputDomain c))]
+    match domainWitness with
+      | some raw =>
+        if !validLedgerContext c raw then return domainIssue "invalid_witness" "The supplied domain witness fails the ledger model."
+        ledgerFields := [("domain_status", toJson "nonempty"),
+          ("proof_domain", toJson (if c.inputs == "valid-context" then "unrestricted Data overapproximation" else "raw-context overapproximation")),
+          ("domain_witness", Model.dataJson raw), ("ledger_validity", auditLedgerContext c raw)]
+      | _ => return domainIssue "unestablished" "Could not construct a ledger-valid context witnessing the selected domain; no preservation claim is made."
   let mismatch := result "no_acceptance_regression"
   let preserved := result "acceptance_preserved"
   let reverseMismatch := result "reverse_no_acceptance_regression"
@@ -511,7 +781,7 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
     | _, .Falsified model => if c.equivalence then some (true, model) else none
     | _, _ => none
   let complete := (preserved matches .Valid) && (!c.equivalence || (reversePreserved matches .Valid))
-  let (verdict, explanation) :=
+  let (initialVerdict, initialExplanation) :=
     if regression.isSome then
       if c.equivalence then ("inequivalent", "One script accepts an input rejected by the other under the shared budget.")
       else ("regression", "An input accepted by OLD is rejected by NEW under the shared budget.")
@@ -519,24 +789,86 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
       if c.equivalence then ("equivalent", "Both scripts accept the same inputs in the declared domain under the shared budget.")
       else ("preserved", "NEW accepts every input accepted by OLD in the declared domain under the supplied budget.")
     else ("inconclusive", "Acceptance preservation is unestablished: analysis or symbolic reasoning did not finish.")
+  let mut verdict := initialVerdict
+  let mut explanation := initialExplanation
+  let mut acceptanceFields := []
   let (cpu, memory) := c.budget.getD (0, 0)
+  if complete && regression.isNone then
+    match result "old_rejected" with
+    | .Valid =>
+      verdict := if c.equivalence then "vacuously_equivalent" else "vacuously_preserved"
+      explanation := "OLD rejects every input in the declared domain under the supplied budget; preservation is vacuous."
+      let variant : PlutusCore.Default.BuiltinSemanticsVariant := if c.language == "PlutusV3" then
+        .defaultFunSemanticsVariantE else .defaultFunSemanticsVariantD
+      let costs := PlutusCore.UPLC.CekMachine.semVarToCosts variant
+      let startup := costs.startupCost
+      let budget : PlutusCore.UPLC.ExBudget.ExBudget := ⟨⟨cpu⟩, ⟨memory⟩⟩
+      let belowStartup := !budget.canAfford startup
+      -- Every CLI domain supplies at least one argument, hence its initial
+      -- term is an application, independent of the script and input values.
+      let belowFirstStep := !budget.canAfford (startup + costs.stepCostApply)
+      if belowStartup then
+        explanation := "The supplied budget cannot cover startup; OLD and NEW reject every input before execution. Preservation is vacuous."
+      else if belowFirstStep then
+        explanation := "The supplied budget covers startup but cannot cover the first application step; OLD and NEW reject every input. Preservation is vacuous."
+      acceptanceFields := [("old_acceptance_status", toJson "rejected_everywhere"),
+        ("vacuity_reason", toJson (if belowStartup then "startup_budget_exhausted"
+          else if belowFirstStep then "initial_step_budget_exhausted" else "old_rejects_domain"))]
+    | rejectionResult =>
+      let model := match rejectionResult with
+        | .Falsified model => model
+        | _ => []
+      let witness := replayOldAcceptance c left right model
+      if (witness.getObjValAs? Bool "replayed").toOption == some true then
+        acceptanceFields := [("old_acceptance_status", toJson "accepted"),
+          ("old_acceptance_witness", witness)]
+      else
+        verdict := "inconclusive"
+        explanation := "Preservation was proved, but no input accepted by OLD could be established in the declared domain under the supplied budget."
+        acceptanceFields := [("old_acceptance_status", toJson "unestablished"),
+          ("inconclusive_reason", toJson "old_acceptance_unestablished"),
+          ("diagnostic_old_acceptance", witness)]
   let details := [
+    ("mode", toJson "validator"),
     ("check", toJson (if c.equivalence then "acceptance preservation in both directions" else "old acceptance implies new acceptance")),
     ("budget", Json.mkObj [("cpu", toJson cpu), ("memory", toJson memory)]),
     ("cost_model", toJson (if c.language == "PlutusV3" then "bundled post-Conway E" else "bundled post-Conway D")),
     ("language", toJson c.language)]
   let counterexample := regression.toList.map fun (reverse, model) =>
     ("counterexample", replayCounterexample c left right model reverse)
-  report verdict explanation ([("input_domain", toJson (inputDomain c))] ++ details ++ [
+  if checksLedger c then
+    for (_, witness) in counterexample do
+      unless (witness.getObjValAs? Bool "replayed").toOption == some true do
+        return report "inconclusive" "The raw countermodel could not be replayed as a ledger-valid acceptance regression."
+          (ledgerFields ++ [("input_domain", toJson (inputDomain c)), ("diagnostic_counterexample", witness)])
+  let derivations := (queries c).toList.filterMap fun query =>
+    (rejectionEvidence c query results).map fun evidence => (query.name, toJson evidence)
+  let provenance := if derivations.isEmpty then [] else [("derived_queries", Json.mkObj derivations)]
+  return report verdict explanation ([("input_domain", toJson (inputDomain c))] ++ details ++ ledgerFields ++ acceptanceFields ++ [
     ("queries", Json.mkObj (names.toList.zip (results.toList.map (toJson ∘ status)))),
-    ("verification", toJson "Blaster SMT result; no reconstructed Lean proof term")] ++ counterexample)
+    ("verification", toJson "Blaster SMT result; no reconstructed Lean proof term")] ++ provenance ++ counterexample)
+
+def sourceHeader (c : Config) : IO String := do
+  let left ← IO.FS.realPath c.scripts[0]!
+  let right ← IO.FS.realPath c.scripts[1]!
+  return s!"import Equivalence.Queries\nimport Equivalence.HTLC\nimport Equivalence.Vesting\nimport Equivalence.Escrow\nimport Blaster\nopen Equivalence.Queries\n#import_uplc left {c.language} {c.leftFormat.getD c.format} {toJson left.toString |>.compress}\n#import_uplc right {c.language} {c.rightFormat.getD c.format} {toJson right.toString |>.compress}\n"
+
+/-- An identity check needs neither recursive evaluation nor an SMT solver.
+    Export a kernel-checkable proof of the same function query. -/
+def emitIdenticalSource (c : Config) : IO Unit := do
+  let some file := c.emitLean | return
+  let header ← sourceHeader c
+  let some query := (queries c)[0]?
+    | throw <| IO.userError "No function query to export"
+  let (cpu, memory) := c.budget.getD (0, 0)
+  let binders := if c.inputs == "data3" then "datum redeemer context" else "input"
+  IO.FS.writeFile file (header ++
+    s!"\n-- Identical decoded programs establish equivalence without evaluating them.\nexample : {query.declaration} left.script right.script {cpu} {memory} {c.language == "PlutusV3"} {c.budget.isSome} {c.steps} := by\n  intro {binders}\n  exact Or.inl rfl\n")
 
 def emitSource (env : Environment) (c : Config) (caseResults : Array (Array Blaster.Smt.Result) := #[])
     (families : Array Expr := contextFamilyExprs c) : IO Unit := do
   let some file := c.emitLean | return
-  let left ← IO.FS.realPath c.scripts[0]!
-  let right ← IO.FS.realPath c.scripts[1]!
-  let header := s!"import Equivalence.Queries\nimport Equivalence.HTLC\nimport Equivalence.Vesting\nimport Equivalence.Escrow\nimport Blaster\nopen Equivalence.Queries\n#import_uplc left {c.language} {c.leftFormat.getD c.format} {toJson left.toString |>.compress}\n#import_uplc right {c.language} {c.rightFormat.getD c.format} {toJson right.toString |>.compress}\n"
+  let header ← sourceHeader c
   let project := fun name => mkApp (mkConst ``PlutusCore.UPLC.PlutusScript.PlutusScript.script) (mkConst name)
   let programs := #[project `left, project `right]
   let chunks ← (queries c).toList.zipIdx.flatMapM fun (query, i) =>
@@ -565,21 +897,47 @@ def emitSource (env : Environment) (c : Config) (caseResults : Array (Array Blas
       let (rendered, _) ← action.run' |>.toIO
         { fileName := "<uplc_equiv>", fileMap := default, maxRecDepth := 0, maxHeartbeats := 0 } { env }
       return some s!"\n-- {query.name}, case {j + 1}\n#blaster (timeout: {c.timeout}){expected} (gen-cex: {if query.wantsCounterexample then 1 else 0}) [{rendered.pretty}]\n"
-  IO.FS.writeFile file (header ++ String.join chunks)
+  let scope := if checksLedger c then
+    "\n-- These queries prove preservation over the raw-context superset.\n-- The CLI separately checks a native ledger-model-valid domain witness\n-- and validates counterexample replays; those checks are not reproduced here.\n"
+    else ""
+  IO.FS.writeFile file (header ++
+    (if c.mode == "function" then "\n-- Function countermodels are separately replayed by the CLI.\n" else
+      "\n-- The CLI separately replays an OLD-accepting input before reporting\n-- nonvacuous preservation. These queries alone do not reproduce that replay.\n") ++
+    scope ++ String.join chunks)
 
 def run (c : Config) : IO Json := do
   let c ← IO.ofExcept (parse c [])
+  progress "Starting: loading OLD script"
   let left ← readProgram c.scripts[0]! (c.leftFormat.getD c.format)
+  progress "Starting: loading NEW script"
   let right ← readProgram c.scripts[1]! (c.rightFormat.getD c.format)
+  if c.mode == "function" && decide (left = right) then
+    progress "Finished: program_identity: identical decoded UPLC programs"
+    if c.emitLean.isSome then
+      progress "Starting: exporting program-identity proof"
+      emitIdenticalSource c
+    return classifyFunction c #[] left right
+  if checksLedger c then progress "Starting: constructing a ledger-model-valid domain witness"
+  let domainWitness := if checksLedger c then nativeDomainWitness c else none
+  if checksLedger c && domainWitness.isNone then
+    return report "inconclusive" "Could not construct a ledger-valid context witnessing the selected domain; no preservation claim is made."
+      [("domain_status", toJson "unestablished"), ("input_domain", toJson (inputDomain c))]
+  if checksLedger c then progress "Finished: ledger-model-valid domain witness constructed"
   -- Keep working when the binary is invoked outside the repository or without `lake env`.
+  progress "Starting: preparing symbolic checker"
   initSearchPath toolchainRoot (moduleSearchPath.map FilePath.mk)
   let env ← importModules #[{ module := `Equivalence.Queries }, { module := `Equivalence.HTLC }, { module := `Equivalence.Vesting }, { module := `Equivalence.Escrow }, { module := `Blaster }] {} (loadExts := true)
+  progress "Starting: preparing symbolic input families"
   let families ← prepareContextFamilies env c
+  if c.emitLean.isSome then progress "Starting: exporting initial Lean queries"
   emitSource env c #[] families
   let caseResults ← IO.mkRef #[]
+  if c.skipOldRejected then progress "Skipping: old_rejected (--skip-old-rejected)"
   let results ← solve env c left right (some caseResults) (some families)
+  if c.emitLean.isSome then progress "Starting: exporting checked Lean queries"
   emitSource env c (← caseResults.get) families
-  return classify c results left right
+  progress "Starting: validating replay witnesses and classifying results"
+  return classify c results left right domainWitness
 
 partial def waitUntil (child : IO.Process.Child cfg) (deadline : Nat) : IO Bool := do
   if (← child.tryWait).isSome then return true
@@ -589,6 +947,18 @@ partial def waitUntil (child : IO.Process.Child cfg) (deadline : Nat) : IO Bool 
     return false
   IO.sleep 50
   waitUntil child deadline
+
+/-- Forward worker diagnostics immediately, retaining them for malformed reports. -/
+def forwardDiagnostics (source : IO.FS.Handle) : IO String := do
+  let target ← IO.getStderr
+  let mut captured := ""
+  repeat
+    let line ← source.getLine
+    if line.isEmpty then break
+    target.putStr line
+    target.flush
+    captured := captured ++ line
+  return captured
 
 /-- A second instance of this native executable isolates the checker so the parent
     can stop preprocessing and its Z3 children at the wall-clock deadline. -/
@@ -601,7 +971,7 @@ def supervise (args : List String) (c : Config) : IO Json := do
     stdout := .piped
     stderr := .piped }
   let output ← IO.asTask child.stdout.readToEnd
-  let errors ← IO.asTask child.stderr.readToEnd
+  let errors ← IO.asTask (forwardDiagnostics child.stderr)
   let finished ← waitUntil child ((← IO.monoMsNow) + c.wallTimeout * 1000)
   let stdout ← IO.ofExcept output.get
   let stderr ← IO.ofExcept errors.get
@@ -613,9 +983,10 @@ def supervise (args : List String) (c : Config) : IO Json := do
 
 def exitCode (r : Json) : UInt32 :=
   match (r.getObjValAs? String "verdict").toOption with
-  | some "preserved" | some "equivalent" => 0
-  | some "regression" | some "inequivalent" => 1
+  | some "preserved" | some "equivalent" | some "bounded_equivalent" | some "bounded_preserved" => 0
+  | some "regression" | some "inequivalent" | some "bounded_inequivalent" | some "bounded_regression" => 1
   | some "inconclusive" => 2
+  | some "vacuously_preserved" | some "vacuously_equivalent" => 4
   | _ => 3
 
 def printReport (json : Bool) (r : Json) : IO Unit := do
@@ -629,11 +1000,13 @@ def printReport (json : Bool) (r : Json) : IO Unit := do
     if let .ok model := r.getObjValAs? String "cost_model" then
       IO.println s!"Cost model: {model}"
     if let .ok queries := r.getObjVal? "queries" then
-      for name in #["no_acceptance_regression", "acceptance_preserved", "reverse_no_acceptance_regression", "reverse_acceptance_preserved"] do
+      for name in #["program_identity", "function_equivalent", "bounded_function_preserved", "bounded_function_equivalent", "no_acceptance_regression", "acceptance_preserved", "reverse_no_acceptance_regression", "reverse_acceptance_preserved"] do
         if let .ok value := queries.getObjValAs? String name then IO.println s!"  {name}: {value}"
-      IO.println "Blaster SMT result; no reconstructed Lean proof term"
+      if let .ok verification := r.getObjValAs? String "verification" then IO.println verification
     if let .ok witness := r.getObjVal? "counterexample" then
       IO.println s!"Counterexample:\n{witness.pretty}"
+    if (r.getObjVal? "old_acceptance_witness").isOk then
+      IO.println "OLD acceptance: confirmed by native replay (input available with --json)"
 
 end Equivalence.Cli
 

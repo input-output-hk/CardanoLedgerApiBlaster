@@ -33,7 +33,7 @@ def checkVariation (selected : _root_.Equivalence.Cli.Config)
       ("datum-timeout-101", [2, 1, 0, 3], "I 101"),
       ("payer", [2, 1, 0, 0, 0, 0], "B #6f746865722d7061796572"),
       ("secret-wrong", [1], "Constr 0 [B #77726f6e67]"),
-      ("signer-second", [0, 8], "List [B #6f746865722d7369676e6572, B #7061796572]")]),
+      ("signer-second", [0, 8], "List [B #612d6f746865722d7369676e6572, B #7061796572]")]),
     ("htlc-claim", 10, #[
       ("datum-malformed", [2, 1, 0], "I 0"),
       ("hash-empty", [2, 1, 0, 2], "B #"),
@@ -47,7 +47,7 @@ def checkVariation (selected : _root_.Equivalence.Cli.Config)
       ("beneficiary", [2, 1, 0, 0, 0, 0], "B #6f746865722d62656e6566696369617279"),
       ("redeemer-tag", [1], "Constr 2 []"),
       ("redeemer-fields", [1], "Constr 0 [I 42]"),
-      ("signer-second", [0, 8], "List [B #6f746865722d7369676e6572, B #62656e6566696369617279]"),
+      ("signer-second", [0, 8], "List [B #612d6f746865722d7369676e6572, B #62656e6566696369617279]"),
       ("outputs-empty", [0, 2], "List []"),
       ("time-49", [0, 7, 0, 0, 0], "I 49")]),
     ("escrow-refund", 12, #[
@@ -94,15 +94,16 @@ def checkVariation (selected : _root_.Equivalence.Cli.Config)
       ("htlc-claim", 10, "recipient", "726563697069656e74"),
       ("vesting-full", 20, "beneficiary", "62656e6566696369617279"),
       ("vesting-partial", 81, "beneficiary", "62656e6566696369617279")] do
+    progress s!"Changed authorization: {mode}, {variation}"
     let selected := selectFamily config mode index variation
     let report ← comparePrograms (rejectDataAt [0, 8] s!"List [B #{signer}]")
       "(lam c (error))" selected
-    verdict report "equivalent"
+    verdict report "vacuously_equivalent"
   let selected := selectFamily config "htlc-refund" 10 "secret-empty"
   let firstSigner := s!"[(force (builtin headList)) [(builtin unListData) {contextFieldTerm [0, 8]}]]"
   let recipient := rejectIf s!"[[(builtin equalsData) {firstSigner}] (con data (B #726563697069656e74))]"
   for inspect in [recipient, rejectDataAt [0, 7, 1, 0, 0] "I 102"] do
     let report ← comparePrograms inspect "(lam c (error))" selected
-    verdict report "equivalent"
+    verdict report "vacuously_equivalent"
 
 end Tests.Equivalence.Variations

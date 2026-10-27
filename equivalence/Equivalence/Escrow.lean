@@ -23,7 +23,9 @@ def value (quantity : Int) : Data := .Map [(.B "", .Map [(.B "", .I quantity)])]
 def output (addr : Data) (quantity : Int) (d : Data := datum) : Data :=
   Context.txOutput addr (value quantity) (some d)
 def ownInput : Data := Context.txInput Context.ownRef (output address price)
-def secondInput : Data := Context.txInput (Context.outputReference "other-ref") (output address price)
+def secondInput : Data := Context.txInput (Context.outputReference "ref-other") (output address price)
+def fundingInput : Data := Context.txInput (Context.outputReference "ref-funding")
+  (Context.txOutput (Context.pubKeyAddress "funding") (Context.lovelace 10000000))
 
 /-- Split inspected control flow before solving; unused fields and the unused
     interval endpoint retain the shared unbounded symbolic domain. -/
@@ -108,7 +110,7 @@ def Case.fixture (c : Case) (mode : String) (p : Context.Parameters) : Context.S
   let lower := if isDeposit then p.timestamp else deadline + c.time.value - 100
   let upper := if isDeposit then depositTime + 1 + c.time.value - 100 else p.timestamp
   let out := output (if isDeposit then address else Context.pubKeyAddress signer) (price + c.amountDelta)
-  let tx := (p.unused.raw [out] c.hasTreasury c.hasDonation).txInfo [ownInput]
+  let tx := (p.unused.raw [out] c.hasTreasury c.hasDonation).txInfo [ownInput, fundingInput]
     (Context.signatories c.signed signer p.signatureTail) lower upper
   let redeemer := Data.I (if isDeposit then 0 else if isAccept then 1 else 2)
   ⟨p, Context.spendingContext tx redeemer Context.ownRef datum, signer, c.signed, ownInput, secondInput⟩

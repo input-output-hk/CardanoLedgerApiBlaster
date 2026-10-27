@@ -16,14 +16,17 @@ def token : ByteString := "vest"
 def datum : Data := .Constr 0 [Context.pubKeyAddress beneficiary,
   .Constr 0 [.B policy, .B token], .I 1000, .I 0, .I 100, .I 10, .I 10]
 
-def value (quantity : Int) : Data :=
-  .Map [(.B policy, .Map [(.B token, .I quantity)])]
+def value (quantity : Int) (ada : Int := 2000000) : Data :=
+  .Map ([(.B "", .Map [(.B "", .I ada)])] ++
+    if quantity == 0 then [] else [(.B policy, .Map [(.B token, .I quantity)])])
 
 def output (quantity : Int) : Data :=
   Context.txOutput Context.address (value quantity) (some datum)
 
-def ownInput : Data := Context.txInput Context.ownRef (output 1000)
-def secondInput : Data := Context.txInput (Context.outputReference "other-ref") (output 1000)
+def ownInput : Data := Context.txInput Context.ownRef
+  (Context.setField (output 1000) 1 (value 1000 10000000))
+def secondInput : Data := Context.txInput (Context.outputReference "ref-other")
+  (Context.setField (output 1000) 1 (value 1000 10000000))
 
 def context (unused : UnusedTxInfo) (inputs outputs signatories : List Data)
     (redeemer lower upper : Int) (hasTreasury hasDonation : Bool) : Data :=
@@ -98,8 +101,9 @@ def otherInput (i : Nat) : Data := Context.txInput (Context.outputReference "oth
 /-- Paired probes change only their inspected fields, preserving earlier mutations
     to unused fields or the spending datum. -/
 private def partialProbe (lower quantity : Int) (s : Context.Sample) : Context.Sample :=
+  let s := s.mapRedeemer (fun _ => .Constr 0 [])
   { s with signed := true, context :=
-    modifyField (setField s.context 1 (.Constr 0 [])) 0 fun tx =>
+    modifyField s.context 0 fun tx =>
       setField (setField (setField (setField tx 0 (.List [s.ownInput]))
         2 (.List [output quantity]))
         8 (.List (.B beneficiary :: s.parameters.signatureTail))) 7 (Context.range lower s.parameters.timestamp) }
@@ -111,8 +115,7 @@ private def scanProbe (count : Nat) (s : Context.Sample) : Context.Sample :=
 
 private def changeBeneficiary (s : Context.Sample) : Context.Sample :=
   let s := s.withoutSignatureTail
-  { s with context := modifyField s.context 2 (Context.mapSpendingDatum
-    (fun d => setField d 0 (Context.pubKeyAddress "other-beneficiary"))) }
+  s.mapDatum (fun d => setField d 0 (Context.pubKeyAddress "other-beneficiary"))
 
 def variationGroups : List (List Context.Variation) := [
   Context.baselineGroup,

@@ -5,10 +5,10 @@ package «CardanoLedgerApi» where
   -- add package configuration options here
   moreGlobalServerArgs := #["--threads=4"]
   moreLeanArgs := #["--threads=4"]
-  -- Execution costs from cek-machine-exunits; Fin translation from split/285-fin.
+  -- Execution costs and the symbolic log2 workaround; custom Blaster integration.
   -- Blaster requires Z3 5.3.1 with the recfun-finder simplifier.
-  require PlutusCore from git "https://github.com/input-output-hk/PlutusCoreBlaster" @ "7a5a0b1ce37defc343640d985bab62e63f7744eb"
-  require Blaster from git "https://github.com/input-output-hk/Lean-blaster" @ "01ae099a4e84e4e82f68394e9f57e180d0b85d84"
+  require PlutusCore from git "https://github.com/input-output-hk/PlutusCoreBlaster" @ "c91fa7070bbc69e17b6396c83bf11311e237af75"
+  require Blaster from git "https://github.com/input-output-hk/Lean-blaster" @ "934f0c31f0e283a309fb07c1a612607dca0ca4f6"
 
 @[default_target]
 lean_lib «CardanoLedgerApi» where

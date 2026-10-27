@@ -1,4 +1,5 @@
 import Equivalence.Queries
+import Equivalence.Ledger
 
 namespace Equivalence.Context
 
@@ -43,9 +44,44 @@ def txOutput (address value : Data) (datum : Option Data := none)
     (referenceScript : Data := .Constr 1 []) : Data :=
   .Constr 0 [address, value, match datum with
     | some d => .Constr 2 [d]
-    | none => .Constr 1 [], referenceScript]
+    | none => .Constr 0 [], referenceScript]
 
 def txInput (reference output : Data) : Data := .Constr 0 [reference, output]
+
+/-- Compare encoded output references without a recursive Data-list comparison. -/
+def sameReference : Data → Data → Bool
+  | .Constr tag [.B tx, .I index], .Constr tag' [.B tx', .I index'] =>
+    tag == tag' && tx == tx' && index == index'
+  | _, _ => false
+
+def replaceInputDatum (reference datum : Data) (input : Data) : Data :=
+  match input with
+  | .Constr tag [inputReference, .Constr outputTag [addr, value, inlineDatum, script]] =>
+    if sameReference inputReference reference then
+      match inlineDatum with
+      | .Constr 2 [_] => .Constr tag [inputReference,
+          .Constr outputTag [addr, value, .Constr 2 [datum], script]]
+      | _ => input
+    else input
+  | _ => input
+
+def replaceInputDatums (reference datum : Data) : List Data → List Data
+  | [] => []
+  | input :: rest => replaceInputDatum reference datum input :: replaceInputDatums reference datum rest
+
+def lovelace (quantity : Int) : Data := .Map [(.B "", .Map [(.B "", .I quantity)])]
+
+/-- The unused redeemer entries form a tail after the current spending entry.
+    Validity auditing checks uniqueness and ordering of the resulting map. -/
+def withSpendingRedeemer (reference redeemer txInfo : Data) : Data :=
+  match txInfo with
+  | .Constr tag fields => .Constr tag (fields.modify 9 fun entries =>
+      match entries with
+      | .Map entries =>
+        let purpose := Data.Constr 1 [reference]
+        .Map ((purpose, redeemer) :: entries)
+      | other => other)
+  | other => other
 
 /-- Keep the required signer ahead of the symbolic tail, so authorization does
     not require an unbounded list search. -/
@@ -54,7 +90,8 @@ def signatories (signed : Bool) (signer : ByteString) (tail : List Data) : List 
 
 /-- V3 spending ScriptContext, with a present spending datum. -/
 def spendingContext (txInfo redeemer reference datum : Data) : Data :=
-  .Constr 0 [txInfo, redeemer, .Constr 1 [reference, .Constr 0 [datum]]]
+  .Constr 0 [withSpendingRedeemer reference redeemer txInfo, redeemer,
+    .Constr 1 [reference, .Constr 0 [datum]]]
 
 /-- Transform a present datum while preserving the surrounding script-info encoding. -/
 def mapSpendingDatum (change : Data → Data) (scriptInfo : Data) : Data :=
@@ -92,6 +129,18 @@ def RawUnusedTxInfo.txInfo (unused : RawUnusedTxInfo) (inputs signatories : List
       unused.mint, unused.certificates, unused.withdrawals, range lower upper,
       .List signatories, unused.redeemers, unused.datums, unused.txId,
       unused.votes, unused.proposals, unused.treasury, unused.donation]
+
+/-- One concrete member of the generic valid-context domain. These choices
+    witness nonemptiness; they impose no restrictions on the symbolic domain. -/
+def genericValidContext : Data :=
+  let reference := outputReference ⟨String.mk (List.replicate 32 'r')⟩
+  let address := scriptAddress ⟨String.mk (List.replicate 28 's')⟩
+  let receiver := pubKeyAddress ⟨String.mk (List.replicate 28 'p')⟩
+  let input := txInput reference (txOutput address (lovelace 10000000) (some (.I 0)))
+  let output := txOutput receiver (lovelace 9999999)
+  let tx := ({ fee := .I 1, outputs := .List [output] } : RawUnusedTxInfo).txInfo
+    [input] [] 0 3000000
+  spendingContext tx (.Constr 0 []) reference (.I 0)
 
 /-- Shared outer encodings for CLI exploration. Nested Data contents remain
     unbounded; these shapes alone do not establish full ledger validity. -/
@@ -178,6 +227,31 @@ def Sample.withoutSignatureTail (s : Sample) : Sample :=
     setField tx 8 (.List (signatories s.signed s.signer []))
   { s with parameters := { s.parameters with signatureTail := [] }, context := ctx }
 
+/-- Change the spending datum and the matching input's inline datum together.
+    Other inputs and continuing outputs are independent UTxOs and retain their
+    own datums. Keep the input template synchronized for later input mutations. -/
+def Sample.mapDatum (s : Sample) (change : Data → Data) : Sample :=
+  match s.context with
+  | .Constr _ [_, _, .Constr _ [reference, .Constr _ [datum]]] =>
+    let datum := change datum
+    let context := modifyField s.context 2 (mapSpendingDatum (fun _ => datum))
+    let context := modifyField context 0 fun tx => modifyField tx 0 fun inputs =>
+      match inputs with
+      | .List inputs => .List (replaceInputDatums reference datum inputs)
+      | other => other
+    { s with context, ownInput := replaceInputDatum reference datum s.ownInput }
+  | _ => s
+
+def Sample.mapRedeemer (s : Sample) (change : Data → Data) : Sample :=
+  match s.context with
+  | .Constr tag [txInfo, redeemer, info@(.Constr _ [reference, _])] =>
+    let redeemer := change redeemer
+    let txInfo := modifyField txInfo 9 fun entries => match entries with
+      | .Map (_ :: tail) => .Map ((.Constr 1 [reference], redeemer) :: tail)
+      | other => other
+    { s with context := .Constr tag [txInfo, redeemer, info] }
+  | _ => s
+
 /-- Bounded irrelevant inputs and signers exercise linear scans. -/
 def Sample.scanInputs (s : Sample) (count : Nat) (unrelatedOutput : Data) : Sample :=
   let inputs := (List.range count).map fun (i : Nat) => txInput (outputReference "other" i) unrelatedOutput
@@ -210,16 +284,21 @@ def txInfo (name description : String) (change : Sample → Data → Data) : Var
   context name description fun s => modifyField s.context 0 (change s)
 
 def datum (name description : String) (change : Data → Data) : Variation :=
-  context name description fun s => modifyField s.context 2 (mapSpendingDatum change)
+  ⟨name, description, fun s => s.mapDatum change⟩
 
 def redeemer (name description : String) (change : Data → Data) : Variation :=
-  context name description fun s => modifyField s.context 1 change
+  ⟨name, description, fun s => s.mapRedeemer change⟩
 
 /-- Replacing an inspected input updates both its template and the input list,
-    so a later generic input-count mutation keeps the changed input. -/
+    so a later generic input-count mutation keeps the changed input. Preserve
+    the previous datum: these variations change input address/value fields. -/
 def input (name description : String) (change : Sample → Data) : Variation :=
   ⟨name, description, fun s =>
     let input := change s
+    let input := match s.ownInput with
+      | .Constr _ [_, .Constr _ [_, _, datum, _]] =>
+        modifyField input 1 fun output => setField output 2 datum
+      | _ => input
     let ctx := modifyField s.context 0 fun tx => setField tx 0 (.List [input])
     { s with ownInput := input, context := ctx }⟩
 
@@ -232,7 +311,7 @@ def feeGroup : List Variation := [
 def signerGroup : List Variation := [
   ⟨"signer-second", "required signer placed after another signer, before the arbitrary tail", fun s =>
     { s with signed := true, context := modifyField s.context 0 fun tx =>
-      setField tx 8 (.List (.B "other-signer" :: .B s.signer :: s.parameters.signatureTail)) }⟩,
+      setField tx 8 (.List (.B "a-other-signer" :: .B s.signer :: s.parameters.signatureTail)) }⟩,
   ⟨"signer-missing", "signatories replaced by one unrelated signer", fun s =>
     { s with signed := false, context := modifyField s.context 0 fun tx =>
       setField tx 8 (.List [.B "other-signer"]) }⟩]
@@ -254,10 +333,10 @@ def generalizationGroup : List Variation := [
     (fun s tx => setField tx 2 (.List s.parameters.outputs)),
   .txInfo "signers-any" "signer list replaced by arbitrary-length arbitrary Data, without a required prefix"
     (fun s tx => setField tx 8 (.List s.parameters.signatureTail)),
-  .context "datum-any" "present spending datum replaced by independent arbitrary Data"
-    (fun s => modifyField s.context 2 (mapSpendingDatum (fun _ => s.parameters.general.datum))),
-  .context "redeemer-any" "redeemer replaced by independent arbitrary Data"
-    (fun s => setField s.context 1 s.parameters.general.redeemer),
+  ⟨"datum-any", "spending datum and own input's inline datum replaced by independent arbitrary Data",
+    fun s => s.mapDatum (fun _ => s.parameters.general.datum)⟩,
+  ⟨"redeemer-any", "redeemer and spending redeemer-map entry replaced by independent arbitrary Data",
+    fun s => s.mapRedeemer (fun _ => s.parameters.general.redeemer)⟩,
   .txInfo "interval-any" "entire validity interval replaced by independent arbitrary Data"
     (fun s tx => setField tx 7 s.parameters.general.interval),
   .context "reference-any" "spending reference replaced by independent arbitrary Data"
@@ -329,6 +408,11 @@ def generalizedAll (args : GeneralFamily) (p : List Term → Prop) : Prop :=
     familyAll (args ⟨lowerTimestamp, upperTimestamp, arbitraryDatum, arbitraryRedeemer,
       arbitraryInterval, arbitraryReference⟩) p
 
+def generalizedRejected (args : GeneralFamily) (old : Program)
+    (cpu memory : Nat) (v3 : Bool) : Prop :=
+  generalizedAll args fun parameters =>
+    Acceptance.accepts v3 (Acceptance.execute old parameters cpu memory v3) = some false
+
 def generalizedAcceptancePreserved (args : GeneralFamily) (old new : Program)
     (cpu memory : Nat) (v3 : Bool) : Prop :=
   generalizedAll args fun parameters => Queries.acceptancePreserved parameters old new cpu memory v3
@@ -356,6 +440,9 @@ def spendingAll (p : List Term → Prop) : Prop :=
 
 def spendingAcceptancePreserved (old new : Program) (cpu memory : Nat) (v3 : Bool) : Prop :=
   spendingAll fun args => Queries.acceptancePreserved args old new cpu memory v3
+
+def spendingRejected (old : Program) (cpu memory : Nat) (v3 : Bool) : Prop :=
+  spendingAll fun args => Queries.rejected args old cpu memory v3
 
 def spendingNoAcceptanceRegression (old new : Program) (cpu memory : Nat) (v3 : Bool) : Prop :=
   spendingAll fun args => Queries.noAcceptanceRegression args old new cpu memory v3

@@ -24,9 +24,9 @@ abbrev pubKeyAddress := Context.pubKeyAddress
 
 def datum : Data := .Constr 0 [pubKeyAddress payer, pubKeyAddress recipient, .B secretHash, .I 100]
 
-def ownInput : Data := Context.txInput ownRef (Context.txOutput address (.Map []) (some datum))
-def secondInput : Data := Context.txInput (Context.outputReference "other-ref")
-  (Context.txOutput address (.Map []) (some datum))
+def ownInput : Data := Context.txInput ownRef (Context.txOutput address (Context.lovelace 10000000) (some datum))
+def secondInput : Data := Context.txInput (Context.outputReference "ref-other")
+  (Context.txOutput address (Context.lovelace 10000000) (some datum))
 
 abbrev range := Context.range
 
@@ -36,7 +36,7 @@ def context (unused : Context.RawUnusedTxInfo) (redeemer : Data)
 
 /-- Unrelated inputs force a search before finding the own input. -/
 def otherInput (i : Nat) : Data := Context.txInput (Context.outputReference "other" i)
-  (Context.txOutput (Context.scriptAddress "other-script") (.Map []))
+  (Context.txOutput (Context.scriptAddress "other-script") (Context.lovelace 10000000))
 
 /-- Finite boundary choices, shared by symbolic queries and witness replay. -/
 structure Case where
@@ -66,11 +66,11 @@ open Context (setField modifyField)
 
 private def changeParty (index : Nat) (key : ByteString) (s : Context.Sample) : Context.Sample :=
   let s := s.withoutSignatureTail
-  { s with context := modifyField s.context 2 (Context.mapSpendingDatum
-      (fun d => setField d index (pubKeyAddress key))) }
+  s.mapDatum (fun d => setField d index (pubKeyAddress key))
 
 private def claimWith (c : Case) (secret : ByteString) (s : Context.Sample) : Context.Sample :=
-  let ctx := modifyField (setField s.context 1 (.Constr 0 [.B secret])) 0 fun tx =>
+  let s := s.mapRedeemer (fun _ => .Constr 0 [.B secret])
+  let ctx := modifyField s.context 0 fun tx =>
     setField (setField tx 8 (.List (Context.signatories s.signed recipient s.parameters.signatureTail)))
       7 (range s.parameters.timestamp (c.time.value + 1))
   { s with signer := recipient, context := ctx }

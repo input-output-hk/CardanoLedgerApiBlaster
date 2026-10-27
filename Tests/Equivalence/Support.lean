@@ -4,7 +4,9 @@ namespace Tests.Equivalence.Support
 
 open Lean System
 
-def config : _root_.Equivalence.Cli.Config := { equivalence := true, inputs := "integer", budget := some (10000000000, 14000000), timeout := 5 }
+-- These tests deliberately inspect malformed/raw encodings. Ledger-valid
+-- context tests opt back into the default mode explicitly.
+def config : _root_.Equivalence.Cli.Config := { equivalence := true, inputs := "integer", budget := some (10000000000, 14000000), timeout := 5, rawContext := true }
 
 /-- Shared budgeted settings for random CAPE explorations. -/
 def acceptanceConfig : _root_.Equivalence.Cli.Config :=
@@ -57,12 +59,16 @@ def progress (message : String) : IO Unit := do
 def runBounded (c : _root_.Equivalence.Cli.Config) : IO Json := do
   let child ← IO.Process.spawn {
     cmd := ".lake/build/bin/uplc_equiv"
-    args := #["--worker", "--json", "--language", c.language, "--inputs", c.inputs,
+    args := #["--worker", "--json", "--mode", c.mode, "--steps", toString c.steps,
+      "--language", c.language, "--inputs", c.inputs,
       "--format-left", c.leftFormat.getD c.format,
       "--format-right", c.rightFormat.getD c.format,
       "--variation", c.variation,
       "--timeout", toString c.timeout] ++
+      (if c.bounded then #["--bounded"] else #[]) ++
       (if c.equivalence then #["--equivalence"] else #[]) ++
+      (if c.rawContext then #["--raw-context"] else #[]) ++
+      (if c.skipOldRejected then #["--skip-old-rejected"] else #[]) ++
       (c.budget.toArray.flatMap fun (cpu, memory) => #["--budget", toString cpu, toString memory]) ++
       (c.caseIndex.toArray.flatMap fun index => #["--case", toString index]) ++ c.scripts
     env := #[("UPLC_EQUIV_TEST_WORKER", some "1")]
@@ -72,12 +78,13 @@ def runBounded (c : _root_.Equivalence.Cli.Config) : IO Json := do
     stderr := .piped }
   let output ← IO.asTask child.stdout.readToEnd
   let errors ← IO.asTask child.stderr.readToEnd
-  let finished ← _root_.Equivalence.Cli.waitUntil child ((← IO.monoMsNow) + 60000)
+  let wallTimeout := min c.wallTimeout 60
+  let finished ← _root_.Equivalence.Cli.waitUntil child ((← IO.monoMsNow) + wallTimeout * 1000)
   let stdout ← IO.ofExcept output.get
   let stderr ← IO.ofExcept errors.get
   unless finished do
     return _root_.Equivalence.Cli.report "inconclusive"
-      "Script check reached its 60-second wall-clock limit, including preprocessing."
+      s!"Script check reached its {wallTimeout}-second wall-clock limit, including preprocessing."
       [("input_domain", toJson (_root_.Equivalence.Cli.inputDomain c))]
   match Json.parse stdout with
   | .ok report => return report
@@ -150,18 +157,24 @@ def runExploration (scenario : Exploration) : IO Unit := do
       match result with
       | "preserved" =>
         expect report ["queries", "acceptance_preserved"] "valid"
+        expect report ["old_acceptance_witness", "replayed"] true
+        noCounterexample report
+      | "vacuously_preserved" | "vacuously_equivalent" =>
+        expect report ["queries", "old_rejected"] "valid"
+        expect report ["old_acceptance_status"] "rejected_everywhere"
         noCounterexample report
       | "regression" => discard <| witness report
       | "equivalent" =>
         for query in ["acceptance_preserved", "reverse_acceptance_preserved"] do
           expect report ["queries", query] "valid"
+        expect report ["old_acceptance_witness", "replayed"] true
         noCounterexample report
       | "inequivalent" => discard <| witness report
       | "inconclusive" =>
         inconclusive := inconclusive.push s!"{mode}, case {caseIndex}, variation {variation}"
       | _ => check report false "Unexpected checker verdict"
       let domain ← IO.ofExcept ((← field report ["input_domain"]).getStr?)
-      for restriction in [s!"restricted to case {caseIndex}:", "no ledger-validity restriction"] do
+      for restriction in [s!"restricted to case {caseIndex}:", "raw context mode: ledger validity is not required"] do
         check report ((domain.splitOn restriction).length != 1) s!"Missing domain restriction: {restriction}"
       if variation != "baseline" then
         check report ((domain.splitOn s!"context variation: {variation}:").length != 1)
@@ -199,6 +212,10 @@ def contextFieldTerm (indices : List Nat) : String := dataFieldTerm "c" indices
 def rejectIf (condition : String) : String :=
   "(lam c (force [[[(force (builtin ifThenElse)) " ++
     condition ++ "] (delay (error))] (delay (con unit ()))]))"
+
+def acceptIf (condition : String) : String :=
+  "(lam c (force [[[(force (builtin ifThenElse)) " ++
+    condition ++ "] (delay (con unit ()))] (delay (error))]))"
 
 def rejectDataAt (path : List Nat) (expected : String) : String :=
   rejectIf s!"[[(builtin equalsData) {contextFieldTerm path}] (con data ({expected}))]"

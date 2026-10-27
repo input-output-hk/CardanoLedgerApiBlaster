@@ -6,6 +6,7 @@ Functional acceptance, model replay and context tests live in Tests/Equivalence/
 import json
 import os
 from pathlib import Path
+import selectors
 import subprocess
 import tempfile
 import unittest
@@ -34,6 +35,60 @@ def reject_data_at(path, expected):
 
 
 class CheckerProcess(unittest.TestCase):
+    def test_progress_identifies_query_order_without_polluting_json(self):
+        for skip in [False, True]:
+            with self.subTest(skip=skip), tempfile.TemporaryDirectory() as directory:
+                old, new = Path(directory) / "old.uplc", Path(directory) / "new.uplc"
+                for path in (old, new):
+                    path.write_text("(program 1.1.0 (lam c (con unit ())))")
+                result = subprocess.run([str(CLI), str(old), str(new), "--format", "textual",
+                    "--budget", "1000000", "10000", "--json",
+                    *(["--skip-old-rejected"] if skip else [])],
+                    cwd=ROOT, capture_output=True, text=True, timeout=30)
+                report = json.loads(result.stdout)
+                self.assertEqual((result.returncode, report["verdict"]), (0, "preserved"), report)
+                stages = ["Starting: loading OLD script", "Starting: loading NEW script",
+                          "Starting: constructing a ledger-model-valid domain witness",
+                          "Starting: preparing symbolic checker", "Starting: preparing symbolic input families"]
+                stages += (["Skipping: old_rejected (--skip-old-rejected)"] if skip else [
+                    "Starting: checking whether OLD rejects every input [old_rejected]",
+                    "Finished: old_rejected: falsified"])
+                stages += ["Starting: checking for an OLD-to-NEW acceptance regression [no_acceptance_regression]",
+                           "Starting: proving OLD-to-NEW acceptance preservation [acceptance_preserved]",
+                           "Starting: validating replay witnesses and classifying results"]
+                offset = 0
+                for stage in stages:
+                    position = result.stderr.find(stage, offset)
+                    self.assertGreaterEqual(position, offset, result.stderr)
+                    offset = position + len(stage)
+                if skip:
+                    self.assertNotIn("checking whether OLD rejects every input", result.stderr)
+                self.assertNotIn("[uplc_equiv]", result.stdout)
+
+    def test_rejection_shortcut_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old, new, emitted = root / "old.uplc", root / "new.uplc", root / "rejects.lean"
+            old.write_text("(program 1.1.0 (lam c (error)))")
+            new.write_text(old.read_text())
+            args = [str(CLI), "--raw-context", str(old), str(new), "--format", "textual",
+                    "--inputs", "htlc-claim", "--case", "45", "--equivalence",
+                    "--budget", "10000000000", "14000000", "--timeout", "5",
+                    "--wall-timeout", "30", "--json"]
+            result = subprocess.run(args + ["--emit-lean", str(emitted)], cwd=ROOT,
+                                    capture_output=True, text=True, timeout=40)
+            report = json.loads(result.stdout)
+            self.assertEqual((result.returncode, report["verdict"]), (4, "vacuously_equivalent"), report)
+            self.assertIn("Skipping: acceptance_preserved (derived from old_rejected)", result.stderr)
+            source = emitted.read_text()
+            self.assertIn("-- old_rejected,", source)
+            self.assertIn("-- new_rejected,", source)
+            self.assertNotIn("-- acceptance_preserved,", source)
+            self.assertNotIn("-- no_acceptance_regression,", source)
+            checked = subprocess.run(["lake", "env", "lean", "--memory=8192", str(emitted)],
+                                     cwd=ROOT, capture_output=True, text=True, timeout=60)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
     def invoke(self, left, right, *flags, json_output=True):
         with tempfile.TemporaryDirectory(prefix="uplc cli tests ") as directory:
             # Exercise spaces and quotes while running outside the repository.
@@ -41,7 +96,7 @@ class CheckerProcess(unittest.TestCase):
             for path, term in zip(paths, (left, right)):
                 path.write_text(f"(program 1.1.0 {term})")
             result = subprocess.run(
-                [str(CLI),
+                [str(CLI), "--inputs", "data", "--raw-context",
                  *(str(path) for path in paths), "--format", "textual",
                  "--budget", "1000000", "10000",
                  "--wall-timeout", "30",
@@ -59,7 +114,7 @@ class CheckerProcess(unittest.TestCase):
                 for path, term in [(old, inspect if symmetric else accept),
                                    (new, accept if symmetric else inspect)]:
                     path.write_text(f"(program 1.1.0 {term})")
-                result = subprocess.run([str(CLI), str(old), str(new), "--format", "textual",
+                result = subprocess.run([str(CLI), "--raw-context", str(old), str(new), "--format", "textual",
                     "--inputs", "vesting-partial", "--case", "81",
                     "--variation", "datum-total,fee-positive", "--budget", "100000000", "1000000",
                     *(["--equivalence"] if symmetric else []),
@@ -95,7 +150,7 @@ class CheckerProcess(unittest.TestCase):
                 old, new, emitted = root / "old.uplc", root / "new.uplc", root / "check.lean"
                 for path in [old, new]:
                     path.write_text("(program 1.1.0 (lam c (con unit ())))")
-                result = subprocess.run([str(CLI), str(old), str(new), "--format", "textual",
+                result = subprocess.run([str(CLI), "--raw-context", str(old), str(new), "--format", "textual",
                     "--inputs", "vesting-partial", "--variation", "time-any,inputs-any,outputs-any,signers-any",
                     "--budget", "100000000", "1000000", "--wall-timeout", "30",
                     *(["--equivalence"] if symmetric else []),
@@ -104,8 +159,13 @@ class CheckerProcess(unittest.TestCase):
                 report = json.loads(result.stdout)
                 self.assertEqual((result.returncode, report["verdict"]),
                                  (0, "equivalent" if symmetric else "preserved"), report)
-                # 96 cases collapse to four families, with two queries per direction.
-                self.assertEqual(emitted.read_text().count("#blaster"), 16 if symmetric else 8)
+                # 96 cases collapse to four families for each comparison query.
+                source = emitted.read_text()
+                names = ["no_acceptance_regression", "acceptance_preserved"]
+                if symmetric:
+                    names += ["reverse_no_acceptance_regression", "reverse_acceptance_preserved"]
+                for name in names:
+                    self.assertEqual(source.count(f"-- {name}, case "), 4)
                 checked = subprocess.run(["lake", "env", "lean", "--memory=8192", str(emitted)],
                                          cwd=ROOT, capture_output=True, text=True, timeout=60)
                 self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
@@ -136,7 +196,7 @@ class CheckerProcess(unittest.TestCase):
                     args = [str(old_path) if a in ("old", "left") else
                             str(new_path) if a in ("new", "right") else a for a in args]
                     result = subprocess.run(
-                        [str(CLI), *args, "--json"],
+                        [str(CLI), "--inputs", "data", "--raw-context", *args, "--json"],
                         capture_output=True, text=True, timeout=10)
                     self.assertEqual(result.returncode, 3, result.stdout)
                     self.assertEqual(json.loads(result.stdout)["verdict"], "error")
@@ -150,12 +210,19 @@ class CheckerProcess(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             blocked = Path(directory) / "blocked.uplc"
             os.mkfifo(blocked)
-            result = subprocess.run(
-                [str(CLI), str(blocked), str(blocked), "--format", "textual",
-                 "--budget", "1000000", "10000", "--wall-timeout", "1", "--json"],
-                capture_output=True, text=True, timeout=10)
-            self.assertEqual(result.returncode, 2, result.stdout)
-            self.assertEqual(json.loads(result.stdout)["verdict"], "inconclusive")
+            with subprocess.Popen(
+                [str(CLI), "--inputs", "data", "--raw-context", str(blocked), str(blocked), "--format", "textual",
+                 "--budget", "1000000", "10000", "--wall-timeout", "5", "--json"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as process:
+                with selectors.DefaultSelector() as selector:
+                    selector.register(process.stderr, selectors.EVENT_READ)
+                    self.assertTrue(selector.select(timeout=4), "Progress was buffered until worker completion")
+                line = process.stderr.readline()
+                self.assertIn("Starting: loading OLD script", line)
+                self.assertIsNone(process.poll(), "Worker finished before live progress was observed")
+                stdout, _ = process.communicate(timeout=10)
+                self.assertEqual(process.returncode, 2, stdout)
+                self.assertEqual(json.loads(stdout)["verdict"], "inconclusive")
 
 
 if __name__ == "__main__":

@@ -241,83 +241,60 @@ theorem fibonacci_equiv :
 
 ## Script acceptance preservation
 
-The `uplc_equiv` CLI checks whether a replacement validator accepts every input
-accepted by the old validator under the same CPU and memory budget:
+`uplc_equiv` compares two UPLC programs in either mode:
+
+- **Validator** (default): NEW must accept every input accepted by OLD within a
+  shared per-script budget. `--equivalence` checks both directions; successful
+  return values are not compared. V3 requires unit; V1/V2 accept any successful return.
+- **Function**: compares returned constants and success/error outcomes. Defaults
+  to one integer argument and uncosted evaluation. Identical programs are checked
+  directly. Otherwise, closures, constructor returns,
+  and exhausted analysis or optional execution budgets remain inconclusive.
+
+Use `--mode function --bounded --steps 1000` to preserve OLD results within the
+limits while allowing additional NEW results. Add `--equivalence` to check both
+directions. Errors, nonconstant returns, and exhausted limits count as `none`.
+Results use `bounded_preserved`/`bounded_regression`, or
+`bounded_equivalent`/`bounded_inequivalent` with `--equivalence`.
 
 ```sh
 lake build uplc_equiv
 lake exe uplc_equiv old.cbor_hex new.cbor_hex --budget 10000000 100000
+lake exe uplc_equiv old.uplc new.uplc --mode function
 ```
 
-The budget above is illustrative. Supply the execution-unit allocation for one
-script invocation, rather than a transaction-wide maximum shared by several
-scripts. The default input mode supplies an arbitrary V3 `ScriptContext` Data
-argument. Use `--inputs data3 --language PlutusV2` for three-argument validators,
-or select a restricted CAPE domain such as `--inputs htlc-refund`,
-`vesting-partial`, or `escrow-accept`. `--case` and composable `--variation` values
-restrict or modify those domains; the report states the checked domain. Context
-shapes do not establish full ledger validity of a transaction.
+`.uplc` paths default to textual encoding. Use `--inputs data` for one unrestricted
+`Data` argument or `--inputs data3` for three; V2 validators also need
+`--language PlutusV2`.
 
-Results are `preserved` (exit 0), `regression` (exit 1), or `inconclusive` (exit 2).
-A regression means the old script accepts an input while the new script errors,
-returns an invalid result, or exceeds the supplied budget. Counterexamples are
-replayed with the same limits and report each script's acceptance and outcome.
-Additional acceptance is allowed; a slower replacement is allowed if it remains
-within budget. An old script that rejects every input is preserved vacuously.
-V3 requires a unit return; V1/V2 accept any successful return.
+Validators default to `valid-context`, covering generic V3 contexts. Contract
+modes such as `htlc-refund`, `vesting-partial`, and `escrow-accept` offer narrower
+boundary domains, adjustable with `--case` and `--variation`. Checked modes require
+ledger-model-valid domain and acceptance witnesses and replayed counterexamples.
+Proofs currently cover a raw-Data/context superset, so invalid countermodels can
+make checks inconclusive. Model validity does not establish on-chain reachability.
+`--raw-context` opts contract modes out of validity checks; `data`, `data3`, and
+`spending` are unrestricted.
 
-This implementation uses PlutusCoreBlaster's **bundled post-Conway cost model**
-(E for V3, D for V1/V2), not cost coefficients fetched from network protocol
-parameters. Results are relative to that model and the supplied budget, not a
-certification against current network parameters. Development currently requires
-the sibling `../PlutusCoreBlaster` checkout on `cek-machine-exunits`, including
-its remaining symbolic logarithm workaround. Blaster is pinned to `01ae099`
-from `split/285-fin`, which supports constant-bound `Fin` fields. It requires
-**Z3 5.3.1** with the `recfun-finder` simplifier on `PATH`.
+Validator success requires a replayed OLD-accepting input. Proven universal OLD
+rejection is reported as vacuous; failure to establish either is inconclusive.
+`--skip-old-rejected` skips the preliminary rejection query but retains the
+acceptance-witness requirement. Function mode compares outcomes directly.
 
-The acceptance wrapper uses the upstream deferred-cost runner: it executes the
-CEK machine, totals machine and builtin costs, then checks the supplied budget.
+Exit codes: **0** preserved/equivalent, **1** regression/inequivalent,
+**2** inconclusive, **3** tool/usage error, **4** vacuous validator preservation/equivalence.
+Counterexamples are replayed natively. Progress goes to stderr; `--json` selects
+machine-readable stdout, and `--emit-lean FILE` exports the queries.
+See `lake exe uplc_equiv --help` for domains, variations, formats, and limits.
 
-Budget exhaustion is rejection. The separate internal guard of 100000 CEK
-transitions, solver timeout, and wall-clock timeout are analysis limits and can
-only make the check inconclusive. `--emit-lean FILE` saves the checked queries;
-`--json` includes the budget, cost-model identity, and query results. Verification
-uses Blaster's SMT results without reconstructed Lean proof terms.
+Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D), rather
+than current network parameters. Solver, wall-clock, and analysis step limits
+can only yield inconclusive results. Verification uses Blaster's SMT results
+without reconstructed Lean proof terms.
 
-To widen a contract domain without adding scenario-specific templates, compose
-shared variations such as:
-
-```sh
-lake exe uplc_equiv old.cbor_hex new.cbor_hex --budget 10000000 100000 \
-  --inputs vesting-partial --variation time-any,inputs-any,outputs-any,signers-any
-```
-
-`time-any` gives independent unbounded integer endpoints. `inputs-any`,
-`outputs-any`, and `signers-any` allow arbitrary-length lists with arbitrary Data
-contents, including the absence of required entries. `datum-any`, `redeemer-any`,
-`interval-any`, and `reference-any` use separate arbitrary Data symbols. These
-symbols are independent of the unused transaction fields, and compositions still
-apply left to right. Structurally identical families are checked once when
-widening erases boundary-case distinctions.
-
-`--inputs spending` removes the contract fixture entirely. It retains the common
-16-field TxInfo and spending ScriptInfo structure, typed list/map/bytes outer
-encodings and a nonnegative fee. Datum option, reference, redeemer, interval,
-treasury and donation are independent arbitrary Data. It has no keys, assets,
-amounts, schedule, boundary cases or variations. Missing or malformed nested
-values are included; this is not a ledger-validity predicate.
-
-These wider domains are opt-in. Fully generic checks for the sampled HTLC,
-vesting and escrow pairs remained inconclusive even with a 30-minute wall-clock
-limit. Budgets bound execution work, not ignored context size or symbolic
-reasoning. Narrower boundary domains remain available; timeouts never establish
-preservation or silently narrow an unbounded claim.
-
-Use `--equivalence --budget CPU MEMORY` to check acceptance preservation in
-both directions. Both scripts must accept the same inputs under that shared
-budget; successful return values are not compared. The report distinguishes
-`equivalent`, `inequivalent`, and `inconclusive`, and counterexamples identify
-which direction failed. Analysis exhaustion remains inconclusive.
+PlutusCoreBlaster is pinned to `c91fa707` (execution costs and the symbolic
+logarithm workaround). Blaster is pinned
+to `934f0c31` (the custom Cardano equivalence integration); put **Z3 5.3.1** with `recfun-finder` on `PATH`.
 
 ## General Description
 
