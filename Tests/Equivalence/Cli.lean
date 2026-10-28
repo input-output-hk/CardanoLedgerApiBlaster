@@ -8,8 +8,8 @@ open Support Lean
 -- implication fails; integer return values require the V2 acceptance rules.
 #eval show IO Unit from do
   let settings : _root_.Equivalence.Cli.Config := {
-    scripts := #["equivalence/examples/ifthenelse/ifthenelse.uplc",
-      "equivalence/examples/ifthenelse/ifthenelseopt.uplc"]
+    scripts := #["equivalence/examples/uplc-optimize/ifthenelse.uplc",
+      "equivalence/examples/uplc-optimize/ifthenelseopt.uplc"]
     format := "textual"
     inputs := "integer"
     language := "PlutusV2"

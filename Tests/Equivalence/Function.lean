@@ -47,8 +47,8 @@ def settings : _root_.Equivalence.Cli.Config := {
 -- A real optimizer bug: strict evaluation of an unused argument divides by zero.
 -- No V2, budget, equivalence, input-type or rejection-query switches are needed.
 #eval show IO Unit from do
-  let c ← IO.ofExcept (parse {} ["equivalence/examples/ifthenelse/ifthenelse.uplc",
-    "equivalence/examples/ifthenelse/ifthenelseopt.uplc", "--mode", "function"])
+  let c ← IO.ofExcept (parse {} ["equivalence/examples/uplc-optimize/ifthenelse.uplc",
+    "equivalence/examples/uplc-optimize/ifthenelseopt.uplc", "--mode", "function"])
   let r ← runBounded { c with timeout := 5, wallTimeout := 8 }
   verdict r "inequivalent"
   expect r ["mode"] "function"
