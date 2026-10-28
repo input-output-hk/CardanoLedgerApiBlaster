@@ -166,20 +166,47 @@ open Support Lean
   expect report ["old_acceptance_witness", "replayed"] true
   expect report ["old_acceptance_witness", "old", "accepts"] true
 
--- Rejection discharges only the direction starting at the rejected script.
+-- Deferred rejection establishes vacuity; a confirmed regression needs no
+-- rejection query in either direction.
 #eval show IO Unit from do
   let settings := selectFamily config "htlc-claim" 45 "baseline"
   let report ← comparePrograms "(lam c (error))" "(lam c (error))" settings
   verdict report "vacuously_equivalent"
   expect report ["derived_queries", "acceptance_preserved"] "old_rejected"
-  expect report ["derived_queries", "reverse_acceptance_preserved"] "new_rejected"
+  expect report ["queries", "reverse_acceptance_preserved"] "valid"
   noCounterexample report
   let report ← comparePrograms "(lam c (error))" "(lam c (con unit ()))" settings
   verdict report "inequivalent"
   let counterexample ← witness report
   expect counterexample ["direction"] "new_to_old"
-  let derived ← field report ["derived_queries"]
-  check report (derived.getObjVal? "reverse_acceptance_preserved").toOption.isNone
-    "Forward rejection discharged reverse preservation"
+  let checked ← field report ["queries"]
+  for name in ["old_rejected", "new_rejected"] do
+    check report (checked.getObjVal? name).toOption.isNone
+      "Confirmed reverse regression unnecessarily checked rejection"
+
+#eval show IO Unit from do
+  let c : _root_.Equivalence.Cli.Config := {
+    bounded := true, steps := 100, timeout := 5, wallTimeout := 10 }
+  unless _root_.Equivalence.Cli.queryNames c ==
+      #["acceptance_preserved", "no_acceptance_regression", "old_rejected"] do
+    throw <| IO.userError "OLD rejection must follow comparison"
+  let accept := "(lam c (con unit ()))"
+  let regression ← comparePrograms accept "(lam c (error))" c
+  verdict regression "bounded_regression"
+  discard <| witness regression
+  let checked ← field regression ["queries"]
+  check regression ((← IO.ofExcept checked.getObj?).size == 1)
+    "Confirmed regression should stop after its comparison"
+  let positive ← comparePrograms accept accept c
+  verdict positive "bounded_preserved"
+  expect positive ["old_acceptance_status"] "accepted"
+  let checked ← field positive ["queries"]
+  check positive (checked.getObjVal? "old_rejected").toOption.isNone
+    "Native OLD witness should avoid the universal rejection query"
+  let only42 := acceptIf "[[(builtin equalsInteger) c] (con integer 42)]"
+  let modeled ← comparePrograms only42 accept { c with inputs := "integer" }
+  verdict modeled "bounded_preserved"
+  expect modeled ["queries", "old_rejected"] "falsified"
+  expect modeled ["old_acceptance_witness", "input"] (42 : Int)
 
 end Tests.Equivalence.Cli

@@ -63,11 +63,11 @@ def specificVariationNames (choices : Array (String × String)) : String :=
 
 def usage : String := "Usage: lake exe uplc_equiv OLD NEW [options]
 
-Validator mode checks that NEW accepts every input accepted by OLD within the same budget.
+Validator mode checks that NEW accepts every input accepted by OLD within the supplied limits.
 Function mode compares returned constants and success/error outcomes, ignoring execution costs.
   --mode validator|function                             Default validator; function defaults to integer inputs, no budget
-  --steps N                                             Function analysis step limit (default 100000)
-  --bounded                                             Function: preserve OLD constant results within limits; allow additional NEW results
+  --steps N                                             Execution step limit; analysis guard unless --bounded (default 100000)
+  --bounded                                             Compare observations within step/budget limits; OLD results/acceptance preserved
 Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D).
   --inputs valid-context                                Validator default: generic V3 contexts; model-valid witnesses/replays, Data-superset proofs
   --inputs MODE                                         data (unrestricted Data), data3 (V2 arguments), integer
@@ -81,9 +81,9 @@ Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D).
   --format-left FORMAT                                  Override the left script format
   --format-right FORMAT                                 Override the right script format
   --language VERSION                                    PlutusV1, PlutusV2, PlutusV3 (default)
-  --budget CPU MEMORY                                   Shared execution-unit limits (required for validators; optional for functions)
+  --budget CPU MEMORY                                   Shared execution-unit limits (required for strict validators; optional with --bounded or function mode)
   --equivalence                                         Check both directions (validators or --bounded functions)
-  --skip-old-rejected                                   Skip the preliminary OLD rejection query; OLD acceptance still needs a witness
+  --skip-old-rejected                                   Skip the deferred OLD rejection query; OLD acceptance still needs a witness
   --timeout SECONDS                                     Z3 timeout per query (default 20)
   --wall-timeout SECONDS                                Limit the complete check, including preprocessing (default 180)
   --raw-context                                         Allow ledger-inconsistent HTLC/vesting/escrow contexts
@@ -91,12 +91,13 @@ Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D).
   --json                                                Emit a JSON report
   --help                                                Show this help
 
-Strict function comparisons require observable outcomes. --bounded maps errors, nonconstant returns and exhausted limits to none.
+Strict function comparisons require observable outcomes. Bounded functions observe absent constants as none.
+Bounded validators count step exhaustion as nonacceptance and still require an OLD-accepting witness.
 Exit codes: 0 preserved/equivalent/bounded_preserved/bounded_equivalent (validator: OLD acceptance witnessed),
 1 regression/inequivalent/bounded_regression/bounded_inequivalent,
-2 inconclusive, 3 tool/usage error, 4 vacuously_preserved/vacuously_equivalent.
+2 inconclusive, 3 tool/usage error, 4 vacuous validator preservation/equivalence (including bounded).
 Validator budget exhaustion is rejection; strict function budget exhaustion is inconclusive.
-Analysis exhaustion is inconclusive, except that --bounded observes it as none.
+Analysis exhaustion is inconclusive; --bounded instead declares steps part of the comparison scope.
 Validator V3 acceptance requires a unit result; V1/V2 accept any successful result.
 Budgets are per-script allocations; cost coefficients are bundled, not network parameters.
 Counterexamples include the input and both outcomes, replayed with the same limits.
@@ -174,9 +175,8 @@ def parse (c : Config) : List String → Except String Config
       { c with
         leftFormat := c.leftFormat.orElse fun _ => if c.scripts[0]!.endsWith ".uplc" then some "textual" else none
         rightFormat := c.rightFormat.orElse fun _ => if c.scripts[1]!.endsWith ".uplc" then some "textual" else none }
-    if c.bounded && c.mode != "function" then throw "--bounded requires --mode function"
-    if c.mode == "validator" && c.budget.isNone then
-      throw "acceptance checking requires --budget CPU MEMORY"
+    if c.mode == "validator" && !c.bounded && c.budget.isNone then
+      throw "validator checking requires --budget CPU MEMORY or --bounded --steps N"
     if c.mode == "function" then
       unless ["integer", "data", "data3"].contains c.inputs do
         throw "function mode supports --inputs integer, data or data3"
@@ -254,7 +254,9 @@ def functionQueryName (c : Config) : String :=
   else "function_equivalent"
 
 def Query.wantsCounterexample (query : Query) : Bool :=
-  query.name == "function_equivalent" || query.name == "bounded_function_equivalent" || query.name == "bounded_function_preserved" || query.name.endsWith "no_acceptance_regression" || query.name == "old_rejected"
+  query.name == "function_equivalent" || query.name == "bounded_function_equivalent" ||
+  query.name == "bounded_function_preserved" || query.name.endsWith "no_acceptance_regression" ||
+  query.name == "old_rejected" || query.name.endsWith "acceptance_preserved"
 
 def Query.description (query : Query) : String :=
   match query.name with
@@ -297,8 +299,8 @@ def queries (c : Config) : Array Query :=
       else
         (``Queries.integerNoAcceptanceRegression, ``Queries.integerAcceptancePreserved)
     let forward : Array Query := #[
-      ⟨"no_acceptance_regression", noRegression, #[0, 1]⟩,
-      ⟨"acceptance_preserved", preserved, #[0, 1]⟩]
+      ⟨"acceptance_preserved", preserved, #[0, 1]⟩,
+      ⟨"no_acceptance_regression", noRegression, #[0, 1]⟩]
     let rejectedDeclaration :=
       if c.inputs == "spending" then ``Context.spendingRejected
       else if isContextMode c.inputs then ``Context.generalizedRejected
@@ -307,23 +309,33 @@ def queries (c : Config) : Array Query :=
       else ``Queries.integerRejected
     let rejected := fun (name : String) (side : Nat) =>
       #[Query.mk name rejectedDeclaration #[side]]
-    let forward := (if c.skipOldRejected then #[] else rejected "old_rejected" 0) ++ forward
-    if c.equivalence then forward ++ rejected "new_rejected" 1 ++ #[
-      ⟨"reverse_no_acceptance_regression", noRegression, #[1, 0]⟩,
-      ⟨"reverse_acceptance_preserved", preserved, #[1, 0]⟩]
-    else forward
+    let comparisons := if c.equivalence then #[
+      ⟨"acceptance_preserved", preserved, #[0, 1]⟩,
+      ⟨"reverse_acceptance_preserved", preserved, #[1, 0]⟩,
+      ⟨"no_acceptance_regression", noRegression, #[0, 1]⟩,
+      ⟨"reverse_no_acceptance_regression", noRegression, #[1, 0]⟩]
+      else forward
+    comparisons ++ (if c.skipOldRejected then #[] else rejected "old_rejected" 0) ++
+      (if c.equivalence then rejected "new_rejected" 1 else #[])
 
 def queryNames (c : Config) : Array String := (queries c).map Query.name
 
-/-- A completed rejection proof settles only the direction starting at that script.
-    The pointwise implications are `Acceptance.preserved_of_rejected` and
-    `Acceptance.no_regression_of_rejected`. -/
+/-- Rejection settles only the direction starting at that script. -/
 def rejectionEvidence (c : Config) (query : Query) (results : Array Blaster.Smt.Result) : Option String :=
   let name := if query.sides[0]? == some 0 then "old_rejected" else "new_rejected"
   if query.name == name then none
   else match results[(queryNames c).idxOf name]? with
     | some .Valid => some name
     | _ => none
+
+/-- Rejection settles its own direction; preservation also implies no regression.
+    These implications are checked by the Acceptance lemmas. -/
+def queryEvidence (c : Config) (query : Query) (results : Array Blaster.Smt.Result) : Option String :=
+  (rejectionEvidence c query results).orElse fun _ => do
+    guard (query.name.endsWith "no_acceptance_regression")
+    let preserved := if query.sides[0]? == some 0 then "acceptance_preserved" else "reverse_acceptance_preserved"
+    guard (results[(queryNames c).idxOf preserved]? matches some .Valid)
+    return preserved
 
 def vestingCases (c : Config) : Array Vesting.Case :=
   let choices := Vesting.cases (c.inputs == "vesting-partial")
@@ -460,7 +472,8 @@ def queryPropositions (c : Config) (query : Query) (programs : Array Expr)
     (families : Array Expr := contextFamilyExprs c) : Array Expr :=
   let (cpu, memory) := c.budget.getD (0, 0)
   let limits := #[mkRawNatLit cpu, mkRawNatLit memory, toExpr (c.language == "PlutusV3")]
-  let limits := if c.mode == "function" then limits ++ #[toExpr c.budget.isSome, mkRawNatLit c.steps] else limits
+  let limits := if c.mode == "function" then limits ++ #[toExpr c.budget.isSome, mkRawNatLit c.steps] else
+    limits ++ #[toExpr c.bounded, toExpr c.budget.isSome, mkRawNatLit c.steps]
   let arguments := query.sides.map (programs[·]!) ++ limits
   if families.isEmpty then #[mkAppN (mkConst query.declaration) arguments]
   else families.map fun family => mkAppN (mkConst query.declaration) (#[family] ++ arguments)
@@ -483,48 +496,6 @@ def prepareContextFamilies (env : Environment) (c : Config) : IO (Array Expr) :=
   return families.foldl (fun unique family =>
     if unique.contains family then unique else unique.push family) #[]
 
-/-- Call Blaster in-process on propositions constructed from decoded programs.
-    Results are consumed as an inductive type, without parsing diagnostic text. -/
-def solve (env : Environment) (c : Config) (left right : PlutusCore.UPLC.Term.Program)
-    (caseResults : Option (IO.Ref (Array (Array Blaster.Smt.Result))) := none)
-    (preparedFamilies : Option (Array Expr) := none) : IO (Array Blaster.Smt.Result) := do
-  let families ← match preparedFamilies with
-    | some families => pure families
-    | none => prepareContextFamilies env c
-  let programs := #[toExpr left, toExpr right]
-  let action : MetaM (Array Blaster.Smt.Result) := do
-    let mut results := #[]
-    for query in queries c do
-      if let some evidence := rejectionEvidence c query results then
-        progress s!"Skipping: {query.name} (derived from {evidence})"
-        results := results.push .Valid
-        if let some ref := caseResults then ref.modify (·.push #[])
-        continue
-      let mut checked := #[]
-      let mut combined : Blaster.Smt.Result := .Valid
-      progress s!"Starting: {query.description} [{query.name}]"
-      let propositions := queryPropositions c query programs families
-      for (proposition, index) in propositions.toList.zipIdx do
-        if propositions.size > 1 then
-          progress s!"Starting: {query.name}, case {index + 1}/{propositions.size}"
-        let solverEnv := { (default : Blaster.Optimize.TranslateEnv) with
-          optEnv.options.solverOptions.timeout := some c.timeout
-          optEnv.options.solverOptions.generateCex := query.wantsCounterexample }
-        let ((result, _), _) ← Blaster.Smt.Translate.main proposition |>.run solverEnv
-        checked := checked.push result
-        combined := combineResults combined result
-        match combined with
-        | .Falsified _ => break
-        | _ => pure ()
-      if let some ref := caseResults then ref.modify (·.push checked)
-      results := results.push combined
-      progress s!"Finished: {query.name}: {status combined}"
-    return results
-  let (results, _) ← action.run' |>.toIO
-    { fileName := "<uplc_equiv>", fileMap := default, maxRecDepth := 0, maxHeartbeats := 0 }
-    { env }
-  return results
-
 def report (verdict explanation : String) (fields : List (String × Json) := []) : Json :=
   Json.mkObj ([("verdict", toJson verdict), ("explanation", toJson explanation)] ++ fields)
 
@@ -538,15 +509,15 @@ def valueJson : PlutusCore.UPLC.CekValue.CekValue → Json
   | .VCon .Unit => Json.mkObj [("kind", toJson "unit")]
   | value => Json.mkObj [("kind", toJson "other"), ("value", toJson (reprStr value))]
 
-def budgetOutcomeJson (v3 : Bool) (result : Acceptance.Result) : Json :=
+def budgetOutcomeJson (v3 : Bool) (result : Acceptance.Result) (bounded := false) (budgeted := true) : Json :=
   let fields := match result with
-    | .success value spent => [("result", valueJson value),
-        ("spent_cpu", toJson spent.exBudgetCPU.unExCPU),
-        ("spent_memory", toJson spent.exBudgetMemory.unExMemory)]
+    | .success value spent => [("result", valueJson value)] ++
+        (if budgeted then [("spent_cpu", toJson spent.exBudgetCPU.unExCPU),
+          ("spent_memory", toJson spent.exBudgetMemory.unExMemory)] else [])
     | .error => [("kind", toJson "error")]
     | .budgetExhausted => [("kind", toJson "budget_exhausted")]
     | .unfinished => [("kind", toJson "unfinished")]
-  Json.mkObj (("accepts", toJson (Acceptance.accepts v3 result)) :: fields)
+  Json.mkObj (("accepts", toJson (Acceptance.accepts v3 (Validator.observe bounded result))) :: fields)
 
 def functionOutcomeJson (budgeted : Bool) (result : Acceptance.Result) : Json :=
   match result with
@@ -626,20 +597,21 @@ def replayWitness (c : Config) (left right : PlutusCore.UPLC.Term.Program)
   let (cpu, memory) := c.budget.getD (0, 0)
   let v3 := c.language == "PlutusV3"
   let replay := fun args input => do
-    let execute := if c.mode == "function" then
-      fun program => Function.execute program args cpu memory v3 c.budget.isSome c.steps
-      else fun program => Acceptance.execute program args cpu memory v3
+    let execute := fun program => Function.execute program args cpu memory v3 c.budget.isSome c.steps
     let old := execute left
     let new := execute right
+    let oldObserved := Validator.observe c.bounded old
+    let newObserved := Validator.observe c.bounded new
     let reproduces := if c.mode == "function" then
         if c.bounded then
           if c.equivalence then !Function.boundedSame old new else !Function.boundedPreserved old new
         else Function.same old new == some false
-      else if acceptanceOnly then Acceptance.accepts v3 old == some true
-      else if reverse then Acceptance.regression v3 new old else Acceptance.regression v3 old new
+      else if acceptanceOnly then Acceptance.accepts v3 oldObserved == some true
+      else if reverse then Acceptance.regression v3 newObserved oldObserved
+      else Acceptance.regression v3 oldObserved newObserved
     if reproduces then
       let outcome := if c.mode == "function" then functionOutcomeJson c.budget.isSome
-        else budgetOutcomeJson v3
+        else fun result => budgetOutcomeJson v3 result c.bounded c.budget.isSome
       let validity := if c.mode == "function" then [] else match args with
         | [.Const (.Data context)] => [("ledger_validity", auditLedgerContext c context)]
         | _ => []
@@ -713,6 +685,87 @@ def replayOldAcceptance (c : Config) (left right : PlutusCore.UPLC.Term.Program)
     (model : List String) : Json :=
   replayWitness c left right model false true
 
+private def replayConfirmed (witness : Json) : Bool :=
+  (witness.getObjValAs? Bool "replayed").toOption == some true
+
+/-- Call Blaster in-process on propositions constructed from decoded programs.
+    Results are consumed as an inductive type, without parsing diagnostic text. -/
+def solve (env : Environment) (c : Config) (left right : PlutusCore.UPLC.Term.Program)
+    (caseResults : Option (IO.Ref (Array (Array Blaster.Smt.Result))) := none)
+    (preparedFamilies : Option (Array Expr) := none) : IO (Array Blaster.Smt.Result) := do
+  let families ← match preparedFamilies with
+    | some families => pure families
+    | none => prepareContextFamilies env c
+  let programs := #[toExpr left, toExpr right]
+  let plan := queries c
+  let names := plan.map Query.name
+  let skipRemaining := fun (checked : Nat) (reason : String) => do
+    for pending in plan.toList.drop checked do
+      progress s!"Skipping: {pending.name} ({reason})"
+  let action : MetaM (Array Blaster.Smt.Result) := do
+    let mut results := #[]
+    let comparisonsProved := fun (checked : Array Blaster.Smt.Result) =>
+      let result := fun name => checked[names.idxOf name]?.getD .Undetermined
+      (result "acceptance_preserved" matches .Valid) &&
+        (!c.equivalence || (result "reverse_acceptance_preserved" matches .Valid))
+    for query in plan do
+      if query.name == "old_rejected" && results.any (fun result => result matches .Falsified _) then
+        -- A rejection proof cannot repair a disproved implication. Classification
+        -- will report a replayed regression or an inconclusive comparison.
+        skipRemaining results.size "comparison disproved"
+        break
+      if query.name == "old_rejected" && comparisonsProved results then
+        progress "Starting: looking for an OLD-accepting replay"
+        let witness := replayOldAcceptance c left right []
+        if replayConfirmed witness then
+          progress "Skipping: old_rejected (OLD acceptance confirmed by native replay)"
+          if c.equivalence then progress "Skipping: new_rejected (both comparisons proved)"
+          break
+      if query.name == "new_rejected" && comparisonsProved results then
+        progress "Skipping: new_rejected (both comparisons proved)"
+        break
+      if let some evidence := queryEvidence c query results then
+        progress s!"Skipping: {query.name} (derived from {evidence})"
+        results := results.push .Valid
+        if let some ref := caseResults then ref.modify (·.push #[])
+        continue
+      let mut checked := #[]
+      let mut combined : Blaster.Smt.Result := .Valid
+      progress s!"Starting: {query.description} [{query.name}]"
+      let propositions := queryPropositions c query programs families
+      for (proposition, index) in propositions.toList.zipIdx do
+        if propositions.size > 1 then
+          progress s!"Starting: {query.name}, case {index + 1}/{propositions.size}"
+        let solverEnv := { (default : Blaster.Optimize.TranslateEnv) with
+          optEnv.options.solverOptions.timeout := some c.timeout
+          optEnv.options.solverOptions.generateCex := query.wantsCounterexample }
+        let ((result, _), _) ← Blaster.Smt.Translate.main proposition |>.run solverEnv
+        checked := checked.push result
+        combined := combineResults combined result
+        match combined with
+        | .Falsified _ => break
+        | _ => pure ()
+      if let some ref := caseResults then ref.modify (·.push checked)
+      results := results.push combined
+      progress s!"Finished: {query.name}: {status combined}"
+      if c.mode == "validator" && query.sides.size == 2 then
+        if let .Falsified model := combined then
+          let witness := replayCounterexample c left right model (query.sides[0]? == some 1)
+          if replayConfirmed witness then
+            skipRemaining results.size "regression confirmed by native replay"
+            break
+      if (query.name == "old_rejected" || query.name == "new_rejected") && (combined matches .Valid) then
+        for (previous, i) in (plan.toList.take results.size).zipIdx do
+          if let some evidence := queryEvidence c previous results then
+            results := results.set! i .Valid
+            if let some ref := caseResults then ref.modify (fun rows => rows.set! i #[])
+            progress s!"Derived: {previous.name} (from {evidence})"
+    return results
+  let (results, _) ← action.run' |>.toIO
+    { fileName := "<uplc_equiv>", fileMap := default, maxRecDepth := 0, maxHeartbeats := 0 }
+    { env }
+  return results
+
 def classifyFunction (c : Config) (results : Array Blaster.Smt.Result)
     (left right : PlutusCore.UPLC.Term.Program) : Json := Id.run do
   let result := results[0]?.getD .Undetermined
@@ -747,7 +800,7 @@ def classifyFunction (c : Config) (results : Array Blaster.Smt.Result)
     return report equivalent explanation details
   | .Falsified model =>
     let witness := replayCounterexample c left right model
-    if (witness.getObjValAs? Bool "replayed").toOption == some true then
+    if replayConfirmed witness then
       return report inequivalent (if c.bounded then if c.equivalence then "The functions have different bounded observations on a replayed input." else "NEW fails to preserve an OLD constant result within the supplied limits on a replayed input." else "The functions produce different outcomes or returned values on a replayed input.")
         (details ++ [("counterexample", witness)])
     return report "inconclusive" "Function equivalence is unestablished: a limit, unsupported return value, or unreplayed countermodel prevented comparison."
@@ -776,18 +829,28 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
   let reverseMismatch := result "reverse_no_acceptance_regression"
   let reversePreserved := result "reverse_acceptance_preserved"
   -- Prefer a forward witness when both directions expose a regression.
+  let replayedDifference := fun (result : Blaster.Smt.Result) (reverse : Bool) => match result with
+    | .Falsified model =>
+      let witness := replayCounterexample c left right model reverse
+      if replayConfirmed witness then some (reverse, model) else none
+    | _ => none
   let regression := match mismatch, reverseMismatch with
     | .Falsified model, _ => some (false, model)
     | _, .Falsified model => if c.equivalence then some (true, model) else none
-    | _, _ => none
+    | _, _ => (replayedDifference preserved false).orElse fun _ =>
+        if c.equivalence then replayedDifference reversePreserved true else none
   let complete := (preserved matches .Valid) && (!c.equivalence || (reversePreserved matches .Valid))
+  let boundedPrefix := if c.bounded then "bounded_" else ""
+  let successVerdict := boundedPrefix ++ if c.equivalence then "equivalent" else "preserved"
+  let failureVerdict := boundedPrefix ++ if c.equivalence then "inequivalent" else "regression"
+  let scope := if c.bounded then "within the supplied step and optional execution-budget limits" else "under the supplied budget"
   let (initialVerdict, initialExplanation) :=
     if regression.isSome then
-      if c.equivalence then ("inequivalent", "One script accepts an input rejected by the other under the shared budget.")
-      else ("regression", "An input accepted by OLD is rejected by NEW under the shared budget.")
+      if c.equivalence then (failureVerdict, s!"One script accepts an input not accepted by the other {scope}.")
+      else (failureVerdict, s!"An input accepted by OLD is not accepted by NEW {scope}.")
     else if complete then
-      if c.equivalence then ("equivalent", "Both scripts accept the same inputs in the declared domain under the shared budget.")
-      else ("preserved", "NEW accepts every input accepted by OLD in the declared domain under the supplied budget.")
+      if c.equivalence then (successVerdict, s!"Both scripts accept the same inputs in the declared domain {scope}.")
+      else (successVerdict, s!"NEW accepts every input accepted by OLD in the declared domain {scope}.")
     else ("inconclusive", "Acceptance preservation is unestablished: analysis or symbolic reasoning did not finish.")
   let mut verdict := initialVerdict
   let mut explanation := initialExplanation
@@ -796,53 +859,55 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
   if complete && regression.isNone then
     match result "old_rejected" with
     | .Valid =>
-      verdict := if c.equivalence then "vacuously_equivalent" else "vacuously_preserved"
-      explanation := "OLD rejects every input in the declared domain under the supplied budget; preservation is vacuous."
+      verdict := "vacuously_" ++ successVerdict
+      explanation := s!"OLD accepts no input in the declared domain {scope}; preservation is vacuous."
       let variant : PlutusCore.Default.BuiltinSemanticsVariant := if c.language == "PlutusV3" then
         .defaultFunSemanticsVariantE else .defaultFunSemanticsVariantD
       let costs := PlutusCore.UPLC.CekMachine.semVarToCosts variant
       let startup := costs.startupCost
       let budget : PlutusCore.UPLC.ExBudget.ExBudget := ⟨⟨cpu⟩, ⟨memory⟩⟩
-      let belowStartup := !budget.canAfford startup
+      let belowStartup := c.budget.isSome && !budget.canAfford startup
       -- Every CLI domain supplies at least one argument, hence its initial
       -- term is an application, independent of the script and input values.
-      let belowFirstStep := !budget.canAfford (startup + costs.stepCostApply)
+      let belowFirstStep := c.budget.isSome && !budget.canAfford (startup + costs.stepCostApply)
       if belowStartup then
         explanation := "The supplied budget cannot cover startup; OLD and NEW reject every input before execution. Preservation is vacuous."
       else if belowFirstStep then
         explanation := "The supplied budget covers startup but cannot cover the first application step; OLD and NEW reject every input. Preservation is vacuous."
       acceptanceFields := [("old_acceptance_status", toJson "rejected_everywhere"),
         ("vacuity_reason", toJson (if belowStartup then "startup_budget_exhausted"
-          else if belowFirstStep then "initial_step_budget_exhausted" else "old_rejects_domain"))]
+          else if belowFirstStep then "initial_step_budget_exhausted"
+          else if c.bounded then "old_rejects_bounded_domain" else "old_rejects_domain"))]
     | rejectionResult =>
       let model := match rejectionResult with
         | .Falsified model => model
         | _ => []
       let witness := replayOldAcceptance c left right model
-      if (witness.getObjValAs? Bool "replayed").toOption == some true then
+      if replayConfirmed witness then
         acceptanceFields := [("old_acceptance_status", toJson "accepted"),
           ("old_acceptance_witness", witness)]
       else
         verdict := "inconclusive"
-        explanation := "Preservation was proved, but no input accepted by OLD could be established in the declared domain under the supplied budget."
+        explanation := s!"Preservation was proved, but no input accepted by OLD could be established in the declared domain {scope}."
         acceptanceFields := [("old_acceptance_status", toJson "unestablished"),
           ("inconclusive_reason", toJson "old_acceptance_unestablished"),
           ("diagnostic_old_acceptance", witness)]
   let details := [
-    ("mode", toJson "validator"),
+    ("mode", toJson "validator"), ("bounded", toJson c.bounded), ("steps", toJson c.steps),
     ("check", toJson (if c.equivalence then "acceptance preservation in both directions" else "old acceptance implies new acceptance")),
-    ("budget", Json.mkObj [("cpu", toJson cpu), ("memory", toJson memory)]),
-    ("cost_model", toJson (if c.language == "PlutusV3" then "bundled post-Conway E" else "bundled post-Conway D")),
-    ("language", toJson c.language)]
+    ("budget", c.budget.map (fun (cpu, memory) => Json.mkObj [("cpu", toJson cpu), ("memory", toJson memory)]) |>.getD Json.null),
+    ("language", toJson c.language)] ++
+    (if c.budget.isSome then [("cost_model", toJson (if c.language == "PlutusV3" then "bundled post-Conway E" else "bundled post-Conway D"))]
+     else [("execution", toJson "uncosted")])
   let counterexample := regression.toList.map fun (reverse, model) =>
     ("counterexample", replayCounterexample c left right model reverse)
   if checksLedger c then
     for (_, witness) in counterexample do
-      unless (witness.getObjValAs? Bool "replayed").toOption == some true do
+      unless replayConfirmed witness do
         return report "inconclusive" "The raw countermodel could not be replayed as a ledger-valid acceptance regression."
           (ledgerFields ++ [("input_domain", toJson (inputDomain c)), ("diagnostic_counterexample", witness)])
   let derivations := (queries c).toList.filterMap fun query =>
-    (rejectionEvidence c query results).map fun evidence => (query.name, toJson evidence)
+    (queryEvidence c query results).map fun evidence => (query.name, toJson evidence)
   let provenance := if derivations.isEmpty then [] else [("derived_queries", Json.mkObj derivations)]
   return report verdict explanation ([("input_domain", toJson (inputDomain c))] ++ details ++ ledgerFields ++ acceptanceFields ++ [
     ("queries", Json.mkObj (names.toList.zip (results.toList.map (toJson ∘ status)))),
@@ -986,7 +1051,8 @@ def exitCode (r : Json) : UInt32 :=
   | some "preserved" | some "equivalent" | some "bounded_equivalent" | some "bounded_preserved" => 0
   | some "regression" | some "inequivalent" | some "bounded_inequivalent" | some "bounded_regression" => 1
   | some "inconclusive" => 2
-  | some "vacuously_preserved" | some "vacuously_equivalent" => 4
+  | some "vacuously_preserved" | some "vacuously_equivalent"
+  | some "vacuously_bounded_preserved" | some "vacuously_bounded_equivalent" => 4
   | _ => 3
 
 def printReport (json : Bool) (r : Json) : IO Unit := do
@@ -995,8 +1061,12 @@ def printReport (json : Bool) (r : Json) : IO Unit := do
     IO.println s!"{(r.getObjValAs? String "verdict").toOption.getD "error"}: {(r.getObjValAs? String "explanation").toOption.getD ""}"
     if let .ok domain := r.getObjValAs? String "input_domain" then
       IO.println s!"Input domain: {domain}"
+    if let .ok steps := r.getObjValAs? Nat "steps" then
+      IO.println s!"Step limit: {steps}"
     if let .ok budget := r.getObjVal? "budget" then
-      IO.println s!"Budget: {budget.compress}"
+      if budget != Json.null then IO.println s!"Budget: {budget.compress}"
+    if let .ok execution := r.getObjValAs? String "execution" then
+      IO.println s!"Execution: {execution}"
     if let .ok model := r.getObjValAs? String "cost_model" then
       IO.println s!"Cost model: {model}"
     if let .ok queries := r.getObjVal? "queries" then

@@ -50,12 +50,14 @@ class CheckerProcess(unittest.TestCase):
                 stages = ["Starting: loading OLD script", "Starting: loading NEW script",
                           "Starting: constructing a ledger-model-valid domain witness",
                           "Starting: preparing symbolic checker", "Starting: preparing symbolic input families"]
-                stages += (["Skipping: old_rejected (--skip-old-rejected)"] if skip else [
-                    "Starting: checking whether OLD rejects every input [old_rejected]",
-                    "Finished: old_rejected: falsified"])
-                stages += ["Starting: checking for an OLD-to-NEW acceptance regression [no_acceptance_regression]",
-                           "Starting: proving OLD-to-NEW acceptance preservation [acceptance_preserved]",
-                           "Starting: validating replay witnesses and classifying results"]
+                if skip:
+                    stages += ["Skipping: old_rejected (--skip-old-rejected)"]
+                stages += ["Starting: proving OLD-to-NEW acceptance preservation [acceptance_preserved]",
+                           "Skipping: no_acceptance_regression (derived from acceptance_preserved)"]
+                if not skip:
+                    stages += ["Starting: looking for an OLD-accepting replay",
+                               "Skipping: old_rejected (OLD acceptance confirmed by native replay)"]
+                stages += ["Starting: validating replay witnesses and classifying results"]
                 offset = 0
                 for stage in stages:
                     position = result.stderr.find(stage, offset)
@@ -65,7 +67,7 @@ class CheckerProcess(unittest.TestCase):
                     self.assertNotIn("checking whether OLD rejects every input", result.stderr)
                 self.assertNotIn("[uplc_equiv]", result.stdout)
 
-    def test_rejection_shortcut_export(self):
+    def test_deferred_rejection_export(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             old, new, emitted = root / "old.uplc", root / "new.uplc", root / "rejects.lean"
@@ -79,10 +81,12 @@ class CheckerProcess(unittest.TestCase):
                                     capture_output=True, text=True, timeout=40)
             report = json.loads(result.stdout)
             self.assertEqual((result.returncode, report["verdict"]), (4, "vacuously_equivalent"), report)
-            self.assertIn("Skipping: acceptance_preserved (derived from old_rejected)", result.stderr)
+            self.assertIn("Derived: acceptance_preserved (from old_rejected)", result.stderr)
+            self.assertLess(result.stderr.index("[acceptance_preserved]"),
+                            result.stderr.index("[old_rejected]"))
             source = emitted.read_text()
             self.assertIn("-- old_rejected,", source)
-            self.assertIn("-- new_rejected,", source)
+            self.assertNotIn("-- new_rejected,", source)
             self.assertNotIn("-- acceptance_preserved,", source)
             self.assertNotIn("-- no_acceptance_regression,", source)
             checked = subprocess.run(["lake", "env", "lean", "--memory=8192", str(emitted)],
@@ -159,13 +163,17 @@ class CheckerProcess(unittest.TestCase):
                 report = json.loads(result.stdout)
                 self.assertEqual((result.returncode, report["verdict"]),
                                  (0, "equivalent" if symmetric else "preserved"), report)
-                # 96 cases collapse to four families for each comparison query.
+                # 96 cases collapse to four families for each preservation proof.
+                # No-regression queries follow from those proofs and are omitted.
                 source = emitted.read_text()
-                names = ["no_acceptance_regression", "acceptance_preserved"]
+                names = ["acceptance_preserved"]
                 if symmetric:
-                    names += ["reverse_no_acceptance_regression", "reverse_acceptance_preserved"]
+                    names += ["reverse_acceptance_preserved"]
                 for name in names:
                     self.assertEqual(source.count(f"-- {name}, case "), 4)
+                for name in ["no_acceptance_regression", "reverse_no_acceptance_regression",
+                             "old_rejected", "new_rejected"]:
+                    self.assertNotIn(f"-- {name}, case ", source)
                 checked = subprocess.run(["lake", "env", "lean", "--memory=8192", str(emitted)],
                                          cwd=ROOT, capture_output=True, text=True, timeout=60)
                 self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)

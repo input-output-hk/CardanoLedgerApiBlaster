@@ -1,5 +1,6 @@
 import Equivalence.Acceptance
 import Equivalence.Function
+import Equivalence.Validator
 
 namespace Equivalence.Queries
 
@@ -12,49 +13,61 @@ def dataArgs (datum redeemer context : Data) : List Term :=
 
 def contextArgs (context : Data) : List Term := [.Const (.Data context)]
 
-def rejected (args : List Term) (old : Program) (cpu memory : Nat) (v3 : Bool) : Prop :=
-  Acceptance.accepts v3 (Acceptance.execute old args cpu memory v3) = some false
+def rejected (args : List Term) (old : Program) (cpu memory : Nat) (v3 : Bool)
+    (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
+  Acceptance.accepts v3 (Validator.execute old args cpu memory v3 bounded budgeted steps) = some false
 
-def contextRejected (old : Program) (cpu memory : Nat) (v3 : Bool) : Prop :=
-  ∀ context : Data, rejected (contextArgs context) old cpu memory v3
+def contextRejected (old : Program) (cpu memory : Nat) (v3 : Bool)
+    (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
+  ∀ context : Data, rejected (contextArgs context) old cpu memory v3 bounded budgeted steps
 
-def validatorRejected (old : Program) (cpu memory : Nat) (v3 : Bool) : Prop :=
-  ∀ datum redeemer context : Data, rejected (dataArgs datum redeemer context) old cpu memory v3
+def validatorRejected (old : Program) (cpu memory : Nat) (v3 : Bool)
+    (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
+  ∀ datum redeemer context : Data, rejected (dataArgs datum redeemer context) old cpu memory v3 bounded budgeted steps
 
 def acceptancePreserved (args : List Term) (old new : Program)
-    (cpu memory : Nat) (v3 : Bool) : Prop :=
-  Acceptance.Preserved v3 (Acceptance.execute old args cpu memory v3)
-    (Acceptance.execute new args cpu memory v3)
+    (cpu memory : Nat) (v3 : Bool)
+    (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
+  Acceptance.Preserved v3 (Validator.execute old args cpu memory v3 bounded budgeted steps)
+    (Validator.execute new args cpu memory v3 bounded budgeted steps)
 
 def noAcceptanceRegression (args : List Term) (old new : Program)
-    (cpu memory : Nat) (v3 : Bool) : Prop :=
-  ¬ Acceptance.Regression v3 (Acceptance.execute old args cpu memory v3)
-    (Acceptance.execute new args cpu memory v3)
+    (cpu memory : Nat) (v3 : Bool)
+    (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
+  ¬ Acceptance.Regression v3 (Validator.execute old args cpu memory v3 bounded budgeted steps)
+    (Validator.execute new args cpu memory v3 bounded budgeted steps)
 
-def contextAcceptancePreserved (old new : Program) (cpu memory : Nat) (v3 : Bool) : Prop :=
-  ∀ context : Data, acceptancePreserved (contextArgs context) old new cpu memory v3
+def contextAcceptancePreserved (old new : Program) (cpu memory : Nat) (v3 : Bool)
+    (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
+  ∀ context : Data, acceptancePreserved (contextArgs context) old new cpu memory v3 bounded budgeted steps
 
-def contextNoAcceptanceRegression (old new : Program) (cpu memory : Nat) (v3 : Bool) : Prop :=
-  ∀ context : Data, noAcceptanceRegression (contextArgs context) old new cpu memory v3
+def contextNoAcceptanceRegression (old new : Program) (cpu memory : Nat) (v3 : Bool)
+    (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
+  ∀ context : Data, noAcceptanceRegression (contextArgs context) old new cpu memory v3 bounded budgeted steps
 
-def validatorAcceptancePreserved (old new : Program) (cpu memory : Nat) (v3 : Bool) : Prop :=
+def validatorAcceptancePreserved (old new : Program) (cpu memory : Nat) (v3 : Bool)
+    (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
   ∀ datum redeemer context : Data,
-    acceptancePreserved (dataArgs datum redeemer context) old new cpu memory v3
+    acceptancePreserved (dataArgs datum redeemer context) old new cpu memory v3 bounded budgeted steps
 
-def validatorNoAcceptanceRegression (old new : Program) (cpu memory : Nat) (v3 : Bool) : Prop :=
+def validatorNoAcceptanceRegression (old new : Program) (cpu memory : Nat) (v3 : Bool)
+    (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
   ∀ datum redeemer context : Data,
-    noAcceptanceRegression (dataArgs datum redeemer context) old new cpu memory v3
+    noAcceptanceRegression (dataArgs datum redeemer context) old new cpu memory v3 bounded budgeted steps
 
 def args (n : Integer) : List Term := [.Const (.Integer n)]
 
-def integerRejected (old : Program) (cpu memory : Nat) (v3 : Bool) : Prop :=
-  ∀ n : Integer, rejected (args n) old cpu memory v3
+def integerRejected (old : Program) (cpu memory : Nat) (v3 : Bool)
+    (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
+  ∀ n : Integer, rejected (args n) old cpu memory v3 bounded budgeted steps
 
-def integerAcceptancePreserved (old new : Program) (cpu memory : Nat) (v3 : Bool) : Prop :=
-  ∀ n : Integer, acceptancePreserved (args n) old new cpu memory v3
+def integerAcceptancePreserved (old new : Program) (cpu memory : Nat) (v3 : Bool)
+    (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
+  ∀ n : Integer, acceptancePreserved (args n) old new cpu memory v3 bounded budgeted steps
 
-def integerNoAcceptanceRegression (old new : Program) (cpu memory : Nat) (v3 : Bool) : Prop :=
-  ∀ n : Integer, noAcceptanceRegression (args n) old new cpu memory v3
+def integerNoAcceptanceRegression (old new : Program) (cpu memory : Nat) (v3 : Bool)
+    (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
+  ∀ n : Integer, noAcceptanceRegression (args n) old new cpu memory v3 bounded budgeted steps
 
 def functionEquivalent (args : List Term) (old new : Program) (cpu memory : Nat)
     (v3 budgeted : Bool) (steps : Nat) : Prop :=

@@ -10,3 +10,4 @@ import Tests.Equivalence.HtlcCli
 import Tests.Equivalence.Variations
 import Tests.Equivalence.Function
 import Tests.Equivalence.UplcOptimize
+import Tests.Equivalence.BoundedValidator

@@ -251,15 +251,18 @@ theorem fibonacci_equiv :
   directly. Otherwise, closures, constructor returns,
   and exhausted analysis or optional execution budgets remain inconclusive.
 
-Use `--mode function --bounded --steps 1000` to preserve OLD results within the
-limits while allowing additional NEW results. Add `--equivalence` to check both
-directions. Errors, nonconstant returns, and exhausted limits count as `none`.
+Use `--bounded --steps N` to compare within a step limit, with an optional
+execution budget. This preserves validator acceptance or function results;
+`--equivalence` checks both directions. Bounded validators still require an
+OLD-accepting witness; a bound admitting no OLD inputs is explicitly vacuous.
+Bounded functions treat errors, nonconstant returns, and exhausted limits as `none`.
 Results use `bounded_preserved`/`bounded_regression`, or
 `bounded_equivalent`/`bounded_inequivalent` with `--equivalence`.
 
 ```sh
 lake build uplc_equiv
 lake exe uplc_equiv old.cbor_hex new.cbor_hex --budget 10000000 100000
+lake exe uplc_equiv old.cbor_hex new.cbor_hex --bounded --steps 2000
 lake exe uplc_equiv old.uplc new.uplc --mode function
 ```
 
@@ -278,8 +281,10 @@ make checks inconclusive. Model validity does not establish on-chain reachabilit
 
 Validator success requires a replayed OLD-accepting input. Proven universal OLD
 rejection is reported as vacuous; failure to establish either is inconclusive.
-`--skip-old-rejected` skips the preliminary rejection query but retains the
-acceptance-witness requirement. Function mode compares outcomes directly.
+Comparisons run first. Confirmed regressions and native OLD-accepting witnesses
+skip the rejection query; otherwise it runs afterward. `--skip-old-rejected`
+omits that fallback while retaining the witness requirement. Function mode
+compares outcomes directly.
 
 Exit codes: **0** preserved/equivalent, **1** regression/inequivalent,
 **2** inconclusive, **3** tool/usage error, **4** vacuous validator preservation/equivalence.
@@ -288,8 +293,8 @@ machine-readable stdout, and `--emit-lean FILE` exports the queries.
 See `lake exe uplc_equiv --help` for domains, variations, formats, and limits.
 
 Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D), rather
-than current network parameters. Solver, wall-clock, and analysis step limits
-can only yield inconclusive results. Verification uses Blaster's SMT results
+than current network parameters. Solver and wall-clock limits, and step exhaustion
+without `--bounded`, yield inconclusive results. Verification uses Blaster's SMT results
 without reconstructed Lean proof terms.
 
 PlutusCoreBlaster is pinned to `c91fa707` (execution costs and the symbolic

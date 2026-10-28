@@ -113,6 +113,15 @@ theorem no_regression_of_rejected (v3 : Bool) (old new : Result)
 def preserved (v3 : Bool) (old new : Result) : Bool :=
   accepts v3 old == some false || accepts v3 new == some true
 
+theorem no_regression_of_preserved (v3 : Bool) (old new : Result)
+    (preserved : Preserved v3 old new) : ¬ Regression v3 old new := by
+  rcases preserved with rejected | accepted
+  · exact no_regression_of_rejected v3 old new rejected
+  · intro regression
+    have rejected := regression.2
+    rw [accepted] at rejected
+    contradiction
+
 def regression (v3 : Bool) (old new : Result) : Bool :=
   accepts v3 old == some true && accepts v3 new == some false
 

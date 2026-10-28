@@ -409,17 +409,20 @@ def generalizedAll (args : GeneralFamily) (p : List Term → Prop) : Prop :=
       arbitraryInterval, arbitraryReference⟩) p
 
 def generalizedRejected (args : GeneralFamily) (old : Program)
-    (cpu memory : Nat) (v3 : Bool) : Prop :=
+    (cpu memory : Nat) (v3 : Bool)
+    (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
   generalizedAll args fun parameters =>
-    Acceptance.accepts v3 (Acceptance.execute old parameters cpu memory v3) = some false
+    Queries.rejected parameters old cpu memory v3 bounded budgeted steps
 
 def generalizedAcceptancePreserved (args : GeneralFamily) (old new : Program)
-    (cpu memory : Nat) (v3 : Bool) : Prop :=
-  generalizedAll args fun parameters => Queries.acceptancePreserved parameters old new cpu memory v3
+    (cpu memory : Nat) (v3 : Bool)
+    (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
+  generalizedAll args fun parameters => Queries.acceptancePreserved parameters old new cpu memory v3 bounded budgeted steps
 
 def generalizedNoAcceptanceRegression (args : GeneralFamily) (old new : Program)
-    (cpu memory : Nat) (v3 : Bool) : Prop :=
-  generalizedAll args fun parameters => Queries.noAcceptanceRegression parameters old new cpu memory v3
+    (cpu memory : Nat) (v3 : Bool)
+    (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
+  generalizedAll args fun parameters => Queries.noAcceptanceRegression parameters old new cpu memory v3 bounded budgeted steps
 
 /-- Contract-independent spending domain. Only the common outer encodings are
     fixed: lists/maps/bytes and a nonnegative fee, a 16-field TxInfo, and spending
@@ -438,21 +441,26 @@ def spendingAll (p : List Term → Prop) : Prop :=
     familyAll (spendingFamily spendingReference spendingDatumOption spendingRedeemer
       validRange treasuryField donationField) p
 
-def spendingAcceptancePreserved (old new : Program) (cpu memory : Nat) (v3 : Bool) : Prop :=
-  spendingAll fun args => Queries.acceptancePreserved args old new cpu memory v3
+def spendingAcceptancePreserved (old new : Program) (cpu memory : Nat) (v3 : Bool)
+    (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
+  spendingAll fun args => Queries.acceptancePreserved args old new cpu memory v3 bounded budgeted steps
 
-def spendingRejected (old : Program) (cpu memory : Nat) (v3 : Bool) : Prop :=
-  spendingAll fun args => Queries.rejected args old cpu memory v3
+def spendingRejected (old : Program) (cpu memory : Nat) (v3 : Bool)
+    (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
+  spendingAll fun args => Queries.rejected args old cpu memory v3 bounded budgeted steps
 
-def spendingNoAcceptanceRegression (old new : Program) (cpu memory : Nat) (v3 : Bool) : Prop :=
-  spendingAll fun args => Queries.noAcceptanceRegression args old new cpu memory v3
+def spendingNoAcceptanceRegression (old new : Program) (cpu memory : Nat) (v3 : Bool)
+    (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
+  spendingAll fun args => Queries.noAcceptanceRegression args old new cpu memory v3 bounded budgeted steps
 
 def familyAcceptancePreserved (args : Family) (old new : Program)
-    (cpu memory : Nat) (v3 : Bool) : Prop :=
-  familyAll args fun parameters => Queries.acceptancePreserved parameters old new cpu memory v3
+    (cpu memory : Nat) (v3 : Bool)
+    (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
+  familyAll args fun parameters => Queries.acceptancePreserved parameters old new cpu memory v3 bounded budgeted steps
 
 def familyNoAcceptanceRegression (args : Family) (old new : Program)
-    (cpu memory : Nat) (v3 : Bool) : Prop :=
-  familyAll args fun parameters => Queries.noAcceptanceRegression parameters old new cpu memory v3
+    (cpu memory : Nat) (v3 : Bool)
+    (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
+  familyAll args fun parameters => Queries.noAcceptanceRegression parameters old new cpu memory v3 bounded budgeted steps
 
 end Equivalence.Context

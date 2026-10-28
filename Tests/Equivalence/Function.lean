@@ -165,8 +165,9 @@ def settings : _root_.Equivalence.Cli.Config := {
       else "(lam d (lam r (lam c (con integer 2))))"
     verdict (← comparePrograms left right { settings with inputs, bounded := true, steps := 1 })
       "bounded_preserved"
-  unless (parse {} ["old", "new", "--bounded", "--budget", "1", "1"] matches .error _) do
-    throw <| IO.userError "Bounded checking must require function mode"
+  let validator ← IO.ofExcept (parse {} ["old", "new", "--bounded", "--budget", "1", "1"])
+  unless validator.mode == "validator" && validator.bounded do
+    throw <| IO.userError "Bounded validator mode was not selected"
 
 -- The real Fibonacci implementations agree on their 1000-step observations.
 -- Successful concrete runs rule out an entirely empty observation domain.
