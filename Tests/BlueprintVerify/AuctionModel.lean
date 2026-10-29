@@ -3,7 +3,7 @@
 import PlutusCore.UPLC
 import CardanoLedgerApi.V3
 
-namespace CardanoLedgerApi.Examples.Auction
+namespace Tests.BlueprintVerify.AuctionModel
 
 open PlutusCore.ByteString
 open PlutusCore.Integer
@@ -331,4 +331,4 @@ def demoPayoutStakedCtx : ScriptContext :=
     (some ⟨oldBidAddr, oldBidPubKeyHash, 200⟩)
 
 
-end CardanoLedgerApi.Examples.Auction
+end Tests.BlueprintVerify.AuctionModel

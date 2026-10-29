@@ -1,7 +1,7 @@
 import PlutusCore.UPLC.BlueprintEncoding.Basic
-import CardanoLedgerApi.Examples.Auction
+import Tests.BlueprintVerify.AuctionModel
 #import_blueprints RawAuction "plutus.json"
-open CardanoLedgerApi.Examples.Auction
+open Tests.BlueprintVerify.AuctionModel
 open CardanoLedgerApi.IsData.Class
 open PlutusCore.UPLC.Term
 open PlutusCore.UPLC.CekMachine
