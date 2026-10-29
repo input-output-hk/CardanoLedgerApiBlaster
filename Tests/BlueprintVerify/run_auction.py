@@ -65,6 +65,7 @@ assert 'def payoutContext ' in fragments
 assert 'CardanoLedgerApi.Examples.Auction' not in json.dumps(doc)
 assert 'CardanoLedgerApi.Examples.Auction' not in environment['modules']
 assert 'Tests.Scripts.Auction.Auction' not in environment['modules']
+assert 'Tests.BlueprintVerify.AuctionModel' not in environment['modules']
 assert set(doc['functions']) == {'outbids'}
 assert [v['id'] for v in bp['validators']] == ['auction']
 assert 'functions' not in bp

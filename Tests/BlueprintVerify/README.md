@@ -5,7 +5,7 @@ and helper bindings. Its generator writes one blueprint script and a separate
 assurance function registry. The scenario constructors are `PREDICATE` definitions
 in the detached Haskell specification and are emitted into `assurance.json`.
 The checker imports the general `CardanoLedgerApi.V3` library, not the handwritten
-`CardanoLedgerApi/Examples/Auction.lean` or any upstream theorem.
+`Tests/BlueprintVerify/AuctionModel.lean` or any upstream theorem.
 
 ```sh
 lake build Blaster:shared CardanoLedgerApi.V3 PlutusCore.UPLC.BlueprintEncoding.Assurance
