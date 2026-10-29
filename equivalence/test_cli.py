@@ -89,6 +89,7 @@ class CheckerProcess(unittest.TestCase):
             self.assertNotIn("-- new_rejected,", source)
             self.assertNotIn("-- acceptance_preserved,", source)
             self.assertNotIn("-- no_acceptance_regression,", source)
+            self.assertIn("(reconstruct-proofs: 0)", source)
             checked = subprocess.run(["lake", "env", "lean", "--memory=8192", str(emitted)],
                                      cwd=ROOT, capture_output=True, text=True, timeout=60)
             self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)

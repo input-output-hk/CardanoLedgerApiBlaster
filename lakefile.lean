@@ -7,8 +7,8 @@ package «CardanoLedgerApi» where
   moreLeanArgs := #["--threads=4"]
   -- Execution costs and the symbolic log2 workaround; custom Blaster integration.
   -- Blaster requires Z3 5.3.1 with the recfun-finder simplifier.
-  require PlutusCore from git "https://github.com/input-output-hk/PlutusCoreBlaster" @ "c91fa7070bbc69e17b6396c83bf11311e237af75"
-  require Blaster from git "https://github.com/input-output-hk/Lean-blaster" @ "934f0c31f0e283a309fb07c1a612607dca0ca4f6"
+  require PlutusCore from git "https://github.com/input-output-hk/PlutusCoreBlaster" @ "1d5478ed3009e7dfa34d6c471ae140f379b7f5eb"
+  require Blaster from git "https://github.com/input-output-hk/Lean-blaster" @ "18bfc1c54d1f0908dd2f33c78c909a0020a54c21"
 
 @[default_target]
 lean_lib «CardanoLedgerApi» where
@@ -17,7 +17,8 @@ lean_lib «CardanoLedgerApi» where
 @[test_driver]
 lean_lib «Tests» where
   moreLeanArgs := #["--memory=8192"]
-  extraDepTargets := #[`uplc_equiv]
+  -- Test #eval commands launch this native executable during elaboration.
+  needs := #[`@/uplc_equiv]
 
 lean_lib «UplcEquivalence» where
   srcDir := "equivalence"
@@ -27,3 +28,5 @@ lean_lib «UplcEquivalence» where
 lean_exe uplc_equiv where
   srcDir := "equivalence"
   root := `Equivalence.Cli
+  -- Blaster evaluates Lean expressions in the native worker process.
+  supportInterpreter := true
