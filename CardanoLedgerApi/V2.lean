@@ -8,6 +8,9 @@ import CardanoLedgerApi.V2.Contexts
 import CardanoLedgerApi.V2.Tx
 
 namespace CardanoLedgerApi.V2
+  -- Data encoding
+  export IsData.Class (toLedgerData)
+
     -- Addresses
   export V1.Address (
     Address
@@ -37,6 +40,7 @@ namespace CardanoLedgerApi.V2
     validScriptCertificate
     validWithdrawals
     validTxRange
+    txRangeStartsAt
     validTxOutValue
     validMintValue
   )
@@ -133,6 +137,7 @@ namespace CardanoLedgerApi.V2
     contains
     isEntirelyAfter
     isEntirelyBefore
+    startsAt
   )
   -- Tx
   export Tx (
@@ -166,6 +171,11 @@ namespace CardanoLedgerApi.V2
     valueOf
     add
     merge
+    ofTypedValue
+    keys
+    checkBinRel
+    geq
+    leq
     hasCurrencySymbol
     hasOnlyCurrencySymbol
     hasOnlyNonZeroAda

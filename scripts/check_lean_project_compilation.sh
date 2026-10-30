@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
+set -o pipefail
 
 exec_found=0
-if [[ $# -eq 1 ]]
+if [[ $# -ge 1 ]]
 then
   PROJECT_NAME=$1
-  LEAN_FILES=`find $PROJECT_NAME -name '*.lean' 2>/dev/null`
+  LEAN_FILES=$(find "$PROJECT_NAME" -name '*.lean' 2>/dev/null)
+  if [[ -n "${2:-}" ]]; then
+    LEAN_FILES=$(printf '%s\n' "$LEAN_FILES" | grep -Ev "^${2}(/|\.lean$)")
+  fi
   EXEC_FILES=`cat lakefile.lean | grep root | sed 's/root := .//g'`
   # build lean project with log
   echo "Building Lean project $PROJECT_NAME ..."

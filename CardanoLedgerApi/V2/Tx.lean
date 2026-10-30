@@ -59,12 +59,20 @@ instance : LawfulBEq OutputDatum where
   eq_of_beq {a b} := (beqOutputDatum_iff_eq a b).1
   rfl {bs} := by simp [BEq.beq]
 
-/-- IsData instance for OutputDatum -/
+/-- `toData` for `OutputDatum`, named and tagged so Blaster keeps it folded
+    on symbolic values (see `CardanoLedgerApi.IsData.Class.optionToData`). -/
+def outputDatumToData : OutputDatum → Data
+  | .NoOutputDatum => mkDataConstr 0 []
+  | .OutputDatumHash dh => mkDataConstr 1 [Data.B dh]
+  | .OutputDatum d =>  mkDataConstr 2 [d]
+
+open Lean Elab Command in
+run_cmd liftTermElabM do
+  discard <| Lean.Meta.getUnfoldEqnFor? ``outputDatumToData (nonRec := true)
+  Lean.Meta.markAsRecursive ``outputDatumToData
+
 instance : IsData OutputDatum where
- toData
- | .NoOutputDatum => mkDataConstr 0 []
- | .OutputDatumHash dh => mkDataConstr 1 [Data.B dh]
- | .OutputDatum d =>  mkDataConstr 2 [d]
+ toData := outputDatumToData
  fromData
  | Data.Constr 0 [] => some .NoOutputDatum
  | Data.Constr 1 [Data.B dh] => some (.OutputDatumHash dh)

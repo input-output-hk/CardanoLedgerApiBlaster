@@ -502,4 +502,18 @@ def isEntirelyBefore (a : POSIXTime) (range : POSIXTimeRange) : Bool :=
   upperBound a > range.ivTo
 
 
+/-- Does `range` begin, inclusively, at `t`?
+
+Stronger than `includes (after t) range`, which says only that the range begins
+at or after `t`. A schedule property usually wants this one: it is what makes
+"the transaction is valid from `t`" pin the schedule to a single time, rather
+than leave it under-determined by an interval.
+
+Deliberately an equality on the lower bound and not a comparison. `after t` is
+closed at `t`, so `lowerBound t` is the bound to match; a range opening
+strictly after `t` does not start at `t`. -/
+def startsAt (t : POSIXTime) (range : POSIXTimeRange) : Bool :=
+  range.ivFrom == lowerBound t
+
+
 end CardanoLedgerApi.V1.Time

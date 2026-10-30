@@ -5,6 +5,9 @@ import CardanoLedgerApi.V3.TxCert
 import CardanoLedgerApi.V3.Governance
 
 namespace CardanoLedgerApi.V3
+  -- Data encoding
+  export IsData.Class (toLedgerData)
+
   export V2 (
     -- Addresses
     Address
@@ -35,6 +38,7 @@ namespace CardanoLedgerApi.V3
     validScriptCertificate
     validWithdrawals
     validTxRange
+    txRangeStartsAt
     validTxOutValue
     validMintValue
     -- Scripts
@@ -68,6 +72,7 @@ namespace CardanoLedgerApi.V3
     contains
     isEntirelyAfter
     isEntirelyBefore
+    startsAt
     -- Tx
     OutputDatum
     TxOut
@@ -95,6 +100,11 @@ namespace CardanoLedgerApi.V3
     valueOf
     add
     merge
+    ofTypedValue
+    keys
+    checkBinRel
+    geq
+    leq
     hasCurrencySymbol
     hasOnlyCurrencySymbol
     hasOnlyNonZeroAda
@@ -142,6 +152,9 @@ namespace CardanoLedgerApi.V3
     VoterMap
     resolveInput
     findOwnInput
+    getContinuingOutputs
+    totalValue
+    continuingValue
     findPubKeyInputs
     findScriptInputs
     findInput
