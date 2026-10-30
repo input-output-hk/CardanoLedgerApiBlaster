@@ -72,3 +72,9 @@ copied `FormalSpec.hs`. The original correct Haskell source remains unchanged.
 This demonstrates bounded script evaluation. It makes no phase-one transaction
 validity, execution-cost or reconstructed Lean proof claim. Unknown source types,
 failed codecs and unfinished CEK states do not become source-level witnesses.
+
+Published Lake dependencies use pinned Git revisions and need no sibling clones.
+The coordinated Core runner explicitly selects revision-checked local clones via
+ignored `.lake/package-overrides.json` files. The legacy CI lane selects its older
+dependencies through the same Lake override mechanism; the default build exercises
+the published Git dependencies.

@@ -33,12 +33,6 @@ jobs:
           repository: input-output-hk/Lean-blaster
           ref: 1cb5a63e0416f336caa3104c2654718e6f971bc9
           path: Lean-blaster
-      - name: Checkout coordinated Core
-        uses: actions/checkout@v6
-        with:
-          repository: input-output-hk/PlutusCoreBlaster
-          ref: de4cf88a7f6c116e6bb331ab4eb1c26017cc0efc
-          path: PlutusCoreBlaster
       - name: Setup Lean
         run: |
           curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y
@@ -122,6 +116,19 @@ jobs:
           wget -q https://github.com/Z3Prover/z3/releases/download/z3-4.15.4/z3-4.15.4-x64-glibc-2.39.zip
           unzip -q z3-4.15.4-x64-glibc-2.39.zip
           echo "/home/runner/z3-4.15.4-x64-glibc-2.39/bin" >> "$GITHUB_PATH"
+      - name: Select legacy dependency checkouts
+        run: |
+          python3 - <<'PYCODE'
+          import json
+          from pathlib import Path
+          entries = []
+          for name, folder in [('Blaster', 'Lean-blaster'), ('PlutusCore', 'PlutusCoreBlaster')]:
+              entries.append({'type':'path','name':name,'scope':'','inherited':False,
+                              'dir':str((Path.cwd().parent/folder).resolve()),
+                              'configFile':'lakefile.lean','manifestFile':'lake-manifest.json'})
+          Path('.lake').mkdir(exist_ok=True)
+          Path('.lake/package-overrides.json').write_text(json.dumps({'version':'1.1.0','packages':entries}))
+          PYCODE
       - name: Execute and Validate Tests
         timeout-minutes: 30
         run: make check_tests
