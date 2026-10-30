@@ -8,8 +8,8 @@
       "scope": "",
       "inherited": false,
       "url": "https://github.com/input-output-hk/Lean-blaster",
-      "rev": "bc03bb402ce702984875bbf8ba51216bd6f843d7",
-      "inputRev": "bc03bb402ce702984875bbf8ba51216bd6f843d7",
+      "rev": "1cb5a63e0416f336caa3104c2654718e6f971bc9",
+      "inputRev": "1cb5a63e0416f336caa3104c2654718e6f971bc9",
       "subDir": null,
       "configFile": "lakefile.lean",
       "manifestFile": "lake-manifest.json"
@@ -20,8 +20,8 @@
       "scope": "",
       "inherited": false,
       "url": "https://github.com/input-output-hk/PlutusCoreBlaster",
-      "rev": "b5c1af7af64a20c69f80f179487c0146c255e164",
-      "inputRev": "b5c1af7af64a20c69f80f179487c0146c255e164",
+      "rev": "e37843f02b7d47fd940b01b92eb26ca0a98b83bd",
+      "inputRev": "e37843f02b7d47fd940b01b92eb26ca0a98b83bd",
       "subDir": null,
       "configFile": "lakefile.lean",
       "manifestFile": "lake-manifest.json"

@@ -35,6 +35,44 @@ in the checking environment. Capture and verification must use the same mode.
 The manifest also pins the 60-second solver timeout, unlimited Lean heartbeats
 and a recursion limit of 100000. The runner bounds each Lean process separately.
 
+## Source-level ScriptContext counterexample
+
+`CardanoLedgerApi.Counterexample.V3` supplies `ToCEX` codecs for V3 contexts,
+transaction information and script information. They export the exact Plutus
+Data encoding with a Haskell type hint. The Haskell decoder reconstructs the
+source value, including fields kept as raw Data in the Lean model.
+
+From the coordinated workspace, with the Plutus GHC 9.6.7 development environment
+and its already-built Auction generator available:
+
+```sh
+lake build CardanoLedgerApi.Counterexample.V3 PlutusCore.UPLC.BlueprintEncoding.Assurance
+lake env python3 Tests/BlueprintVerify/run_counterexample.py \
+  --generator /absolute/path/to/example-ual-auction \
+  --plutus /absolute/path/to/plutus \
+  --source /absolute/path/to/plutus/doc/docusaurus/static/code/Example/Ual/Auction/FormalSpec.hs \
+  --z3 /absolute/path/to/compatible/z3 \
+  --output /absolute/path/to/auction-counterexample
+```
+
+The runner verifies the original `first_bid_exact` claim, then changes the
+minimum bid from 100 to 101 in a copied annotation. It requires Blaster to find
+inputs, native replay to falsify that instantiated property, and the compiled
+Auction validator to halt. Call discovery follows specification helpers until
+the digest-checked script wrapper, retaining the context before Data encoding.
+The exported context must match the actual replayed argument exactly.
+
+`ScriptContext.hs` contains a complete `V3.ScriptContext` reconstructed through
+the real Haskell FromData instance. The runner compiles and runs it, requiring
+`toData context` to reproduce the script argument. `counterexample.json` binds
+the copied annotation, checked reports, generator and generated Haskell source;
+`property-result.json` can be loaded in the local VS Code demo alongside the
+copied `FormalSpec.hs`. The original correct Haskell source remains unchanged.
+
+This demonstrates bounded script evaluation. It makes no phase-one transaction
+validity, execution-cost or reconstructed Lean proof claim. Unknown source types,
+failed codecs and unfinished CEK states do not become source-level witnesses.
+
 Published Lake dependencies use pinned Git revisions and need no sibling clones.
 The coordinated Core runner explicitly selects revision-checked local clones via
 ignored `.lake/package-overrides.json` files. The legacy CI lane selects its older
