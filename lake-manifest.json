@@ -1,19 +1,32 @@
-{"version": "1.1.0",
- "packagesDir": ".lake/packages",
- "packages":
- [{"type": "path",
-   "scope": "",
-   "name": "Blaster",
-   "manifestFile": "lake-manifest.json",
-   "inherited": false,
-   "dir": "../Lean-blaster",
-   "configFile": "lakefile.lean"},
-  {"type": "path",
-   "scope": "",
-   "name": "PlutusCore",
-   "manifestFile": "lake-manifest.json",
-   "inherited": false,
-   "dir": "../PlutusCoreBlaster",
-   "configFile": "lakefile.lean"}],
- "name": "CardanoLedgerApi",
- "lakeDir": ".lake"}
+{
+  "version": "1.1.0",
+  "packagesDir": ".lake/packages",
+  "packages": [
+    {
+      "type": "git",
+      "name": "Blaster",
+      "scope": "",
+      "inherited": false,
+      "url": "https://github.com/input-output-hk/Lean-blaster",
+      "rev": "bc03bb402ce702984875bbf8ba51216bd6f843d7",
+      "inputRev": "bc03bb402ce702984875bbf8ba51216bd6f843d7",
+      "subDir": null,
+      "configFile": "lakefile.lean",
+      "manifestFile": "lake-manifest.json"
+    },
+    {
+      "type": "git",
+      "name": "PlutusCore",
+      "scope": "",
+      "inherited": false,
+      "url": "https://github.com/input-output-hk/PlutusCoreBlaster",
+      "rev": "b5c1af7af64a20c69f80f179487c0146c255e164",
+      "inputRev": "b5c1af7af64a20c69f80f179487c0146c255e164",
+      "subDir": null,
+      "configFile": "lakefile.lean",
+      "manifestFile": "lake-manifest.json"
+    }
+  ],
+  "name": "CardanoLedgerApi",
+  "lakeDir": ".lake"
+}

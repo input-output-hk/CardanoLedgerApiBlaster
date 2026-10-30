@@ -34,3 +34,9 @@ the runner passes that same path to Lean's `--load-dynlib` and records its hash
 in the checking environment. Capture and verification must use the same mode.
 The manifest also pins the 60-second solver timeout, unlimited Lean heartbeats
 and a recursion limit of 100000. The runner bounds each Lean process separately.
+
+Published Lake dependencies use pinned Git revisions and need no sibling clones.
+The coordinated Core runner explicitly selects revision-checked local clones via
+ignored `.lake/package-overrides.json` files. The legacy CI lane selects its older
+dependencies through the same Lake override mechanism; the default build exercises
+the published Git dependencies.

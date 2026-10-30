@@ -5,9 +5,8 @@ package «CardanoLedgerApi» where
   -- add package configuration options here
   moreGlobalServerArgs := #["--threads=4"]
   moreLeanArgs := #["--threads=4"]
-  -- Coordinated development workspace: these repositories are sibling checkouts.
-  require PlutusCore from "../PlutusCoreBlaster"
-  require Blaster from "../Lean-blaster"
+  require PlutusCore from git "https://github.com/input-output-hk/PlutusCoreBlaster" @ "b5c1af7af64a20c69f80f179487c0146c255e164"
+  require Blaster from git "https://github.com/input-output-hk/Lean-blaster" @ "bc03bb402ce702984875bbf8ba51216bd6f843d7"
 
 @[default_target]
 lean_lib «CardanoLedgerApi» where
