@@ -14,7 +14,7 @@ concurrency:
 
 env:
   LEAN_VERSION: "4.24.0"
-  Z3_VERSION: "4.15.2"
+  Z3_VERSION: "5.3.1"
   GLIBC_Z3: "2.39"
 
 jobs:
@@ -38,7 +38,7 @@ jobs:
           cd /home/runner/
           wget -q https://github.com/Z3Prover/z3/releases/download/z3-${{ env.Z3_VERSION }}/z3-${{ env.Z3_VERSION }}-x64-glibc-${{ env.GLIBC_Z3 }}.zip
           unzip -q z3-${{ env.Z3_VERSION }}-x64-glibc-${{ env.GLIBC_Z3 }}.zip
-          chmod +x z3-${{ env.Z3_VERSION }}-x64-glibc-${{ env.GLIBC_Z3 }}.zip
+          chmod +x z3-${{ env.Z3_VERSION }}-x64-glibc-${{ env.GLIBC_Z3 }}/bin/z3
           echo "/home/runner/z3-${{ env.Z3_VERSION }}-x64-glibc-${{ env.GLIBC_Z3 }}/bin" >> $GITHUB_PATH
 
       - name: Tools version
@@ -47,6 +47,7 @@ jobs:
           lake --version
           lean --version
           z3 --version
+          printf '(set-simplifier recfun-finder)\n(assert true)\n(check-sat)\n' | z3 -in
 
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -55,7 +56,7 @@ jobs:
         run: make check_cardano_ledger_api
 
       - name: Upload CardanoLedgerApi build log
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v6
         with:
           name: cardano-ledger-api-build
@@ -65,8 +66,11 @@ jobs:
         run: make check_tests
 
       - name: Upload Tests log
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v6
         with:
           name: tests-build
           path: build.log
+
+      - name: Build equivalence CLI and run integration tests
+        run: make check_equivalence

@@ -1,0 +1,13 @@
+import Tests.Equivalence.Generalization
+import Tests.Equivalence.Acceptance
+import Tests.Equivalence.Ledger
+import Tests.Equivalence.Model
+import Tests.Equivalence.Cli
+import Tests.Equivalence.VestingCli
+import Tests.Equivalence.Context
+import Tests.Equivalence.EscrowCli
+import Tests.Equivalence.HtlcCli
+import Tests.Equivalence.Variations
+import Tests.Equivalence.Function
+import Tests.Equivalence.UplcOptimize
+import Tests.Equivalence.BoundedValidator

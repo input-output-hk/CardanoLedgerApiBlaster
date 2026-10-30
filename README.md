@@ -26,6 +26,7 @@ CardanoLedgerApi provides a formal Lean4 model of the Cardano Ledger API — the
   - [SellNFT](#sellnft)
   - [ParamFeed](#paramfeed)
   - [Functions: Fibonacci](#functions-fibonacci)
+- [Script acceptance preservation](#script-acceptance-preservation)
 - [General Description](#general-description)
   - [API Versions and Types](#api-versions-and-types)
   - [Ledger Rules as Decidable Predicates](#ledger-rules-as-decidable-predicates)
@@ -237,6 +238,68 @@ theorem fibonacci_equiv :
   ∀ (n : Integer),
     (fromFrameToInt $ compiledNaiveRecursion.prop n) = (fromFrameToInt $ compiledSeungheonOhSize.prop n) := by blaster
 ```
+
+## Script acceptance preservation
+
+`uplc_equiv` compares two UPLC programs in either mode:
+
+- **Validator** (default): NEW must accept every input accepted by OLD within a
+  shared per-script budget. `--equivalence` checks both directions; successful
+  return values are not compared. V3 requires unit; V1/V2 accept any successful return.
+- **Function**: compares returned constants and success/error outcomes. Defaults
+  to one integer argument and uncosted evaluation. Identical programs are checked
+  directly. Otherwise, closures, constructor returns,
+  and exhausted analysis or optional execution budgets remain inconclusive.
+
+Use `--bounded --steps N` to compare within a step limit, with an optional
+execution budget. This preserves validator acceptance or function results;
+`--equivalence` checks both directions. Bounded validators still require an
+OLD-accepting witness; a bound admitting no OLD inputs is explicitly vacuous.
+Bounded functions treat errors, nonconstant returns, and exhausted limits as `none`.
+Results use `bounded_preserved`/`bounded_regression`, or
+`bounded_equivalent`/`bounded_inequivalent` with `--equivalence`.
+
+```sh
+lake build uplc_equiv
+lake exe uplc_equiv old.cbor_hex new.cbor_hex --budget 10000000 100000
+lake exe uplc_equiv old.cbor_hex new.cbor_hex --bounded --steps 2000
+lake exe uplc_equiv old.uplc new.uplc --mode function
+```
+
+`.uplc` paths default to textual encoding. Use `--inputs data` for one unrestricted
+`Data` argument or `--inputs data3` for three; V2 validators also need
+`--language PlutusV2`.
+
+Validators default to `valid-context`, covering generic V3 contexts. Contract
+modes such as `htlc-refund`, `vesting-partial`, and `escrow-accept` offer narrower
+boundary domains, adjustable with `--case` and `--variation`. Checked modes require
+ledger-model-valid domain and acceptance witnesses and replayed counterexamples.
+Proofs currently cover a raw-Data/context superset, so invalid countermodels can
+make checks inconclusive. Model validity does not establish on-chain reachability.
+`--raw-context` opts contract modes out of validity checks; `data`, `data3`, and
+`spending` are unrestricted.
+
+Validator success requires a replayed OLD-accepting input. Proven universal OLD
+rejection is reported as vacuous; failure to establish either is inconclusive.
+Comparisons run first. Confirmed regressions and native OLD-accepting witnesses
+skip the rejection query; otherwise it runs afterward. `--skip-old-rejected`
+omits that fallback while retaining the witness requirement. Function mode
+compares outcomes directly.
+
+Exit codes: **0** preserved/equivalent, **1** regression/inequivalent,
+**2** inconclusive, **3** tool/usage error, **4** vacuous validator preservation/equivalence.
+Counterexamples are replayed natively. Progress goes to stderr; `--json` selects
+machine-readable stdout, and `--emit-lean FILE` exports the queries.
+See `lake exe uplc_equiv --help` for domains, variations, formats, and limits.
+
+Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D), rather
+than current network parameters. Solver and wall-clock limits, and step exhaustion
+without `--bounded`, yield inconclusive results. Verification uses Blaster's SMT results
+without reconstructed Lean proof terms.
+
+PlutusCoreBlaster is pinned to `c91fa707` (execution costs and the symbolic
+logarithm workaround). Blaster is pinned
+to `934f0c31` (the custom Cardano equivalence integration); put **Z3 5.3.1** with `recfun-finder` on `PATH`.
 
 ## General Description
 
