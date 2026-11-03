@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -o pipefail
+
 exec_found=0
 if [[ $# -eq 1 ]]
 then

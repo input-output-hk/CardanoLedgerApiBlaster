@@ -97,7 +97,7 @@ jobs:
         run: make check_cardano_ledger_api
 
       - name: Upload CardanoLedgerApi build log
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v6
         with:
           name: cardano-ledger-api-build
@@ -107,8 +107,11 @@ jobs:
         run: make check_tests
 
       - name: Upload Tests log
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v6
         with:
           name: tests-build
           path: build.log
+
+      - name: Build equivalence CLI and run integration tests
+        run: make check_equivalence
