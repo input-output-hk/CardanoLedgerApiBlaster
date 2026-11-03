@@ -39,7 +39,7 @@ jobs:
           cd /home/runner/
           wget -q https://github.com/Z3Prover/z3/releases/download/z3-${{ env.Z3_VERSION }}/z3-${{ env.Z3_VERSION }}-x64-glibc-${{ env.GLIBC_Z3 }}.zip
           unzip -q z3-${{ env.Z3_VERSION }}-x64-glibc-${{ env.GLIBC_Z3 }}.zip
-          chmod +x z3-${{ env.Z3_VERSION }}-x64-glibc-${{ env.GLIBC_Z3 }}.zip
+          chmod +x z3-${{ env.Z3_VERSION }}-x64-glibc-${{ env.GLIBC_Z3 }}/bin/z3
           echo "/home/runner/z3-${{ env.Z3_VERSION }}-x64-glibc-${{ env.GLIBC_Z3 }}/bin" >> $GITHUB_PATH
 
       - name: Resolve Z3 master commit
@@ -88,6 +88,7 @@ jobs:
           lake --version
           lean --version
           z3 --version
+          printf '(set-simplifier recfun-finder)\n(assert true)\n(check-sat)\n' | z3 -in
 
       - name: Checkout repository
         uses: actions/checkout@v6
