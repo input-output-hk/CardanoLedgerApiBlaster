@@ -16,4 +16,20 @@ lean_lib «CardanoLedgerApi» where
 
 @[test_driver]
 lean_lib «Tests» where
-  -- add library configuration options here
+  moreLeanArgs := #["--memory=8192"]
+  -- Semantic tests use an isolated worker that calls the checker library.
+  needs := #[`@/equivalence_test_worker]
+
+lean_lib «UplcEquivalence» where
+  srcDir := "equivalence"
+  roots := #[`Equivalence]
+  globs := #[.one `Equivalence, .submodules `Equivalence]
+
+lean_lib EquivalenceTestSupport where
+  srcDir := "test-support"
+  roots := #[`EquivalenceTest.Protocol]
+
+lean_exe equivalence_test_worker where
+  srcDir := "test-support"
+  root := `EquivalenceTest.Worker
+  supportInterpreter := true
