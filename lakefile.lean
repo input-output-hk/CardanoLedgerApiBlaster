@@ -25,6 +25,12 @@ lean_lib «UplcEquivalence» where
   roots := #[`Equivalence]
   globs := #[.one `Equivalence, .submodules `Equivalence]
 
+lean_exe uplc_equiv where
+  srcDir := "equivalence"
+  root := `Equivalence.Cli
+  -- Blaster evaluates Lean expressions in the native worker process.
+  supportInterpreter := true
+
 lean_lib EquivalenceTestSupport where
   srcDir := "test-support"
   roots := #[`EquivalenceTest.Protocol]
