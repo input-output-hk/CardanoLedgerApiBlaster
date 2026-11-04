@@ -329,7 +329,6 @@ structure TxInfo where
   txInfoId : TxId
 deriving Repr
 
-
 def beqTxInfo (x y : TxInfo) : Bool :=
   x.txInfoInputs == y.txInfoInputs &&
   x.txInfoOutputs == y.txInfoOutputs &&
