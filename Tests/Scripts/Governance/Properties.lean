@@ -55,7 +55,7 @@ theorem governance_unsuccessful_for_unknown_param :
     validProposingContext ctx →
     isUnknownParam paramKey →
     hasParamProposal ctx paramKey →
-    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster
+    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster (random-seed: 1)
 
 /-- Governance script successful for a minFeeA change proposal → minFeeA ≥ 30 ∧ minFeeA ≤ 1_000 -/
 theorem valid_minFeeA_changed :
@@ -79,7 +79,7 @@ theorem valid_minFeeB_changed :
     validProposingContext ctx →
     isSuccessful (appliedGovernance.prop ctx) →
     hasParamProposalWithValue ctx minFeeBId value →
-    value ≥ 100_000 ∧ value ≤ 10_000_000 := by blaster
+    value ≥ 100_000 ∧ value ≤ 10_000_000 := by blaster (random-seed: 2)
 
 /-- Governance script is not successful for a minFeeB change proposal when minFeeB < 100_000 ∨ minFeeB > 10_000_000 -/
 theorem invalid_minFeeB_changed :
@@ -87,7 +87,7 @@ theorem invalid_minFeeB_changed :
     validProposingContext ctx →
     hasParamProposalWithValue ctx minFeeBId value →
     ( value < 100_000 ∨ value > 10_000_000 ) →
-    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster
+    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster (random-seed: 4)
 
 /-- Governance script successful for a maxBodyBlockSize change proposal →
     maxBodyBlockSize ≥ 24_576 ∧ maxBodyBlockSize ≤ 122_880
@@ -116,7 +116,7 @@ theorem valid_maxTxSize_changed :
     validProposingContext ctx →
     isSuccessful (appliedGovernance.prop ctx) →
     hasParamProposalWithValue ctx maxTxSizeId value →
-    value ≥ 0 ∧ value ≤ 32_768 := by blaster
+    value ≥ 0 ∧ value ≤ 32_768 := by blaster (random-seed: 2)
 
 /-- Governance script is not successful for a maxTxSize change proposal when maxTxSize < 0 ∨ maxTxSize > 32_768 -/
 theorem invalid_maxTxSize_changed :
@@ -124,7 +124,7 @@ theorem invalid_maxTxSize_changed :
     validProposingContext ctx →
     hasParamProposalWithValue ctx maxTxSizeId value →
     ( value < 0 ∨ value > 32_768 ) →
-    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster
+    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster (random-seed: 5)
 
 /-- Governance script successful for a maxBlockHeaderSize change proposal →
     maxBlockHeaderSize ≥ 0 ∧ maxBlockHeaderSize ≤ 5_000
@@ -144,7 +144,7 @@ theorem invalid_maxBlockHeaderSize_changed :
     validProposingContext ctx →
     hasParamProposalWithValue ctx maxBlockHeaderSizeId value →
     value < 0 ∨ value > 5_000 →
-    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster
+    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster (random-seed: 4)
 
 /-- Governance script successful for a stakeAddressDeposit change proposal →
     stakeAddressDeposit ≥ 1_000_000 ∧ stakeAddressDeposit ≤ 5_000_000
@@ -164,7 +164,7 @@ theorem invalid_stakeAddressDeposit_changed :
     validProposingContext ctx →
     hasParamProposalWithValue ctx stakeAddressDepositId value →
     ( value < 1_000_000 ∨ value > 5_000_000 ) →
-    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster
+    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster (random-seed: 6)
 
 
 /-- Governance script successful for a stakePoolDeposit change proposal →
@@ -185,7 +185,7 @@ theorem invalid_stakePoolDeposit_changed :
     validProposingContext ctx →
     hasParamProposalWithValue ctx stakePoolDepositId value →
     ( value < 250_000_000 ∨ value > 500_000_000 ) →
-    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster
+    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster (random-seed: 8)
 
 
 /-- Governance script successful for a poolRetireMaxEpoch change proposal → poolRetireMaxEpoch ≥ 0 -/
@@ -194,7 +194,7 @@ theorem valid_poolRetireMaxEpoch_changed :
     validProposingContext ctx →
     isSuccessful (appliedGovernance.prop ctx) →
     hasParamProposalWithValue ctx poolRetireMaxEpochId value →
-    value ≥ 0 := by blaster
+    value ≥ 0 := by blaster (random-seed: 1)
 
 /-- Governance script is not successful for a poolRetireMaxEpoch change proposal when poolRetireMaxEpoch < 0 -/
 theorem invalid_poolRetireMaxEpoch_changed :
@@ -223,6 +223,6 @@ theorem invalid_stakePoolTargetNum_changed :
     validProposingContext ctx →
     hasParamProposalWithValue ctx stakePoolTargetNumId value →
     value < 250 ∨ value > 2_000 →
-    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster
+    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster (random-seed: 3)
 
 end Tests.Scripts.Governance
