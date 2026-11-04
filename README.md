@@ -238,6 +238,30 @@ theorem fibonacci_equiv :
     (fromFrameToInt $ compiledNaiveRecursion.prop n) = (fromFrameToInt $ compiledSeungheonOhSize.prop n) := by blaster
 ```
 
+## UPLC equivalence checker library
+
+Import `Equivalence` and call `Equivalence.Checker.check options old new` with
+decoded UPLC programs and a `Checker.Config`. The checker plans and solves
+queries, validates ledger-model witnesses, replays counterexamples, and returns
+a JSON report. Optional `Solver.Observer` callbacks receive progress and phase
+changes; calls are silent by default.
+
+Validator mode checks preservation of acceptance, with optional checks in both
+directions. Function mode compares observable results. Steps either restrict
+execution in bounded mode or guard analysis; guard exhaustion is inconclusive.
+Validators use a structured V3 spending domain with configurable maximum input,
+output and signer counts, each defaulting to two and including zero. Integers,
+byte strings, validity ranges and unused fields remain unbounded. Proofs cover
+the structured raw-Data superset; witnesses require ledger-model validation
+and native replay.
+Preservation requires a replayed OLD-accepting witness; proven universal OLD
+rejection is reported as vacuous. Blaster results have no reconstructed Lean
+proof term.
+
+Build with `lake build UplcEquivalence` and run the library regression checks
+with `lake build Tests.Equivalence.Library`. These checks use an isolated native
+test worker that calls the checker library directly.
+
 ## General Description
 
 ### API Versions and Types
