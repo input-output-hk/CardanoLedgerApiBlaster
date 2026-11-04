@@ -447,7 +447,7 @@ structure TxInfo where
   /-- Withdrawals -/
   txInfoWdrl : Withdrawals
   /-- The valid range for the transaction. -/
-  txInfoValidRange : Data -- kept at Data level for existing ledger proofs
+  txInfoValidRange : Data -- keep at Data level
   /-- Signers of the transaction. -/
   txInfoSignatories : List V2.PubKeyHash
   /-- The lookup table for redeemers attached to the transaction. -/
@@ -458,16 +458,9 @@ structure TxInfo where
   txInfoId : V3.TxId
   txInfoVotes : VoterMap
   txInfoProposalProcedures : List ProposalProcedure
-  txInfoCurrentTreasuryAmount : Data -- kept at Data level for existing ledger proofs
-  txInfoTreasuryDonation : Data -- kept at Data level for existing ledger proofs
+  txInfoCurrentTreasuryAmount : Data -- keep at Data level
+  txInfoTreasuryDonation : Data -- keep at Data level
 deriving Repr
-
-/-- Require the raw fields to decode as their Plutus Haskell counterparts.
-This is the lightweight domain condition for source-level witness search. -/
-def hasDecodableRawFields (info : TxInfo) : Bool :=
-  (IsData.fromData info.txInfoValidRange : Option V1.Time.POSIXTimeRange).isSome &&
-  (IsData.fromData info.txInfoCurrentTreasuryAmount : Option (Option Integer)).isSome &&
-  (IsData.fromData info.txInfoTreasuryDonation : Option (Option Integer)).isSome
 
 def beqTxInfo (x y : TxInfo) : Bool :=
   x.txInfoInputs == y.txInfoInputs &&

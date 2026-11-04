@@ -202,7 +202,7 @@ structure TxInfo where
   /-- Withdrawals -/
   txInfoWdrl : Withdrawals
   /-- The valid range for the transaction. -/
-  txInfoValidRange : Data -- kept at Data level for existing ledger proofs
+  txInfoValidRange : Data -- keep at Data level
   /-- Signers of the transaction. -/
   txInfoSignatories : List PubKeyHash
   /-- The lookup table for redeemers attached to the transaction. -/
@@ -212,12 +212,6 @@ structure TxInfo where
   /-- ^ Hash of the pending transaction body (i.e. transaction excluding witnesses) -/
   txInfoId : TxId
 deriving Repr
-
-/-- The range kept as raw Data must decode as the Haskell ledger type for
-source-level ScriptContext counterexamples. -/
-def hasDecodableRawFields (info : TxInfo) : Bool :=
-  (IsData.fromData info.txInfoValidRange : Option POSIXTimeRange).isSome
-
 
 def beqTxInfo (x y : TxInfo) : Bool :=
   x.txInfoInputs == y.txInfoInputs &&
