@@ -447,7 +447,7 @@ structure TxInfo where
   /-- Withdrawals -/
   txInfoWdrl : Withdrawals
   /-- The valid range for the transaction. -/
-  txInfoValidRange : Data -- keep at Data level
+  txInfoValidRange : Data -- kept at Data level for existing ledger proofs
   /-- Signers of the transaction. -/
   txInfoSignatories : List V2.PubKeyHash
   /-- The lookup table for redeemers attached to the transaction. -/
@@ -458,9 +458,16 @@ structure TxInfo where
   txInfoId : V3.TxId
   txInfoVotes : VoterMap
   txInfoProposalProcedures : List ProposalProcedure
-  txInfoCurrentTreasuryAmount : Data -- keep at Data level
-  txInfoTreasuryDonation : Data -- keep at Data level
+  txInfoCurrentTreasuryAmount : Data -- kept at Data level for existing ledger proofs
+  txInfoTreasuryDonation : Data -- kept at Data level for existing ledger proofs
 deriving Repr
+
+/-- Require the raw fields to decode as their Plutus Haskell counterparts.
+This is the lightweight domain condition for source-level witness search. -/
+def hasDecodableRawFields (info : TxInfo) : Bool :=
+  (IsData.fromData info.txInfoValidRange : Option V1.Time.POSIXTimeRange).isSome &&
+  (IsData.fromData info.txInfoCurrentTreasuryAmount : Option (Option Integer)).isSome &&
+  (IsData.fromData info.txInfoTreasuryDonation : Option (Option Integer)).isSome
 
 def beqTxInfo (x y : TxInfo) : Bool :=
   x.txInfoInputs == y.txInfoInputs &&
@@ -1228,9 +1235,10 @@ def validVoterMap (votes : VoterMap) : Bool :=
     2. Treasury amount is specified and must be greater than zero
 -/
 def validTreasuryAmount (r_amount : Data) : Bool :=
-  match (IsData.fromData r_amount : Option Integer) with
-  | none => true
-  | some n => n > 0
+  match (IsData.fromData r_amount : Option (Option Integer)) with
+  | some none => true
+  | some (some n) => n > 0
+  | none => false
 
 /-- [LEDGER-RULE]: Ledger rules applied to transaction's treasury donation:
     The treasury donation is valid if and only if one of the following conditions is satisfied:
@@ -1238,9 +1246,10 @@ def validTreasuryAmount (r_amount : Data) : Bool :=
     2. Treasury donation is specified and must be greater than zero
 -/
 def validTreasuryDonation (r_amount : Data) : Bool :=
-  match (IsData.fromData r_amount : Option Integer) with
-  | none => true
-  | some n => n > 0
+  match (IsData.fromData r_amount : Option (Option Integer)) with
+  | some none => true
+  | some (some n) => n > 0
+  | none => false
 
 /-- [LEDGER-RULE]: A V3 pending transaction is balanced if and only if:
       - Value in inputs + txInfoMint = Value in outputs + txInfoFees
