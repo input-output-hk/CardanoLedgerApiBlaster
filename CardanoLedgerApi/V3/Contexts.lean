@@ -1222,6 +1222,18 @@ def validVoterMap (votes : VoterMap) : Bool :=
   | [] => true
   | x :: xs => visit xs x.1
 
+/-- Every proposed governance action must be a canonical encoded
+`GovernanceAction`. `ProposalProcedure` keeps the field as raw `Data`, so
+without this condition `validScriptContext` can accept a context rejected by
+Plutus's `FromData ProposalProcedure`. -/
+def validProposalActions : List ProposalProcedure → Bool
+  | [] => true
+  | proposal :: rest =>
+      match (IsData.fromData proposal.ppGovernanceAction : Option GovernanceAction) with
+      | some action =>
+          IsData.toData action == proposal.ppGovernanceAction && validProposalActions rest
+      | none => false
+
 /-- [LEDGER-RULE]: Ledger rules applied to transaction's treasury amount:
     The treasury amount is valid if and only if one of the following conditions is satisfied:
     1. Treasury amount is not specified
@@ -1287,11 +1299,13 @@ def isBalanced (ctx : ScriptContext) : Bool :=
     11. VoterMap is sorted w.r.t Voter with each inner Map sorted w.r.t. GovernanceActionId
           - validVoterMap ctx.scriptContextTxInfo.txInfoVotes
 
-    12. treasury amount > 0, if any
+    12. Every proposal contains a decodable, canonical governance action
 
-    13. donation amount > 0, if any
+    13. treasury amount > 0, if any
 
-    14. Transaction is balanced, i.e.,
+    14. donation amount > 0, if any
+
+    15. Transaction is balanced, i.e.,
         - Value in inputs + txInfoMint = Value in outputs + txInfoFees
 -/
 def validTxInfo (ctx : ScriptContext) : Bool :=
@@ -1306,6 +1320,7 @@ def validTxInfo (ctx : ScriptContext) : Bool :=
   validRedeemerMap ctx.scriptContextTxInfo.txInfoRedeemers &&
   V2.validDatumMap ctx.scriptContextTxInfo.txInfoData &&
   validVoterMap ctx.scriptContextTxInfo.txInfoVotes &&
+  validProposalActions ctx.scriptContextTxInfo.txInfoProposalProcedures &&
   validTreasuryAmount ctx.scriptContextTxInfo.txInfoCurrentTreasuryAmount &&
   validTreasuryDonation ctx.scriptContextTxInfo.txInfoTreasuryDonation &&
   isBalanced ctx
