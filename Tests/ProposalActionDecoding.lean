@@ -9,4 +9,4 @@ private def proposal (action : Data) : ProposalProcedure :=
 
 example : validProposalActions [] = true := by decide
 example : validProposalActions [proposal (Data.B "")] = false := by decide
-example : validProposalActions [proposal (Data.Constr 6 [])] = true := by decide
+example : validProposalActions [proposal (Data.Constr 6 [])] = true := by native_decide
