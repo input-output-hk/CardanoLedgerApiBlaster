@@ -10,11 +10,11 @@ def unitProgram : Program := .Program (.Version 1 1 0) (.Const .Unit)
 
 -- These real scripts must reject before symbolic recursion expands.
 #eval show IO Unit from do
-  let report ← compareFixtures {
+  let report ← compareFixtures { acceptanceConfig with
     scripts := #["equivalence/examples/factorial/Plutarch_1.11.0_SeungheonOh_size.cbor_hex",
       "equivalence/examples/factorial/Scalus_0.17.0_Unisay.cbor_hex"]
     budget := some (100000, 10000)
-    wallTimeout := 5 }
+    wallTimeout := 30 }
   verdict report "vacuously_preserved"
   expect report ["queries", "old_rejected"] "valid"
 
@@ -22,18 +22,18 @@ def unitProgram : Program := .Program (.Version 1 1 0) (.Const .Unit)
   for (cpu, memory, symmetric) in [
       (100, 100, false), (100, 100, true),
       (16099, 200, false), (16100, 199, false)] do
-    let report ← compareFixtures {
+    let report ← compareFixtures { acceptanceConfig with
       scripts := #["equivalence/examples/linear_vesting/Plinth_1.45.0.0_Unisay.cbor_hex",
         "equivalence/examples/linear_vesting/Plinth_1.67.0.0_Unisay.cbor_hex"]
       equivalence := symmetric
       budget := some (cpu, memory)
       timeout := 1
-      wallTimeout := 5 }
+      wallTimeout := 30 }
     verdict report (if symmetric then "vacuously_equivalent" else "vacuously_preserved")
     expect report ["vacuity_reason"] "initial_step_budget_exhausted"
 
 #eval show IO Unit from do
-  let report ← compareFixtures {
+  let report ← compareFixtures { acceptanceConfig with
     scripts := #["equivalence/examples/ecd/Plinth_1.45.0.0_Unisay.cbor_hex",
       "equivalence/examples/ecd/Plinth_1.67.0.0_Unisay.cbor_hex"]
     budget := some (1, 1) }

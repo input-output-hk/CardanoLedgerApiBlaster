@@ -304,14 +304,15 @@ The validity range, script datum, redeemer and unused fields remain arbitrary
 Data. Integers and byte strings have no size bounds. Each count case has a
 literal list spine, including the zero-count cases.
 
-Proofs cover this structured raw-Data superset. Domain witnesses, OLD-acceptance
-witnesses and counterexamples must separately satisfy both the configured
-profile and the ledger model, and reported behavior is confirmed by native
-replay. Zero-input frames belong to the raw proof domain but cannot be valid
-spending witnesses. `--max-inputs 0` therefore cannot establish a nonempty
+Symbolic queries require `Ledger.validContext ctx` in addition to the configured
+structure. The ledger premise is processed before specializing the scripts, so
+invalid count cases can be discarded without expanding their executions. Domain witnesses, OLD-acceptance witnesses and counterexamples are
+also independently checked against both the profile and the ledger model,
+and reported behavior is confirmed by native replay. Zero-input frames are
+excluded by the ledger premise. `--max-inputs 0` therefore cannot establish a nonempty
 ledger-valid spending domain. Zero-output frames can be model-valid, for
-example by burning the token and paying the input ADA as the fee. Invalid raw
-countermodels or failure to find an accepting witness can make checks
+example by burning the token and paying the input ADA as the fee. Failure to
+extract and validate a counterexample or find an accepting witness can make checks
 inconclusive. Model validity does not establish on-chain reachability.
 
 Reports include the configured maxima. `--emit-lean` exports compact

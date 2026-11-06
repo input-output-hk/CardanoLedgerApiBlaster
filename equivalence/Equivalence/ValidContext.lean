@@ -2,7 +2,8 @@ import Equivalence.Context
 
 /-!
 Defines the structured V3 spending-context domain and its configurable count limits.
-Generates symbolic propositions over its raw-Data superset and concrete domain witnesses.
+Generates structured raw context encodings and concrete domain witnesses.
+The checker guards validator propositions with the ledger-validity predicate.
 Provides smaller acceptance-witness search subsets and syntax for standalone Lean exports.
 -/
 
@@ -166,8 +167,10 @@ def fastWitnessRejected (old : Program) (cpu memory : Nat) (v3 : Bool)
     (bounded budgeted : Bool) (steps : Nat) : Prop :=
   ∀ (datum redeemer : Data) (first : ByteString),
     witnessPayload datum redeemer → first.data.length = 28 →
-    Queries.rejected (args { datum := datum, redeemer := redeemer }
-      [{ datum := datum }] [{ datum := datum }] [.B first]) old cpu memory v3 bounded budgeted steps
+    let inputs := args { datum := datum, redeemer := redeemer }
+      [{ datum := datum }] [{ datum := datum }] [.B first]
+    Ledger.validArguments inputs →
+      Queries.rejected inputs old cpu memory v3 bounded budgeted steps
 
 end Equivalence.ValidContext
 

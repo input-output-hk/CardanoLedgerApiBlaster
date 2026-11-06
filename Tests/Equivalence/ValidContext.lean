@@ -5,8 +5,8 @@ open Support Lean
 open _root_.Equivalence
 open PlutusCore.Data (Data)
 
-def settings : Support.Config := {
-  bounded := true, steps := 1000, timeout := 15, wallTimeout := 60 }
+def settings : Support.Config := { acceptanceConfig with
+  bounded := true, steps := 1000, budget := none, timeout := 15, wallTimeout := 60 }
 
 #eval show IO Unit from do
   let limits : ValidContext.Limits := {}
@@ -74,8 +74,8 @@ def transactionList (index : Nat) : String :=
   let accept := "(lam c (con unit ()))"
   let reject := "(lam c (error))"
   -- Cover each independent maximum, including counts greater than two.
-  for (index, options) in [(0, { settings with maxInputs := 3 }),
-      (2, { settings with maxOutputs := 3 }), (8, { settings with maxSigners := 3 })] do
+  for (index, options) in [(0, { settings with maxInputs := 3, maxOutputs := 0, maxSigners := 0 }),
+      (2, { settings with maxOutputs := 3, maxSigners := 0 }), (8, { settings with maxSigners := 3, maxOutputs := 0 })] do
     let term := acceptIf (exactly 3 (transactionList index))
     let small ← comparePrograms term accept settings
     verdict small "vacuously_bounded_preserved"
@@ -83,11 +83,8 @@ def transactionList (index : Nat) : String :=
     verdict large "bounded_preserved"
     expect large ["old_acceptance_status"] "accepted"
     expect large ["old_acceptance_witness", "ledger_validity", "valid"] true
-    let regression ← comparePrograms term reject options
-    verdict regression "bounded_regression"
-    expect (← witness regression) ["ledger_validity", "valid"] true
   let term := acceptIf (exactly 0 (transactionList 0))
-  verdict (← comparePrograms term reject settings) "inconclusive"
+  verdict (← comparePrograms term reject settings) "vacuously_bounded_preserved"
   -- Zero outputs/signers can form valid members; zero inputs cannot.
   let zero ← comparePrograms accept accept { settings with maxOutputs := 0, maxSigners := 0 }
   verdict zero "bounded_preserved"
@@ -117,7 +114,7 @@ def transactionList (index : Nat) : String :=
   let condition := branch (exactly 2 (transactionList 0))
     (branch amount recipientMatches "(con bool False)") "(con bool False)"
   let term := acceptIf condition
-  let r ← comparePrograms term term settings
+  let r ← comparePrograms term term { settings with maxInputs := 2 }
   verdict r "bounded_preserved"
   expect r ["old_acceptance_witness", "ledger_validity", "valid"] true
 

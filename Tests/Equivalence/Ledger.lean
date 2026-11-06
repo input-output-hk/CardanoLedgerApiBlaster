@@ -49,14 +49,14 @@ def fixture (datum : Data) : Data :=
       !_root_.Equivalence.Ledger.validContext rawMinting do
     throw <| IO.userError s!"Spending profile admitted minting context: {(Checker.auditLedgerContext genericConfig rawMinting).pretty}"
 #eval show IO Unit from do
-  let settings : Support.Config := { budget := some (100000000, 1000000), timeout := 5 }
+  let settings : Support.Config := { acceptanceConfig with budget := some (100000000, 1000000), timeout := 5 }
   let accept := "(lam c (con unit ()))"
   let reject := "(lam c (error))"
   let report ← comparePrograms accept accept settings
   verdict report "preserved"
   expect report ["ledger_validity", "predicate"] "CardanoLedgerApi.V3.validSpendingContext"
   expect report ["old_acceptance_witness", "ledger_validity", "valid"] true
-  expect report ["proof_domain"] "structured valid-context raw-Data overapproximation"
+  expect report ["proof_domain"] "ledger-valid structured spending contexts"
   let explicit ← comparePrograms accept accept { settings with inputs := "valid-context" }
   verdict explicit "preserved"
   expect explicit ["input_domain"] (← field report ["input_domain"])
@@ -84,14 +84,17 @@ def fixture (datum : Data) : Data :=
   expect report ["ledger_validity", "valid"] true
   expect report ["old_acceptance_witness", "ledger_validity", "valid"] true
   let report ← comparePrograms accept (rejectDataAt [0, 3] "I 0") settings
-  verdict report "inconclusive"
+  verdict report "preserved"
   noCounterexample report
+  let malformedFee ← comparePrograms accept (rejectDataAt [0, 3] "B #00") settings
+  verdict malformedFee "preserved"
+  noCounterexample malformedFee
+  expect malformedFee ["old_acceptance_witness", "replayed"] true
   let report ← comparePrograms accept "(lam c (error))" settings
   verdict report "regression"
   expect (← witness report) ["ledger_validity", "valid"] true
   let zeroFee := acceptIf s!"[[(builtin equalsData) {contextFieldTerm [0, 3]}] (con data (I 0))]"
   let report ← comparePrograms zeroFee zeroFee settings
-  verdict report "inconclusive"
-  expect report ["inconclusive_reason"] "old_acceptance_unestablished"
+  verdict report "vacuously_preserved"
 
 end Tests.Equivalence.Ledger

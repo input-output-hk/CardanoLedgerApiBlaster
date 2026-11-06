@@ -43,7 +43,7 @@ Function mode compares returned constants and success/error outcomes, ignoring e
   --steps N                                             Execution step limit; analysis guard unless --bounded (default 100000)
   --bounded                                             Compare observations within step/budget limits; OLD results/acceptance preserved
 Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D).
-  --inputs valid-context                                Validator default: structured V3 spending contexts, ledger-checked witnesses/replays
+  --inputs valid-context                                Validator default: structured V3 spending contexts, ledger-constrained queries and checked replays
   --max-inputs N                                        Include 0..N structured inputs (validator only; default 2)
   --max-outputs N                                       Include 0..N structured outputs (validator only; default 2)
   --max-signers N                                       Include 0..N signer keys (validator only; default 2)
@@ -202,7 +202,7 @@ def emitSource (env : Environment) (c : Config)
       else rendered.pretty
     return some s!"\n-- {query.name}\n#blaster (timeout: {c.timeout}){expected} (reconstruct-proofs: 0) (gen-cex: {if query.wantsCounterexample then 1 else 0}) [{proposition}]\n"
   let scope := if checksLedger c then
-    "\n-- These queries prove preservation over the declared context shape's raw-Data superset.\n-- The checker separately checks a native ledger-model-valid domain witness\n-- and validates counterexample replays; those checks are not reproduced here.\n"
+    "\n-- These queries require Ledger.validArguments for each structured context.\n-- The checker separately checks a native ledger-model-valid domain witness\n-- and validates counterexample replays; those checks are not reproduced here.\n"
     else ""
   IO.FS.writeFile file (header ++
     (if c.mode == "function" then "\n-- Function countermodels are separately replayed by the checker.\n" else
