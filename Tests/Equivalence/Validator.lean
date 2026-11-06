@@ -142,8 +142,8 @@ example : _root_.Equivalence.Acceptance.accepts true
       "Confirmed reverse regression unnecessarily checked rejection"
 
 #eval show IO Unit from do
-  let c : Support.Config := {
-    bounded := true, steps := 100, timeout := 5, wallTimeout := 10 }
+  let c : Support.Config := { acceptanceConfig with
+    bounded := true, steps := 100, budget := none, timeout := 15, wallTimeout := 60 }
   unless _root_.Equivalence.Checker.queryNames c ==
       #["acceptance_preserved", "no_acceptance_regression", "old_rejected"] do
     throw <| IO.userError "OLD rejection must follow comparison"

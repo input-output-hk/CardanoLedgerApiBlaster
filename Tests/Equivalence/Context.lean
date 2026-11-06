@@ -6,14 +6,14 @@ open Support Lean
 
 set_option stderrAsMessages false
 
--- Raw proof fields can produce invalid countermodels; only ledger-valid native
--- replays establish regressions. Valid fee/treasury changes remain observable.
+-- Invalid fees are excluded by the symbolic ledger premise. Valid fee/treasury
+-- changes remain observable and must also pass independent native replay.
 #eval show IO Unit from do
   let selected := { config with inputs := "valid-context" }
   let fee := s!"[(builtin unIData) {contextFieldTerm [0, 3]}]"
   let negative := rejectIf s!"[[(builtin lessThanInteger) {fee}] (con integer 0)]"
   let baseline ← comparePrograms negative "(lam c (con unit ()))" selected
-  verdict baseline "inconclusive"
+  verdict baseline "equivalent"
   noCounterexample baseline
   let fortyTwo := rejectDataAt [0, 3] "I 42"
   let varied ← comparePrograms fortyTwo "(lam c (con unit ()))" selected

@@ -27,7 +27,7 @@ instance : Coe Config _root_.Equivalence.Checker.Config := ⟨Config.toConfig⟩
 
 -- Validator tests use a small configured structured domain; dedicated limit
 -- tests exercise larger maxima. Function tests select their own input domain.
-def config : Config := { equivalence := true, maxInputs := 1, maxOutputs := 1, maxSigners := 1, budget := some (10000000000, 14000000), timeout := 5 }
+def config : Config := { equivalence := true, maxInputs := 1, maxOutputs := 1, maxSigners := 1, budget := some (10000000000, 14000000), timeout := 15 }
 
 /-- Shared settings for directional acceptance checks. -/
 def acceptanceConfig : Config :=

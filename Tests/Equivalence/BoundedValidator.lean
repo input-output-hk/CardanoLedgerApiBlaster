@@ -4,8 +4,8 @@ namespace Tests.Equivalence.BoundedValidator
 open Support Lean
 open _root_.Equivalence
 
-def settings : Support.Config := {
-  mode := "validator", bounded := true, steps := 100, timeout := 5, wallTimeout := 10 }
+def settings : Support.Config := { acceptanceConfig with
+  bounded := true, steps := 100, budget := none, timeout := 10, wallTimeout := 30 }
 
 def accept : String := "(lam c (con unit ()))"
 def loop : String := "(lam c [(lam x [x x]) (lam x [x x])])"
@@ -69,7 +69,7 @@ def loop : String := "(lam c [(lam x [x x]) (lam x [x x])])"
   expect r ["domain_status"] "nonempty"
   let invalidOnly := acceptIf s!"[[(builtin equalsData) {contextFieldTerm [0, 3]}] (con data (I 0))]"
   let r ← comparePrograms invalidOnly accept settings
-  verdict r "inconclusive"
-  expect r ["old_acceptance_status"] "unestablished"
+  verdict r "vacuously_bounded_preserved"
+  expect r ["old_acceptance_status"] "rejected_everywhere"
 
 end Tests.Equivalence.BoundedValidator

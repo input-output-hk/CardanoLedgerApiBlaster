@@ -155,7 +155,7 @@ def queryEvidence (c : Config) (query : Query) (results : Array Blaster.Smt.Resu
 
 def inputDomain (c : Config) : String :=
   if c.mode == "validator" then
-    s!"Structured V3 spending contexts with 0..{c.maxInputs} independently symbolic inputs, 0..{c.maxOutputs} outputs and 0..{c.maxSigners} signer byte strings; present script datum; typed independent input and spending references; input pubkey/script credentials without staking and absent/hash/inline datums; outputs have arbitrary addresses and inline datums; no reference scripts; each value has an ADA entry and one independent policy/token entry; arbitrary Data validity range, datum, redeemer and unused fields; unbounded integers and byte strings; proofs cover the structured raw-Data superset; concrete witnesses and counterexamples require ledger-model validation and native replay; model validity does not establish on-chain reachability"
+    s!"Structured V3 spending contexts with 0..{c.maxInputs} independently symbolic inputs, 0..{c.maxOutputs} outputs and 0..{c.maxSigners} signer byte strings; present script datum; typed independent input and spending references; input pubkey/script credentials without staking and absent/hash/inline datums; outputs have arbitrary addresses and inline datums; no reference scripts; each value has an ADA entry and one independent policy/token entry; arbitrary Data validity range, datum, redeemer and unused fields; unbounded integers and byte strings; symbolic queries require CardanoLedgerApi.V3.validSpendingContext; concrete witnesses and counterexamples are independently ledger-validated and natively replayed; model validity does not establish on-chain reachability"
   else if c.inputs == "integer" then "all integers, encoded as raw UPLC integer constants"
   else if c.inputs == "data" then "all Plutus Data values as a single function argument"
   else "all triples of Plutus Data as function arguments"
@@ -183,7 +183,12 @@ def queryPredicate (c : Config) (query : Query) (programs : Array Expr) : MetaM 
       (mkConst ``PlutusCore.UPLC.Term.Term)) fun args => do
     let body := mkAppN (mkConst query.declaration) (#[args] ++ query.sides.map (programs[·]!) ++
       limits ++ #[toExpr c.bounded, toExpr c.budget.isSome, mkRawNatLit c.steps])
-    Meta.mkLambdaFVars #[args] body
+    let valid := mkApp (mkConst ``Ledger.validArguments) args
+    let premise ← Meta.mkEq valid (toExpr true)
+    -- Establish ledger validity before specializing either script. In particular,
+    -- invalid zero-input frames must not expand the symbolic CEK execution.
+    let guarded ← mkArrow premise body
+    Meta.mkLambdaFVars #[args] guarded
 
 def queryProposition (c : Config) (query : Query) (programs : Array Expr) : MetaM Expr := do
   let predicate ← queryPredicate c query programs
@@ -456,7 +461,7 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
       | some raw =>
         if !validLedgerContext c raw then return domainIssue "invalid_witness" "The supplied domain witness fails the ledger model."
         ledgerFields := [("domain_status", toJson "nonempty"),
-          ("proof_domain", toJson "structured valid-context raw-Data overapproximation"),
+          ("proof_domain", toJson "ledger-valid structured spending contexts"),
           ("domain_witness", PlutusCore.Data.toDetailedJson raw), ("ledger_validity", auditLedgerContext c raw)]
       | _ => return domainIssue "unestablished" "Could not construct a ledger-valid context witnessing the selected domain; no preservation claim is made."
   let mismatch := result "no_acceptance_regression"
@@ -546,7 +551,7 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
   if checksLedger c then
     for (_, witness) in counterexample do
       unless replayConfirmed witness do
-        return report "inconclusive" "The raw countermodel could not be replayed as a ledger-valid acceptance regression."
+        return report "inconclusive" "The symbolic countermodel could not be replayed as a ledger-valid acceptance regression."
           (ledgerFields ++ [("input_domain", toJson (inputDomain c)), ("diagnostic_counterexample", witness)])
   let derivations := (queries c).toList.filterMap fun query =>
     (queryEvidence c query results).map fun evidence => (query.name, toJson evidence)

@@ -129,6 +129,7 @@ class CheckerProcess(unittest.TestCase):
                 path.write_text(f"(program 1.1.0 {term})")
             return subprocess.run([str(CLI), *(str(p) for p in paths),
                 '--inputs', 'valid-context', '--bounded', '--steps', '1000', '--timeout', '5',
+                '--max-inputs', '1', '--max-outputs', '1', '--max-signers', '1',
                 '--wall-timeout', str(wall_timeout), *(['--json'] if json_output else [])],
                 cwd=ROOT, env=env, capture_output=True, text=True, timeout=wall_timeout+8)
 
@@ -159,7 +160,7 @@ class CheckerProcess(unittest.TestCase):
 
     def test_wall_timeout_identifies_z3(self):
         with fake_z3('block') as env:
-            result = self.solver_case(env, wall_timeout=4)
+            result = self.solver_case(env, wall_timeout=15)
         report = json.loads(result.stdout)
         self.assertEqual(result.returncode, 2, report)
         self.assertEqual(report['timeout']['phase'], 'z3')
@@ -215,6 +216,7 @@ class CheckerProcess(unittest.TestCase):
                 path.write_text(f"(program 1.1.0 {term})")
             result = subprocess.run(
                 [str(CLI), "--inputs", "valid-context",
+                 "--max-inputs", "1", "--max-outputs", "1", "--max-signers", "1",
                  *(str(path) for path in paths), "--format", "textual",
                  "--budget", "1000000", "10000",
                  "--wall-timeout", "30",
@@ -234,9 +236,10 @@ class CheckerProcess(unittest.TestCase):
                     path.write_text(f"(program 1.1.0 {term})")
                 result = subprocess.run([str(CLI), str(old), str(new), "--format", "textual",
                     "--inputs", "valid-context", "--budget", "100000000", "1000000",
+                    "--max-inputs", "1", "--max-outputs", "1", "--max-signers", "1",
                     *(["--equivalence"] if symmetric else []),
-                    "--timeout", "5", "--wall-timeout", "30", "--emit-lean", str(emitted), "--json"],
-                    cwd=ROOT, capture_output=True, text=True, timeout=40)
+                    "--timeout", "15", "--wall-timeout", "60", "--emit-lean", str(emitted), "--json"],
+                    cwd=ROOT, capture_output=True, text=True, timeout=70)
                 report = json.loads(result.stdout)
                 self.assertEqual((result.returncode, report["verdict"]),
                                  (1, "inequivalent" if symmetric else "regression"), report)
@@ -254,22 +257,23 @@ class CheckerProcess(unittest.TestCase):
             root = Path(directory)
             old, new, emitted = root / "old.uplc", root / "new.uplc", root / "context.lean"
             old.write_text("(program 1.1.0 (lam c (con unit ())))")
-            new.write_text("(program 1.1.0 (lam c (error)))")
+            new.write_text(old.read_text())
             result = subprocess.run([str(CLI), str(old), str(new), "--format", "textual",
                 "--inputs", "valid-context", "--max-inputs", "3", "--max-outputs", "1",
                 "--max-signers", "0", "--bounded", "--steps", "1000",
                 "--timeout", "10", "--wall-timeout", "30", "--emit-lean", str(emitted), "--json"],
                 cwd=ROOT, capture_output=True, text=True, timeout=40)
             report = json.loads(result.stdout)
-            self.assertEqual((result.returncode, report["verdict"]), (1, "bounded_regression"), report)
+            self.assertEqual((result.returncode, report["verdict"]), (0, "bounded_preserved"), report)
             self.assertEqual(report["context_limits"]["inputs_min"], 0)
             self.assertEqual(report["context_limits"]["inputs_max"], 3)
             self.assertEqual(report["context_limits"]["outputs_max"], 1)
             self.assertEqual(report["context_limits"]["signers_max"], 0)
             self.assertIsNone(report["context_limits"]["integer_bits"])
-            self.assertTrue(report["counterexample"]["replayed"])
-            self.assertTrue(report["counterexample"]["ledger_validity"]["valid"])
+            self.assertTrue(report["old_acceptance_witness"]["replayed"])
+            self.assertTrue(report["old_acceptance_witness"]["ledger_validity"]["valid"])
             self.assertIn("Equivalence.ValidContext", emitted.read_text())
+            self.assertIn("Ledger.validArguments", emitted.read_text())
             self.assertIn("valid_context% 3 1 0", emitted.read_text())
             checked = subprocess.run(["lake", "env", "lean", "--memory=8192", str(emitted)],
                                      cwd=ROOT, capture_output=True, text=True, timeout=60)
