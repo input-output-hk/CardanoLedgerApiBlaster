@@ -71,7 +71,7 @@ theorem invalid_minFeeA_changed :
     validProposingContext ctx →
     hasParamProposalWithValue ctx minFeeAId value →
     ( value < 30 ∨ value > 1_000 ) →
-    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster
+    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster (random-seed: 11)
 
 /-- Governance script successful for a minFeeB change proposal → minFeeB ≥ 100_000 ∧ minFeeB ≤ 10_000_000 -/
 theorem valid_minFeeB_changed :
@@ -87,7 +87,7 @@ theorem invalid_minFeeB_changed :
     validProposingContext ctx →
     hasParamProposalWithValue ctx minFeeBId value →
     ( value < 100_000 ∨ value > 10_000_000 ) →
-    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster (random-seed: 4)
+    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster (random-seed: 6)
 
 /-- Governance script successful for a maxBodyBlockSize change proposal →
     maxBodyBlockSize ≥ 24_576 ∧ maxBodyBlockSize ≤ 122_880
@@ -107,7 +107,7 @@ theorem invalid_maxBodyBlockSize_changed :
     validProposingContext ctx →
     hasParamProposalWithValue ctx maxBodyBlockSizeId value →
     ( value < 24_576 ∨ value > 122_880 ) →
-    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster
+    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster (random-seed: 6)
 
 
 /-- Governance script successful for a maxTxSize change proposal → maxTxSize ≥ 0 ∧ maxTxSize ≤ 32_768 -/
@@ -144,7 +144,7 @@ theorem invalid_maxBlockHeaderSize_changed :
     validProposingContext ctx →
     hasParamProposalWithValue ctx maxBlockHeaderSizeId value →
     value < 0 ∨ value > 5_000 →
-    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster (random-seed: 4)
+    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster (random-seed: 5)
 
 /-- Governance script successful for a stakeAddressDeposit change proposal →
     stakeAddressDeposit ≥ 1_000_000 ∧ stakeAddressDeposit ≤ 5_000_000
@@ -164,7 +164,7 @@ theorem invalid_stakeAddressDeposit_changed :
     validProposingContext ctx →
     hasParamProposalWithValue ctx stakeAddressDepositId value →
     ( value < 1_000_000 ∨ value > 5_000_000 ) →
-    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster (random-seed: 6)
+    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster (random-seed: 13)
 
 
 /-- Governance script successful for a stakePoolDeposit change proposal →
@@ -175,7 +175,7 @@ theorem valid_stakePoolDeposit_changed :
     validProposingContext ctx →
     isSuccessful (appliedGovernance.prop ctx) →
     hasParamProposalWithValue ctx stakePoolDepositId value →
-    value ≥ 250_000_000 ∧ value ≤ 500_000_000 := by blaster
+    value ≥ 250_000_000 ∧ value ≤ 500_000_000 := by blaster (random-seed: 1)
 
 /-- Governance script is not successful for a stakePoolDeposit change proposal when
     stakePoolDeposit < 250_000_000 ∨ stakePoolDeposit > 500_000_000
@@ -185,7 +185,7 @@ theorem invalid_stakePoolDeposit_changed :
     validProposingContext ctx →
     hasParamProposalWithValue ctx stakePoolDepositId value →
     ( value < 250_000_000 ∨ value > 500_000_000 ) →
-    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster (random-seed: 8)
+    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster (random-seed: 7)
 
 
 /-- Governance script successful for a poolRetireMaxEpoch change proposal → poolRetireMaxEpoch ≥ 0 -/
@@ -213,7 +213,7 @@ theorem valid_stakePoolTargetNum_changed :
     validProposingContext ctx →
     isSuccessful (appliedGovernance.prop ctx) →
     hasParamProposalWithValue ctx stakePoolTargetNumId value →
-    value ≥ 250 ∧ value ≤ 2_000 := by blaster
+    value ≥ 250 ∧ value ≤ 2_000 := by blaster (random-seed: 7)
 
 /-- Governance script is not successful for a stakePoolTargetNum change proposal when
     stakePoolTargetNum < 250 ∨ stakePoolTargetNum > 2_000
@@ -223,6 +223,6 @@ theorem invalid_stakePoolTargetNum_changed :
     validProposingContext ctx →
     hasParamProposalWithValue ctx stakePoolTargetNumId value →
     value < 250 ∨ value > 2_000 →
-    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster (random-seed: 3)
+    ¬ isSuccessful (appliedGovernance.prop ctx) := by blaster (random-seed: 9)
 
 end Tests.Scripts.Governance
