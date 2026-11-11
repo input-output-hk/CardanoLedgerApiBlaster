@@ -26,6 +26,7 @@ CardanoLedgerApi provides a formal Lean4 model of the Cardano Ledger API — the
   - [SellNFT](#sellnft)
   - [ParamFeed](#paramfeed)
   - [Functions: Fibonacci](#functions-fibonacci)
+  - [WSC containment tractability](#wsc-containment-tractability)
 - [General Description](#general-description)
   - [API Versions and Types](#api-versions-and-types)
   - [Ledger Rules as Decidable Predicates](#ledger-rules-as-decidable-predicates)
@@ -237,6 +238,15 @@ theorem fibonacci_equiv :
   ∀ (n : Integer),
     (fromFrameToInt $ compiledNaiveRecursion.prop n) = (fromFrameToInt $ compiledSeungheonOhSize.prop n) := by blaster
 ```
+
+### WSC containment tractability
+
+[`benchmarks/wsc`](benchmarks/wsc/README.md) contains the original WSC
+programmable-token containment statements and an opt-in runner for comparing
+Blaster optimization branches. It records dependency revisions, proof time,
+memory use, and whether the selected theorems compile within the budget. It
+also includes the earlier fully symbolic DX P1 workload, with a 4 GiB memory
+cap and 120-second default run budget.
 
 ## General Description
 
