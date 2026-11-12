@@ -160,6 +160,9 @@ instance : IsData SellDatum where
 
 Examples are provided in the `Tests` folder.
 
+See [script sources and reproduction guides](Tests/Scripts/README.md) for pinned
+compiler versions, build commands, artifact checksums, and outstanding provenance.
+
 ### HelloWorld
 
 `Tests/Scripts/HelloWorld` — a simple password-check validator. The redeemer must be the bytestring `"Hello CTF!"` and the datum must be void.
@@ -176,7 +179,10 @@ The example also uses `#blaster (solve-result: 1)` to confirm that the validator
 
 ### UnlockPIN
 
-`Tests/Scripts/UnlockPIN` — a PIN-based validator where the redeemer must match a specific integer. Demonstrates the same pattern as HelloWorld but with an integer PIN instead of a bytestring password.
+`Tests/Scripts/UnlockPIN` — a [Pebble validator](Tests/Scripts/UnlockPIN/README.md)
+targeting Plutus V2. The redeemer must be `Constr 0 [I 6781988]` and the spending
+datum must be `Constr 0 []`. The Pebble source, pinned compiler dependencies, and
+build instructions reproduce the imported UPLC.
 
 ```lean4
 /-- unlockPIN successful ↔ expected redeemer ∧ datum is void -/

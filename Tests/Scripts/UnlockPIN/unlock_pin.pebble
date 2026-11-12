@@ -1,0 +1,11 @@
+// Plutus V2 spending validator: datum, redeemer, script context.
+// Compare complete Data encodings, including constructor tags and arities.
+data struct VoidDatum {}
+data struct Redeemer { pin: int }
+
+export function unlockPIN(datum: VoidDatum, redeemer: Redeemer, _context: ScriptContext): void {
+    const expectedDatum: VoidDatum = {};
+    const expectedRedeemer: Redeemer = { pin: 6781988 };
+    assert datum == expectedDatum;
+    assert redeemer == expectedRedeemer;
+}
