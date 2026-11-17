@@ -11,7 +11,7 @@ usage:
 	@echo " - clean_tests: Clean compiled lean files for Tests."
 	@echo " - check_tests: Same as build_tests but also checks that each lean file"
 	@echo " - build_equivalence: Build the UPLC equivalence library and CLI."
-	@echo " - clean_equivalence: Clean the compiled UPLC equivalence library and CLI modules."
+	@echo " - clean_equivalence: Clean the compiled equivalence library, CLI and test modules."
 	@echo " - check_equivalence: Rebuild the UPLC equivalence CLI and run Lean and process tests."
 
 .PHONY: build_cardano_ledger_api
@@ -44,10 +44,14 @@ build_equivalence:
 
 .PHONY: clean_equivalence
 clean_equivalence:
-	rm -rf .lake/build/lib/lean/Equivalence* .lake/build/ir/Equivalence*
+	rm -rf .lake/build/lib/lean/Equivalence* .lake/build/ir/Equivalence* \
+	  .lake/build/lib/lean/Tests/Equivalence .lake/build/ir/Tests/Equivalence
+	rm -f .lake/build/lib/lean/Tests/Equivalence.* .lake/build/ir/Tests/Equivalence.*
 
 .PHONY: check_equivalence
-check_equivalence: clean_equivalence
+check_equivalence:
+	python3 scripts/check_equivalence_prerequisites.py
+	$(MAKE) clean_equivalence
 	$(MAKE) build_equivalence
 	lake build Tests.Equivalence
 	python3 -m unittest discover -s equivalence -p 'test_*.py'

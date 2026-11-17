@@ -345,6 +345,18 @@ Timeout reports identify the active phase and query: preprocessing, SMT translat
 or Z3 solving. JSON wall-clock reports include a `timeout` object; completed checks
 retain Z3 timeout/unknown reasons in `query_diagnostics`, even when a later query
 establishes the verdict. Other Z3 `unknown` responses are not labelled as timeouts.
+Use `-j4` (or `-j 4`) to race four Z3 workers per query. The default is `-j1`.
+Preprocessing and SMT translation run once. `--seed 42 -j4` uses seeds 42, 43,
+44, and 45; `--seed 42 -j1` uses only 42. Without `--seed`, workers use the Z3
+default (0), followed by 1, 2, and 3. Seeds must fit in an unsigned 32-bit integer,
+including the final worker's seed. The first conclusive solver result wins, and
+counterexamples still require native replay. An early `unknown` does not cancel the other workers. Workers
+share the `--timeout` deadline, including query submission, and stop together
+when a result or the deadline is reached. This uses additional CPU and memory;
+it does not accelerate preprocessing. JSON records `solver_seed`,
+`solver_workers` and, for portfolio queries, the winning seed in `query_diagnostics`. On a conclusive
+result, `null` means the default seed; inconclusive results have no winner.
+
 With `--bounded`, text reports show `Execution step bound`; otherwise they show
 `Analysis step guard`. Exhausting the guard makes the result inconclusive. JSON
 retains `steps` and `bounded`, with `step_limit_kind` set to `execution_bound` or
@@ -358,9 +370,32 @@ without reconstructed Lean proof terms.
 
 PlutusCoreBlaster is pinned to `0de84aad` (execution costs, the symbolic
 logarithm workaround, opaque serialization primitives and Plutus model decoding).
-Blaster is pinned to `31347517` (the Cardano equivalence integration, fixes and SMT model parser);
-put Z3 with `recfun-finder` on `PATH`. The current symbolic checks were validated
-with Z3 master 5.3.4.
+Blaster is pinned to `b4174f88` (the equivalence integration, SMT model parser,
+constructor-value caching, early list lookups and indexed context caches).
+Lake fetches these revisions automatically; no edits to `.lake/packages` or
+benchmark artifacts are needed.
+
+### Running the equivalence tests
+
+On Linux or macOS, install [elan](https://github.com/leanprover/elan) (which selects
+the Lean version in `lean-toolchain`), Git, Python 3.9 or later, and the
+[Z3 5.4.0 release](https://github.com/Z3Prover/z3/releases/tag/z3-5.4.0).
+Put the release's `bin` directory on `PATH`. The test target checks the Z3 version
+and its `recfun-finder` support before building.
+
+```sh
+git clone https://github.com/input-output-hk/CardanoLedgerApiBlaster.git
+cd CardanoLedgerApiBlaster
+make check_equivalence
+```
+
+The first run downloads and builds the pinned Lean dependencies. Every check
+rebuilds the equivalence library, CLI and Lean test modules, then runs the Python
+CLI tests. Library checker invocations run one at a time, including the
+direct library-API test; waiting for that slot does not consume a test's watchdog.
+An individual check can still use its configured `-jN` portfolio. This avoids
+load-dependent failures from launching many independent solver searches together.
+
 
 ## General Description
 

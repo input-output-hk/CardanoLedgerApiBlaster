@@ -36,10 +36,13 @@ structure Config extends ValidContext.Limits where
   equivalence : Bool := false
   budget : Option (Nat × Nat) := none
   timeout : Nat := 20
+  solverJobs : Nat := 1
+  solverSeed : Option Nat := none
   skipOldRejected : Bool := false
 
 /-- Steps restrict execution in bounded mode; otherwise they only guard analysis. -/
 def Config.stepLimitFields (c : Config) : List (String × Json) := [
+  ("solver_seed", toJson (c.solverSeed.getD 0)), ("solver_workers", toJson c.solverJobs),
   ("steps", toJson c.steps), ("bounded", toJson c.bounded),
   ("step_limit_kind", toJson (if c.bounded then "execution_bound" else "analysis_guard"))]
 
@@ -48,6 +51,9 @@ def Config.validate (c : Config) : Except String Unit := do
   unless ["validator", "function"].contains c.mode do throw s!"unsupported mode: {c.mode}"
   if c.steps == 0 then throw "step limit must be positive"
   if c.timeout == 0 then throw "solver timeout must be positive"
+  if c.solverJobs == 0 then throw "solver worker count must be positive"
+  if c.solverSeed.getD 0 + c.solverJobs - 1 > 4294967295 then
+    throw "solver seeds must fit in an unsigned 32-bit integer"
   if c.mode == "validator" && !c.bounded && c.budget.isNone then
     throw "validator checking requires --budget CPU MEMORY or --bounded --steps N"
   if c.mode == "function" then
@@ -343,7 +349,7 @@ def solve (env : Environment) (c : Config) (left right : PlutusCore.UPLC.Term.Pr
       progress s!"Starting: {query.description} [{query.name}]"
       observer.reportPhase "preprocessing" (some query.name)
       let primary ← Solver.runQuery (← queryProposition c query programs) query.name
-        c.timeout query.wantsCounterexample diagnostics observer
+        c.timeout query.wantsCounterexample diagnostics observer c.solverJobs c.solverSeed
       let mut combined := primary
       if checksLedger c && query.name == "old_rejected" &&
           comparisonsProved results && !(combined matches .Valid) then
@@ -363,7 +369,7 @@ def solve (env : Environment) (c : Config) (left right : PlutusCore.UPLC.Term.Pr
             let goal ← if useFast then pure fastGoal else
               ValidContext.witnessProposition c.toLimits predicate
             let candidate ← Solver.runQuery goal
-              "old_acceptance_witness_search" c.timeout true diagnostics observer
+              "old_acceptance_witness_search" c.timeout true diagnostics observer c.solverJobs c.solverSeed
             if let .Falsified bindings := candidate then
               -- The search subset shares its output datum with the input.
               -- All other omitted fields use the same structured defaults.

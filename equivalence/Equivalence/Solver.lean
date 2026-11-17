@@ -1,4 +1,4 @@
-import Blaster
+import Equivalence.Portfolio
 
 /-!
 Runs Blaster preprocessing, SMT translation and Z3 solving as separate phases.
@@ -47,9 +47,10 @@ private def unknownReason (reply : String) : String :=
     does not depend on parsing Blaster's verbose diagnostic text. -/
 def runQuery (proposition : Expr) (query : String) (timeout : Nat) (generateCex : Bool)
     (diagnostics : Option (IO.Ref (Array (String × Json))) := none)
-    (observer : Observer := {}) : MetaM Blaster.Smt.Result := do
+    (observer : Observer := {}) (jobs : Nat := 1) (seed : Option Nat := none) : MetaM Blaster.Smt.Result := do
   let env := { (default : Blaster.Optimize.TranslateEnv) with
     optEnv.options.solverOptions.timeout := some timeout
+    optEnv.options.solverOptions.randomSeed := if jobs == 1 then seed else none
     optEnv.options.solverOptions.onlyOptimize := true
     optEnv.options.solverOptions.reconstructProofs := false
     optEnv.options.solverOptions.generateCex := generateCex }
@@ -60,29 +61,47 @@ def runQuery (proposition : Expr) (query : String) (timeout : Nat) (generateCex 
     if !(optimizedResult matches .Undetermined) then
       observer.reportPhase "validation" (some query)
       return optimizedResult
-    modify fun env => { env with optEnv.options.solverOptions.onlyOptimize := false }
+    modify fun env => { env with
+      optEnv.options.solverOptions.onlyOptimize := false
+      optEnv.options.solverOptions.onlySmtLib := jobs > 1
+      optEnv.options.solverOptions.dumpSmtLib := jobs > 1 }
     observer.reportPhase "translation" (some query)
     let result ← try
       Blaster.Smt.setBlasterProcess
       let term ← Blaster.Smt.translateExpr optimized
       Blaster.Smt.assertTerm (Blaster.Smt.notSmt term)
       observer.reportPhase "z3" (some query)
-      let result ← Blaster.Smt.checkSat
-      if result matches .Undetermined then
-        let some process := (← get).smtEnv.smtProc
-          | return result
-        -- Ask before closing the process: unknown is not necessarily timeout.
-        process.stdin.putStrLn "(get-info :reason-unknown)"
-        process.stdin.flush
-        let reason := unknownReason (← Blaster.Smt.getOutputEval process.stdout)
-        let timedOut := reason == "timeout"
-        let diagnostic := Json.mkObj [
-          ("phase", toJson "z3"), ("status", toJson (if timedOut then "timeout" else "unknown")),
-          ("reason", toJson reason), ("limit_seconds", toJson timeout)]
-        if let some ref := diagnostics then ref.modify (·.push (query, diagnostic))
-        observer.message (if timedOut then
-          s!"Z3 timed out after {timeout}s [{query}]"
-          else s!"Z3 returned unknown [{query}]: {reason}")
+      let outcome ← if jobs > 1 then
+        Portfolio.solve (← get) jobs timeout seed
+      else do
+        let result ← Blaster.Smt.checkSat
+        let reason ← if result matches .Undetermined then do
+          let some process := (← get).smtEnv.smtProc | pure ""
+          -- Ask before closing the process: unknown is not necessarily timeout.
+          process.stdin.putStrLn "(get-info :reason-unknown)"
+          process.stdin.flush
+          Blaster.Smt.getOutputEval process.stdout
+        else pure ""
+        pure { result, seed, reason : Portfolio.Outcome }
+      let result := outcome.result
+      let reason := unknownReason outcome.reason
+      let timedOut := reason == "timeout"
+      if jobs > 1 || (result matches .Undetermined) then
+        let status := match result with
+          | .Valid => "valid"
+          | .Falsified _ => "falsified"
+          | .Undetermined => if timedOut then "timeout" else "unknown"
+        let fields := [
+          ("phase", toJson "z3"), ("status", toJson status),
+          ("reason", toJson reason), ("limit_seconds", toJson timeout)] ++
+          if jobs > 1 then [("workers", toJson jobs), ("winner_seed", toJson outcome.seed)] else []
+        if let some ref := diagnostics then ref.modify (·.push (query, Json.mkObj fields))
+        observer.message (if jobs > 1 then
+          match result with
+          | .Undetermined => s!"Z3 portfolio returned unknown [{query}]: {reason}"
+          | _ => s!"Z3 portfolio finished [{query}] with seed {outcome.seed.map toString |>.getD "default"}"
+        else if timedOut then s!"Z3 timed out after {timeout}s [{query}]"
+        else s!"Z3 returned unknown [{query}]: {reason}")
       pure result
     catch error =>
       -- Cleanup must not replace the original setup/solver error with a broken pipe.

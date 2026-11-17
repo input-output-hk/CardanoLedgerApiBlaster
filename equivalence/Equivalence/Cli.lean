@@ -55,7 +55,9 @@ Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D).
   --budget CPU MEMORY                                   Shared execution-unit limits (required for strict validators; optional with --bounded or function mode)
   --equivalence                                         Check both directions (validators or --bounded functions)
   --skip-old-rejected                                   Skip the deferred OLD rejection query; OLD acceptance still needs a witness
-  --timeout SECONDS                                     Z3 timeout per query (default 20)
+  -jN, -j N                                             Race N Z3 workers per query (default 1)
+  --seed S                                              Starting seed; workers use S through S+N-1 (default 0)
+  --timeout SECONDS                                     Shared Z3 deadline per query (default 20)
   --wall-timeout SECONDS                                Limit the complete check, including preprocessing (default 180)
   --emit-lean FILE                                      Save the checked Lean queries for inspection
   --json                                                Emit a JSON report
@@ -135,10 +137,14 @@ def parse (c : Config) : List String → Except String Config
   | "--max-signers" :: v :: rest => do
     parse { c with maxSigners := ← natOption "--max-signers" v, maximaSpecified := true } rest
   | "--emit-lean" :: v :: rest => parse { c with emitLean := some v } rest
+  | "--seed" :: v :: rest => do parse { c with solverSeed := some (← natOption "--seed" v) } rest
+  | "-j" :: v :: rest => do parse { c with solverJobs := ← natOption "-j" v true } rest
   | "--timeout" :: v :: rest => do parse { c with timeout := ← natOption "--timeout" v true } rest
   | "--wall-timeout" :: v :: rest => do parse { c with wallTimeout := ← natOption "--wall-timeout" v true } rest
   | v :: rest =>
-    if v.startsWith "-" then .error s!"unknown or incomplete option: {v}"
+    if v.startsWith "-j" && v != "-j" then do
+      parse { c with solverJobs := ← natOption "-j" (v.drop 2) true } rest
+    else if v.startsWith "-" then .error s!"unknown or incomplete option: {v}"
     else parse { c with scripts := c.scripts.push v } rest
 
 def readProgram (path format : String) : IO PlutusCore.UPLC.Term.Program := do
@@ -200,7 +206,8 @@ def emitSource (env : Environment) (c : Config)
     let proposition := if c.mode == "validator" then
       s!"valid_context% {c.maxInputs} {c.maxOutputs} {c.maxSigners} ({rendered.pretty})"
       else rendered.pretty
-    return some s!"\n-- {query.name}\n#blaster (timeout: {c.timeout}){expected} (reconstruct-proofs: 0) (gen-cex: {if query.wantsCounterexample then 1 else 0}) [{proposition}]\n"
+    let seed := c.solverSeed.map (fun seed => s!" (random-seed: {seed})") |>.getD ""
+    return some s!"\n-- {query.name}\n#blaster (timeout: {c.timeout}){seed}{expected} (reconstruct-proofs: 0) (gen-cex: {if query.wantsCounterexample then 1 else 0}) [{proposition}]\n"
   let scope := if checksLedger c then
     "\n-- These queries require Ledger.validArguments for each structured context.\n-- The checker separately checks a native ledger-model-valid domain witness\n-- and validates counterexample replays; those checks are not reproduced here.\n"
     else ""
@@ -323,10 +330,14 @@ def printReport (json : Bool) (r : Json) : IO Unit := do
       if let .ok entries := diagnostics.getObj? then
         for (name, diagnostic) in entries.toList do
           let reason := (diagnostic.getObjValAs? String "reason").toOption.getD "unknown"
-          if (diagnostic.getObjValAs? String "status").toOption == some "timeout" then
+          match (diagnostic.getObjValAs? String "status").toOption with
+          | some "timeout" =>
             let limit := (diagnostic.getObjValAs? Nat "limit_seconds").toOption.getD 0
             IO.println s!"  {name}: Z3 timed out after {limit}s"
-          else IO.println s!"  {name}: Z3 returned unknown ({reason})"
+          | some "valid" | some "falsified" =>
+            let seed := (diagnostic.getObjValAs? Nat "winner_seed").toOption.map toString |>.getD "default"
+            IO.println s!"  {name}: Z3 portfolio finished with seed {seed}"
+          | _ => IO.println s!"  {name}: Z3 returned unknown ({reason})"
     if let .ok witness := r.getObjVal? "counterexample" then
       IO.println s!"Counterexample:\n{witness.pretty}"
     if (r.getObjVal? "old_acceptance_witness").isOk then

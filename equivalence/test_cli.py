@@ -10,8 +10,10 @@ import os
 import re
 from pathlib import Path
 import selectors
+import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,6 +78,26 @@ for line in sys.stdin:
 """.replace('MODE', repr(mode)))
         solver.chmod(0o755)
         yield {**os.environ, 'PATH': directory + os.pathsep + os.environ.get('PATH', '')}
+
+
+@contextlib.contextmanager
+def portfolio_z3(default_mode, seeded_mode='real'):
+    """Inject worker timing/failures through a proxy that retains real Z3 models."""
+    real_z3 = shutil.which('z3')
+    if real_z3 is None:
+        raise RuntimeError('Portfolio tests require z3 on PATH')
+    fixture = ROOT / 'equivalence/test_fixtures/z3_proxy.py'
+    with tempfile.TemporaryDirectory(prefix='uplc portfolio solver ') as directory:
+        solver = Path(directory) / 'z3'
+        solver.write_text(f'#!{sys.executable}\n' + fixture.read_text())
+        solver.chmod(0o755)
+        yield {
+            **os.environ,
+            'PATH': directory + os.pathsep + os.environ.get('PATH', ''),
+            'UPLC_TEST_Z3_REAL': real_z3,
+            'UPLC_TEST_Z3_DEFAULT_MODE': default_mode,
+            'UPLC_TEST_Z3_SEEDED_MODE': seeded_mode,
+        }, Path(directory)
 
 
 class CheckerProcess(unittest.TestCase):
@@ -322,6 +344,120 @@ class CheckerProcess(unittest.TestCase):
                                          cwd=ROOT, capture_output=True, text=True, timeout=60)
                 self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
 
+    def portfolio_case(self, env=None, jobs=('-j2',), timeout=5, seed=None, flags=()):
+        return subprocess.run([str(CLI),
+            'equivalence/examples/uplc-optimize/choose-list-empty.uplc',
+            'equivalence/examples/uplc-optimize/choose-list-empty-opt.uplc',
+            '--mode', 'function', '--timeout', str(timeout), '--wall-timeout', '10',
+            *jobs, *([] if seed is None else ['--seed', str(seed)]), *flags, '--json'],
+            cwd=ROOT, env=env, capture_output=True, text=True, timeout=15)
+
+    def assert_portfolio_stopped(self, directory, workers):
+        receipts = list(directory.glob('*.json'))
+        # A fast winner can cancel a wrapper before its interpreter starts
+        # and records its PID. Every wrapper that did start must be reaped.
+        self.assertGreater(len(receipts), 0)
+        self.assertLessEqual(len(receipts), workers)
+        for receipt in receipts:
+            for pid in json.loads(receipt.read_text()):
+                with self.assertRaises(ProcessLookupError, msg=f'Portfolio process {pid} leaked'):
+                    os.kill(pid, 0)
+
+    def test_portfolio_starting_seed_single_worker(self):
+        for seed in [0, 42, 4294967295]:
+            with self.subTest(seed=seed), portfolio_z3('real', 'real') as (env, directory):
+                emitted = directory / 'checked.lean'
+                result = self.portfolio_case(env, jobs=('-j1',), seed=seed,
+                                             flags=('--emit-lean', str(emitted)))
+                report = json.loads(result.stdout)
+                self.assertEqual(result.returncode, 1, report)
+                self.assertTrue(report['counterexample']['replayed'])
+                self.assertEqual((report['solver_seed'], report['solver_workers']), (seed, 1))
+                self.assertEqual([int(p.read_text()) for p in directory.glob('*.seed')], [seed])
+                self.assertIn(f'(random-seed: {seed})', emitted.read_text())
+                self.assert_portfolio_stopped(directory, 1)
+
+    def test_portfolio_starting_seed_offsets_every_worker(self):
+        with portfolio_z3('unknown', 'unknown') as (env, directory):
+            result = self.portfolio_case(env, jobs=('-j4',), seed=42)
+            report = json.loads(result.stdout)
+            self.assertEqual((result.returncode, report['verdict']), (2, 'inconclusive'), report)
+            self.assertEqual(report['solver_seed'], 42)
+            self.assertEqual(sorted(int(p.read_text()) for p in directory.glob('*.seed')),
+                             [42, 43, 44, 45])
+            self.assert_portfolio_stopped(directory, 4)
+
+    def test_portfolio_starting_seed_replays_the_winning_worker(self):
+        with portfolio_z3('real', 'real') as (env, directory):
+            result = self.portfolio_case(env, seed=42)
+            report = json.loads(result.stdout)
+            self.assertEqual(result.returncode, 1, report)
+            self.assertTrue(report['counterexample']['replayed'])
+            diagnostic = report['query_diagnostics']['function_equivalent']
+            self.assertIn(diagnostic['winner_seed'], [42, 43])
+            self.assertEqual(report['solver_seed'], 42)
+            self.assert_portfolio_stopped(directory, 2)
+
+    def test_portfolio_unknown_does_not_hide_replayed_seeded_winner(self):
+        for jobs in [('-j2',), ('-j', '2')]:
+            with self.subTest(jobs=jobs), portfolio_z3('unknown') as (env, directory):
+                result = self.portfolio_case(env, jobs)
+                report = json.loads(result.stdout)
+                self.assertEqual((result.returncode, report['verdict']), (1, 'inequivalent'), report)
+                self.assertTrue(report['counterexample']['replayed'])
+                self.assertEqual(report['solver_workers'], 2)
+                diagnostic = report['query_diagnostics']['function_equivalent']
+                self.assertEqual((diagnostic['status'], diagnostic['winner_seed']), ('falsified', 1))
+                self.assertEqual(result.stderr.count('Phase: preprocessing [function_equivalent]'), 1)
+                self.assert_portfolio_stopped(directory, 2)
+
+    def test_portfolio_cancels_blocked_loser(self):
+        with portfolio_z3('block') as (env, directory):
+            result = self.portfolio_case(env)
+            report = json.loads(result.stdout)
+            self.assertEqual(result.returncode, 1, report)
+            self.assertTrue(report['counterexample']['replayed'])
+            self.assertEqual(report['query_diagnostics']['function_equivalent']['winner_seed'], 1)
+            self.assert_portfolio_stopped(directory, 2)
+
+    def test_portfolio_reads_only_one_model(self):
+        with portfolio_z3('real', 'real') as (env, directory):
+            result = self.portfolio_case(env, jobs=('-j4',))
+            report = json.loads(result.stdout)
+            self.assertEqual(result.returncode, 1, report)
+            self.assertTrue(report['counterexample']['replayed'])
+            self.assertEqual(len(list(directory.glob('*.model'))), 1)
+            self.assert_portfolio_stopped(directory, 4)
+
+    def test_portfolio_has_one_deadline_and_reaps_all_workers(self):
+        with portfolio_z3('block', 'block') as (env, directory):
+            started = time.monotonic()
+            result = self.portfolio_case(env, jobs=('-j4',), timeout=1)
+            self.assertLess(time.monotonic() - started, 6)
+            report = json.loads(result.stdout)
+            self.assertEqual((result.returncode, report['verdict']), (2, 'inconclusive'), report)
+            diagnostic = report['query_diagnostics']['function_equivalent']
+            self.assertEqual((diagnostic['status'], diagnostic['limit_seconds']), ('timeout', 1))
+            self.assert_portfolio_stopped(directory, 4)
+
+    def test_portfolio_all_unknown_preserves_reason(self):
+        with portfolio_z3('unknown', 'unknown') as (env, directory):
+            result = self.portfolio_case(env)
+            report = json.loads(result.stdout)
+            self.assertEqual((result.returncode, report['verdict']), (2, 'inconclusive'), report)
+            diagnostic = report['query_diagnostics']['function_equivalent']
+            self.assertEqual((diagnostic['status'], diagnostic['reason']), ('unknown', 'incomplete'))
+            self.assert_portfolio_stopped(directory, 2)
+
+    def test_portfolio_protocol_errors_remain_tool_errors(self):
+        with portfolio_z3('error', 'block') as (env, directory):
+            result = self.portfolio_case(env)
+            report = json.loads(result.stdout)
+            self.assertEqual(result.returncode, 3, report)
+            self.assertIn('test solver failure', report['explanation'])
+            self.assertNotIn('broken pipe', report['explanation'])
+            self.assert_portfolio_stopped(directory, 2)
+
     def test_invalid_arguments_are_tool_errors(self):
         with tempfile.TemporaryDirectory() as directory:
             old_path, new_path = Path(directory) / "old.uplc", Path(directory) / "new.uplc"
@@ -335,6 +471,10 @@ class CheckerProcess(unittest.TestCase):
                     ["old", "new", "--budget", "-1", "1"],
                     ["old", "new", "--equivalence"],
                     ["old", "new", "--unknown-option"],
+                    *[["old", "new", *args] for args in [
+                        ["-j"], ["-j0"], ["-j", "0"], ["-j-1"], ["-jx"], ["-j", "-1"],
+                        ["--seed"], ["--seed", "-1"], ["--seed", "nope"],
+                        ["--seed", "4294967296"], ["--seed", "4294967295", "-j2"]]],
                     ["left", "right", "--inputs", "integer", "--case", "0"],
                     *[["left", "right", "--inputs", mode] for mode in [
                         "htlc-refund", "htlc-claim", "vesting-full", "vesting-partial",

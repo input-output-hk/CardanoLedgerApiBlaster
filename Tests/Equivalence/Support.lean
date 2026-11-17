@@ -76,9 +76,18 @@ private partial def waitUntil (child : IO.Process.Child cfg) (deadline : Nat) : 
   IO.sleep 50
   waitUntil child deadline
 
+/-- Lake elaborates test modules concurrently. Queue library checker calls before
+    starting their watchdogs so they do not compete for CPU or memory. An
+    individual check may still use its configured portfolio of Z3 processes. -/
+def withSolverLock (action : IO α) : IO α := do
+  IO.FS.createDirAll ".lake/build"
+  IO.FS.withFile ".lake/build/equivalence-tests.lock" .append fun handle => do
+    handle.lock
+    try action finally handle.unlock
+
 /-- Each library check runs in a fresh native test worker, without CLI parsing,
     file loading, reporting or supervision code. -/
-def runRequest (request : Protocol.Request) (wallTimeout : Nat) : IO Json := do
+def runRequest (request : Protocol.Request) (wallTimeout : Nat) : IO Json := withSolverLock do
   let child ← IO.Process.spawn {
     cmd := ".lake/build/bin/equivalence_test_worker"
     setsid := true
@@ -90,7 +99,6 @@ def runRequest (request : Protocol.Request) (wallTimeout : Nat) : IO Json := do
   let (_, child) ← child.takeStdin
   let output ← IO.asTask child.stdout.readToEnd
   let errors ← IO.asTask child.stderr.readToEnd
-  let wallTimeout := min wallTimeout 60
   let finished ← waitUntil child ((← IO.monoMsNow) + wallTimeout * 1000)
   let stdout ← IO.ofExcept output.get
   let stderr ← IO.ofExcept errors.get

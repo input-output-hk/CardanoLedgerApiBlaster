@@ -49,7 +49,7 @@ def fixture (datum : Data) : Data :=
       !_root_.Equivalence.Ledger.validContext rawMinting do
     throw <| IO.userError s!"Spending profile admitted minting context: {(Checker.auditLedgerContext genericConfig rawMinting).pretty}"
 #eval show IO Unit from do
-  let settings : Support.Config := { acceptanceConfig with budget := some (100000000, 1000000), timeout := 5 }
+  let settings : Support.Config := { acceptanceConfig with budget := some (100000000, 1000000), timeout := 60, wallTimeout := 240 }
   let accept := "(lam c (con unit ()))"
   let reject := "(lam c (error))"
   let report ← comparePrograms accept accept settings

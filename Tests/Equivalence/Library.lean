@@ -9,3 +9,4 @@ import Tests.Equivalence.BoundedValidator
 import Tests.Equivalence.OpaqueSerialization
 import Tests.Equivalence.ValidContext
 import Tests.Equivalence.ValidContextProofs
+import Tests.Equivalence.Portfolio

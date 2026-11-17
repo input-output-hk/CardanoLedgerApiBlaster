@@ -15,6 +15,7 @@ example : _root_.Equivalence.Acceptance.accepts true
   for n in ([-42, 987654321012345678901234567890] : List Int) do
     let old := rejectIf s!"[[(builtin equalsData) {datumTerm}] (con data (I {n}))]"
     let report ← comparePrograms old "(lam n (con unit ()))"
+      { config with solverJobs := 2, timeout := 60, wallTimeout := 240 }
     verdict report "inequivalent"
     let w ← witness report
     expect (← dataField (← field w ["input"]) [2, 1, 0]) ["int"] n

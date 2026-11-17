@@ -6,9 +6,10 @@ package «CardanoLedgerApi» where
   moreGlobalServerArgs := #["--threads=4"]
   moreLeanArgs := #["--threads=4"]
   -- Execution costs, the symbolic log2 workaround and shared SMT model decoding.
+  -- Blaster includes constructor-value caching, early list lookups and indexed contexts.
   -- Blaster requires Z3 with the recfun-finder simplifier.
   require PlutusCore from git "https://github.com/input-output-hk/PlutusCoreBlaster" @ "0de84aad0446464ad46763140931de9be95b2035"
-  require Blaster from git "https://github.com/input-output-hk/Lean-blaster" @ "31347517f50bb765e4a3ad0a85c7a3f79efd5c84"
+  require Blaster from git "https://github.com/input-output-hk/Lean-blaster" @ "b4174f8832dc5e875bc0c3fbae52b6eb36387464"
 
 @[default_target]
 lean_lib «CardanoLedgerApi» where
