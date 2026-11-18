@@ -309,6 +309,49 @@ keywords (`I`, `B`, `Constr`, `List`, `Map`) and parenthesized Data retain their
 explicit syntax, including errors for malformed values. Use a JSON string to pass
 literal text that resembles Data syntax. `B #...` remains available for binary data.
 
+Use `--split-dispatch` to discover datum/redeemer dispatch cases automatically
+before running the full comparison. Discovery follows projections and decoders
+through UPLC functions and looks for equality with constructor tags, integers,
+byte strings, UTF-8 text and literal Data. Both arguments support the same nested
+constructor, list and map patterns. Unspecified payloads and collection tails
+remain symbolic; explicit `--datum` and `--redeemer` restrictions are respected.
+
+```sh
+lake exe uplc_equiv \
+  equivalence/examples/two_party_escrow_old/Scalus_0.18.2_Unisay.cbor_hex \
+  equivalence/examples/two_party_escrow_old/Plinth_1.67.0.0_Unisay.cbor_hex \
+  --split-dispatch --bounded --steps 5000 \
+  --max-inputs 1 --max-outputs 1 --max-signers 1 \
+  --timeout 10 --wall-timeout 90
+```
+
+Discovery first guides native probes and specialized counterexample queries. If
+these find no replayed difference, the checker attempts a proof partition. For
+proofs, cases are checked over the original context schema, excluding earlier
+cases. An explicit catch-all covers every remaining input, including undiscovered
+values, malformed payload shapes and other Data kinds. Discovery need not be
+complete: only proofs covering **all** parts establish full-domain preservation.
+Combine `--split-dispatch` with `--equivalence` to prove both directions. Differences
+still require native replay of the original programs and independent validation
+of the context.
+
+Unknown, timed-out or unsupported parts cannot establish a partition proof. The
+checker retains completed directional proofs and falls back to the original
+full-domain queries for any remaining directions. The usual OLD-acceptance witness
+requirement still applies.
+
+`--dispatch-cases N` limits discovery to N patterns (default 16); the catch-all is
+additional. `--dispatch-timeout SECONDS` limits each case query, including cooperative
+preprocessing cancellation (default 10 seconds). Either option enables splitting.
+The normal `--timeout` still bounds each solver invocation, and `--wall-timeout`
+bounds the entire run. JSON reports include search and proof-case outcomes, a
+`catch_all` marker, `proved_queries`, discovery limits and any winning counterexample
+in `dispatch`.
+`dispatch.discovery_limits` names the reached bounds (for example, branch traces
+or pending branches); these can limit discovery even below the requested case count.
+`--emit-lean` exports the original full-domain queries; it does not present a
+partition proof as a single full-domain solver result.
+
 These defaults accommodate an own input plus funding, a payment plus change,
 and two-party authorization. Increase or decrease them for the script under
 investigation. There are no minimum-count options or fixed implementation caps;

@@ -232,7 +232,8 @@ private def rawExpr (f : Context.RawUnusedTxInfo) (fee mint : Expr) : Expr :=
     The maxima are used when constructing the proposition, never as symbolic
     list-length conditions inside the proposition. -/
 def proposition (limits : Limits) (predicate : Expr)
-    (fixedDatum : Option Expr := none) (fixedRedeemer : Option Expr := none) : MetaM Expr := do
+    (fixedDatum : Option Expr := none) (fixedRedeemer : Option Expr := none)
+    (restriction : Option Expr := none) : MetaM Expr := do
   let fixedDatum := fixedDatum.orElse fun _ => limits.datum.map toExpr
   let fixedRedeemer := fixedRedeemer.orElse fun _ => limits.redeemer.map toExpr
   let fixed := (fixedDatum.map (fun value => (`datum, value))).toList ++
@@ -269,7 +270,7 @@ def proposition (limits : Limits) (predicate : Expr)
       records := records.push (Name.mkSimple s!"o{i}", mkConst ``Output,
         recordExpr ``Output (fields.map fun (name, _) => find name))
     records := records.push (`f, mkConst ``Fields, frame)
-    withRecords records.toList fun records => do
+    let body ← withRecords records.toList fun records => do
       let inputVars := records.extract 0 limits.maxInputs
       let outputVars := records.extract limits.maxInputs (limits.maxInputs + limits.maxOutputs)
       let f := records.back!
@@ -285,6 +286,9 @@ def proposition (limits : Limits) (predicate : Expr)
               (← mkListLit (mkConst ``Data) (keys.extract 0 s).toList)]
             cases := mkApp predicate args :: cases
       return mkAndN cases.reverse
+    if let some restriction := restriction then
+      return ← mkArrow (← mkEq (mkApp2 restriction (find `datum) (find `redeemer)) (toExpr true)) body
+    return body
   check result
   return result
 

@@ -587,6 +587,223 @@ class CheckerProcess(unittest.TestCase):
         output_ada = tx[2]["list"][0]["fields"][1]["map"][0]["v"]["map"][0]["v"]
         self.assertEqual(output_ada, {"int": 75000000})
 
+    def dispatch_case(self, old_term, new_term, *flags):
+        with tempfile.TemporaryDirectory() as directory:
+            old, new = (Path(directory) / name for name in ["old.uplc", "new.uplc"])
+            old.write_text("(program 1.1.0 " + old_term + ")")
+            new.write_text("(program 1.1.0 " + new_term + ")")
+            result = subprocess.run(
+                [str(CLI), str(old), str(new), "--split-dispatch", "--bounded", "--steps", "1000",
+                 "--max-inputs", "1", "--max-outputs", "1", "--max-signers", "1",
+                 "--timeout", "5", "--wall-timeout", "60", *flags, "--json"],
+                cwd=ROOT, capture_output=True, text=True, timeout=70)
+            return result, json.loads(result.stdout)
+
+    def test_dispatch_case_deadline_reaps_solver_and_recovers(self):
+        with portfolio_z3('block', 'real') as (env, directory):
+            result = subprocess.run(
+                ["lake", "env", "lean", "equivalence/test_fixtures/dispatch_deadline.lean"],
+                cwd=ROOT, env=env, capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("dispatch deadline recovered", result.stdout)
+            self.assert_portfolio_stopped(directory, 2)
+
+    def test_dispatch_catch_all_keeps_unlisted_values(self):
+        redeemer = f"[(builtin unIData) {data_at([1])}]"
+        first = f"[[(builtin equalsInteger) {redeemer}] (con integer 1)]"
+        second = f"[[(builtin equalsInteger) {redeemer}] (con integer 2)]"
+        condition = f"[[[(force (builtin ifThenElse)) {first}] (con bool True)] {second}]"
+        result, report = self.dispatch_case(reject_if(condition), "(lam c (error))", "--dispatch-cases", "2")
+        self.assertEqual(result.returncode, 1, report)
+        self.assertEqual(report["verdict"], "bounded_regression", report)
+        dispatch = report["dispatch"]
+        self.assertTrue(dispatch["discovery_limited"])
+        self.assertEqual(len(dispatch["cases"]), 3)
+        self.assertTrue(dispatch["cases"][-1]["catch_all"])
+        self.assertNotEqual(dispatch["cases"][-1]["queries"]["acceptance_preserved"], "valid")
+        if dispatch["winning_case"] is not None:
+            self.assertTrue(dispatch["winning_case"]["catch_all"])
+        else:
+            self.assertEqual(dispatch["proof_fallback"], "original full domain")
+        witness = report["counterexample"]
+        self.assertTrue(witness["replayed"])
+        self.assertNotIn(witness["input"]["fields"][1], [{"int": 1}, {"int": 2}])
+
+    def test_dispatch_catch_all_covers_other_data_kinds_and_reverse_direction(self):
+        integer = f"[(builtin unIData) {data_at([1])}]"
+        condition = f"[[(builtin equalsInteger) {integer}] (con integer 1)]"
+        old = f"(lam c [[[(force (builtin ifThenElse)) {condition}] (con unit ())] (con unit ())])"
+        result, report = self.dispatch_case(old, "(lam c (con unit ()))", "--equivalence")
+        # All discovered integer cases agree. That cannot establish equivalence
+        # for the remaining Data kinds, even if the full query times out.
+        self.assertIn(result.returncode, [1, 2], report)
+        self.assertIn(report["verdict"], ["bounded_inequivalent", "inconclusive"], report)
+        self.assertTrue(report["dispatch"]["exhaustive"])
+        if result.returncode == 2:
+            self.assertEqual(report["dispatch"]["proof_fallback"], "original full domain")
+        if result.returncode == 1:
+            witness = report["counterexample"]
+            self.assertTrue(witness["replayed"])
+            self.assertEqual(witness["direction"], "new_to_old")
+            self.assertNotIn("int", witness["input"]["fields"][1])
+        else:
+            self.assertEqual(report["queries"]["reverse_no_acceptance_regression"], "undetermined")
+
+    def test_dispatch_proves_both_directions_including_capped_remainder(self):
+        old = reject_data_at([1], "I 0")
+        # The extra identity application changes the program without changing acceptance.
+        body = old[len("(lam c "):-1]
+        new = f"(lam c [(lam value value) {body}])"
+        result, report = self.dispatch_case(old, new, "--equivalence", "--dispatch-cases", "1")
+        self.assertEqual(result.returncode, 0, report)
+        self.assertEqual(report["verdict"], "bounded_equivalent", report)
+        dispatch = report["dispatch"]
+        self.assertTrue(dispatch["discovery_limited"])
+        self.assertTrue(dispatch["exhaustive"])
+        self.assertEqual(dispatch["partition_cases"], 2)
+        self.assertTrue(dispatch["cases"][-1]["catch_all"])
+        self.assertEqual(dispatch["proved_queries"],
+                         ["acceptance_preserved", "reverse_acceptance_preserved"])
+        self.assertEqual(dispatch["proof_fallback"], "not needed")
+        self.assertIn("Using dispatch evidence [acceptance_preserved]", result.stderr)
+        self.assertIn("Using dispatch evidence [reverse_acceptance_preserved]", result.stderr)
+
+    def test_dispatch_proof_retains_nondefault_acceptance_witness(self):
+        condition = f"[[(builtin equalsData) {data_at([1])}] (con data (I 1))]"
+        old = (f"(lam c (force [[[(force (builtin ifThenElse)) {condition}] "
+               "(delay (con unit ()))] (delay (error))]))")
+        body = old[len("(lam c "):-1]
+        new = f"(lam c [(lam value value) {body}])"
+        result, report = self.dispatch_case(old, new, "--equivalence")
+        self.assertEqual(result.returncode, 0, report)
+        self.assertEqual(report["verdict"], "bounded_equivalent", report)
+        self.assertEqual(report["old_acceptance_status"], "accepted")
+        self.assertEqual(report["old_acceptance_witness"]["input"]["fields"][1], {"int": 1})
+        self.assertIn("Using dispatch evidence [old_rejected]", result.stderr)
+        self.assertEqual(report["dispatch"]["proof_fallback"], "not needed")
+
+    def test_dispatch_unknown_does_not_establish_equivalence(self):
+        integer = f"[(builtin unIData) {data_at([1])}]"
+        square = f"[[(builtin multiplyInteger) {integer}] {integer}]"
+        old = reject_if(f"[[(builtin equalsInteger) {square}] {integer}]")
+        zero = f"[[(builtin equalsInteger) {integer}] (con integer 0)]"
+        one = f"[[(builtin equalsInteger) {integer}] (con integer 1)]"
+        new = reject_if(f"[[[(force (builtin ifThenElse)) {zero}] (con bool True)] {one}]")
+        with fake_z3("incomplete") as env, tempfile.TemporaryDirectory() as directory:
+            left, right = (Path(directory) / name for name in ["old.uplc", "new.uplc"])
+            left.write_text(f"(program 1.1.0 {old})")
+            right.write_text(f"(program 1.1.0 {new})")
+            result = subprocess.run(
+                [str(CLI), str(left), str(right), "--split-dispatch", "--equivalence", "--bounded",
+                 "--steps", "1000", "--dispatch-cases", "1", "--dispatch-timeout", "2",
+                 "--max-inputs", "1", "--max-outputs", "1", "--max-signers", "1",
+                 "--timeout", "2", "--wall-timeout", "30", "--json"],
+                cwd=ROOT, env=env, capture_output=True, text=True, timeout=40)
+        report = json.loads(result.stdout)
+        self.assertEqual(result.returncode, 2, report)
+        self.assertEqual(report["verdict"], "inconclusive", report)
+        self.assertNotIn("reverse_acceptance_preserved", report["dispatch"]["proved_queries"])
+        self.assertEqual(report["queries"]["reverse_acceptance_preserved"], "undetermined")
+        self.assertTrue(any("undetermined" in case["queries"].values() or
+                            "case_timeout" in case["queries"].values()
+                            for case in report["dispatch"]["cases"]))
+        self.assertEqual(report["dispatch"]["proof_fallback"], "original full domain")
+
+    def test_dispatch_merges_compiler_traces_and_shares_literal_selectors(self):
+        result, report = self.dispatch_case(reject_data_at([1], "I 0"), reject_data_at([1], "I 1"))
+        self.assertEqual(result.returncode, 1, report)
+        dispatch = report["dispatch"]
+        self.assertEqual(dispatch["discovered_cases"], 3)  # 0, 1 and all other Data
+        self.assertFalse(dispatch["discovery_limited"])
+        self.assertEqual(dispatch["discovery_limits"], [])
+        self.assertEqual(dispatch["winning_case"]["exclusions"], [])
+        witness = report["counterexample"]
+        self.assertTrue(witness["replayed"])
+        self.assertEqual(witness["input"]["fields"][1], {"int": 1})
+
+    def test_dispatch_solver_respects_else_exclusion(self):
+        integer = f"[(builtin unIData) {data_at([1])}]"
+        is_zero = f"[[(builtin equalsInteger) {integer}] (con integer 0)]"
+        new = (f"(lam c (force [[[(force (builtin ifThenElse)) {is_zero}] "
+               "(delay (con unit ()))] (delay (error))]))")
+        result, report = self.dispatch_case("(lam c (con unit ()))", new)
+        self.assertEqual(result.returncode, 1, report)
+        winner = report["dispatch"]["winning_case"]
+        self.assertIsNotNone(winner)
+        self.assertIn("redeemer ≠ (I 0)", winner["exclusions"])
+        self.assertFalse(winner.get("native_probe", False))
+        witness = report["counterexample"]
+        self.assertTrue(witness["replayed"])
+        self.assertTrue(witness["ledger_validity"]["valid"])
+        self.assertNotEqual(witness["input"]["fields"][1], {"int": 0})
+
+    def test_dispatch_keeps_datum_and_payload_with_their_redeemer(self):
+        def branch(condition, yes, no):
+            return f"(force [[[(force (builtin ifThenElse)) {condition}] (delay {yes})] (delay {no})])"
+
+        def datum_is(value):
+            return branch(f"[[(builtin equalsData) {data_at([2, 1, 0])}] (con data ({value}))]",
+                          "(con unit ())", "(error)")
+
+        redeemer = data_at([1])
+        tag = f"[(force (force (builtin fstPair))) [(builtin unConstrData) {redeemer}]]"
+        fields = f"[(force (force (builtin sndPair))) [(builtin unConstrData) {redeemer}]]"
+        payload = f"[(builtin unBData) [(force (builtin headList)) {fields}]]"
+        is_zero = f"[[(builtin equalsInteger) {tag}] (con integer 0)]"
+        is_one = f"[[(builtin equalsInteger) {tag}] (con integer 1)]"
+        first = f"[(lam ignored {datum_is('I 10')}) {payload}]"
+        old = f"(lam c {branch(is_zero, first, branch(is_one, datum_is('B #62'), '(error)'))})"
+        result, report = self.dispatch_case(old, reject_if(is_one), "--dispatch-cases", "2")
+        self.assertEqual(result.returncode, 1, report)
+        winner = report["dispatch"]["winning_case"]
+        self.assertIsNotNone(winner)
+        self.assertEqual(winner["redeemer"], "Constr 1 []")
+        self.assertEqual(winner["exclusions"], [])
+        witness = report["counterexample"]
+        self.assertTrue(witness["replayed"])
+        self.assertTrue(witness["ledger_validity"]["valid"])
+        self.assertEqual(witness["input"]["fields"][1], {"constructor": 1, "fields": []})
+        self.assertEqual(witness["input"]["fields"][2]["fields"][1]["fields"][0], {"bytes": "62"})
+
+    def test_dispatch_handles_map_datum_and_string_redeemer(self):
+        datum = f"[[(builtin equalsData) {data_at([2, 1, 0])}] (con data (Map [(I 1, I 2)]))]"
+        text = f"[(builtin decodeUtf8) [(builtin unBData) {data_at([1])}]]"
+        redeemer = f'[[(builtin equalsString) {text}] (con string "go")]'
+        condition = f"[[[(force (builtin ifThenElse)) {datum}] {redeemer}] (con bool False)]"
+        # reject_if is inverted here so OLD accepts exactly this dispatch case.
+        old = ("(lam c (force [[[(force (builtin ifThenElse)) " + condition +
+               "] (delay (con unit ()))] (delay (error))]))")
+        result, report = self.dispatch_case(old, "(lam c (error))")
+        self.assertEqual(result.returncode, 1, report)
+        self.assertIsNotNone(report["dispatch"]["winning_case"])
+        witness = report["counterexample"]
+        self.assertTrue(witness["replayed"])
+        self.assertTrue(witness["ledger_validity"]["valid"])
+        self.assertEqual(witness["input"]["fields"][1], {"bytes": "676f"})
+        self.assertEqual(witness["input"]["fields"][2]["fields"][1]["fields"][0],
+                         {"map": [{"k": {"int": 1}, "v": {"int": 2}}]})
+
+    def test_dispatch_discovers_escrow_without_fixed_arguments(self):
+        examples = ROOT / "equivalence/examples/two_party_escrow"
+        result = subprocess.run(
+            [str(CLI), str(examples / "Scalus_0.18.2_Unisay.cbor_hex"),
+             str(examples / "Plinth_1.67.0.0_Unisay.cbor_hex"), "--split-dispatch",
+             "--bounded", "--steps", "5000", "--max-inputs", "1", "--max-outputs", "1",
+             "--max-signers", "1", "--timeout", "10", "--wall-timeout", "90", "--json"],
+            cwd=ROOT, capture_output=True, text=True, timeout=100)
+        report = json.loads(result.stdout)
+        self.assertEqual(result.returncode, 1, report)
+        self.assertEqual(report["verdict"], "bounded_regression", report)
+        self.assertNotIn("fixed_datum", report)
+        self.assertNotIn("fixed_redeemer", report)
+        self.assertIsNotNone(report["dispatch"]["winning_case"])
+        witness = report["counterexample"]
+        self.assertTrue(witness["replayed"])
+        self.assertTrue(witness["ledger_validity"]["valid"])
+        tx = witness["input"]["fields"][0]["fields"]
+        self.assertEqual(tx[2]["list"][0]["fields"][1]["map"][0]["v"]["map"][0]["v"],
+                         {"int": 75000000})
+
     def test_invalid_arguments_are_tool_errors(self):
         with tempfile.TemporaryDirectory() as directory:
             old_path, new_path = Path(directory) / "old.uplc", Path(directory) / "new.uplc"
@@ -603,6 +820,8 @@ class CheckerProcess(unittest.TestCase):
                     *[["old", "new", *args] for args in [
                         ["-j"], ["-j0"], ["-j", "0"], ["-j-1"], ["-jx"], ["-j", "-1"],
                         ["--seed"], ["--seed", "-1"], ["--seed", "nope"],
+                        ["--dispatch-cases", "0"], ["--dispatch-timeout", "0"],
+                        ["--dispatch-cases", "bad"], ["--dispatch-timeout", "-1"],
                         ["--seed", "4294967296"], ["--seed", "4294967295", "-j2"]]],
                     ["left", "right", "--inputs", "integer", "--case", "0"],
                     *[["left", "right", "--inputs", mode] for mode in [
