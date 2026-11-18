@@ -6,12 +6,16 @@ open PlutusCore.UPLC.PlutusScript (PlutusScript)
 
 #import_uplc Aiken_1_1_19_KtorZ_prepacked PlutusV3 single_cbor_hex "equivalence/examples/fibonacci/Aiken_1.1.19_KtorZ_prepacked.cbor_hex"
 #import_uplc Aiken_1_1_19_KtorZ_tailrec PlutusV3 single_cbor_hex "equivalence/examples/fibonacci/Aiken_1.1.19_KtorZ_tailrec.cbor_hex"
+#import_uplc Aiken_1_1_24_KtorZ_prepacked PlutusV3 single_cbor_hex "equivalence/examples/fibonacci/Aiken_1.1.24_KtorZ_prepacked.cbor_hex"
+#import_uplc Aiken_1_1_24_KtorZ_tailrec PlutusV3 single_cbor_hex "equivalence/examples/fibonacci/Aiken_1.1.24_KtorZ_tailrec.cbor_hex"
+#import_uplc OpShin_0_26_1_nielstron PlutusV3 single_cbor_hex "equivalence/examples/fibonacci/OpShin_0.26.1_nielstron.cbor_hex"
 #import_uplc OpShin_1_0_0_nielstron PlutusV3 single_cbor_hex "equivalence/examples/fibonacci/OpShin_1.0.0_nielstron.cbor_hex"
 #import_uplc Plinth_1_45_0_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/fibonacci/Plinth_1.45.0.0_Unisay.cbor_hex"
 #import_uplc Plinth_1_61_0_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/fibonacci/Plinth_1.61.0.0_Unisay.cbor_hex"
 #import_uplc Plinth_1_64_0_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/fibonacci/Plinth_1.64.0.0_Unisay.cbor_hex"
 #import_uplc Plinth_1_65_0_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/fibonacci/Plinth_1.65.0.0_Unisay.cbor_hex"
 #import_uplc Plinth_1_67_0_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex"
+#import_uplc Plinth_1_71_0_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/fibonacci/Plinth_1.71.0.0_Unisay.cbor_hex"
 #import_uplc Plutarch_1_11_0_SeungheonOh_exbudget PlutusV3 single_cbor_hex "equivalence/examples/fibonacci/Plutarch_1.11.0_SeungheonOh_exbudget.cbor_hex"
 #import_uplc Plutarch_1_11_0_SeungheonOh_prepacked PlutusV3 single_cbor_hex "equivalence/examples/fibonacci/Plutarch_1.11.0_SeungheonOh_prepacked.cbor_hex"
 #import_uplc Plutarch_1_11_0_SeungheonOh_size PlutusV3 single_cbor_hex "equivalence/examples/fibonacci/Plutarch_1.11.0_SeungheonOh_size.cbor_hex"
@@ -21,17 +25,23 @@ open PlutusCore.UPLC.PlutusScript (PlutusScript)
 #import_uplc Scalus_0_16_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/fibonacci/Scalus_0.16.0_Unisay.cbor_hex"
 #import_uplc Scalus_0_17_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/fibonacci/Scalus_0.17.0_Unisay.cbor_hex"
 #import_uplc Scalus_0_18_2_Unisay PlutusV3 single_cbor_hex "equivalence/examples/fibonacci/Scalus_0.18.2_Unisay.cbor_hex"
+#import_uplc Scalus_1_3_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/fibonacci/Scalus_1.3.0_Unisay.cbor_hex"
+#import_uplc Scalus_1_4_0_nau PlutusV3 single_cbor_hex "equivalence/examples/fibonacci/Scalus_1.4.0_nau.cbor_hex"
 
 /-- All submissions of this scenario, paired with their UPLC-CAPE submission name. -/
 def scripts : Array (String × PlutusScript) := #[
   ("Aiken_1.1.19_KtorZ_prepacked", Aiken_1_1_19_KtorZ_prepacked),
   ("Aiken_1.1.19_KtorZ_tailrec", Aiken_1_1_19_KtorZ_tailrec),
+  ("Aiken_1.1.24_KtorZ_prepacked", Aiken_1_1_24_KtorZ_prepacked),
+  ("Aiken_1.1.24_KtorZ_tailrec", Aiken_1_1_24_KtorZ_tailrec),
+  ("OpShin_0.26.1_nielstron", OpShin_0_26_1_nielstron),
   ("OpShin_1.0.0_nielstron", OpShin_1_0_0_nielstron),
   ("Plinth_1.45.0.0_Unisay", Plinth_1_45_0_0_Unisay),
   ("Plinth_1.61.0.0_Unisay", Plinth_1_61_0_0_Unisay),
   ("Plinth_1.64.0.0_Unisay", Plinth_1_64_0_0_Unisay),
   ("Plinth_1.65.0.0_Unisay", Plinth_1_65_0_0_Unisay),
   ("Plinth_1.67.0.0_Unisay", Plinth_1_67_0_0_Unisay),
+  ("Plinth_1.71.0.0_Unisay", Plinth_1_71_0_0_Unisay),
   ("Plutarch_1.11.0_SeungheonOh_exbudget", Plutarch_1_11_0_SeungheonOh_exbudget),
   ("Plutarch_1.11.0_SeungheonOh_prepacked", Plutarch_1_11_0_SeungheonOh_prepacked),
   ("Plutarch_1.11.0_SeungheonOh_size", Plutarch_1_11_0_SeungheonOh_size),
@@ -40,7 +50,9 @@ def scripts : Array (String × PlutusScript) := #[
   ("Scalus_0.16.0_Unisay_prepacked", Scalus_0_16_0_Unisay_prepacked),
   ("Scalus_0.16.0_Unisay", Scalus_0_16_0_Unisay),
   ("Scalus_0.17.0_Unisay", Scalus_0_17_0_Unisay),
-  ("Scalus_0.18.2_Unisay", Scalus_0_18_2_Unisay)
+  ("Scalus_0.18.2_Unisay", Scalus_0_18_2_Unisay),
+  ("Scalus_1.3.0_Unisay", Scalus_1_3_0_Unisay),
+  ("Scalus_1.4.0_nau", Scalus_1_4_0_nau)
 ]
 
 end Equivalence.Examples.Fibonacci

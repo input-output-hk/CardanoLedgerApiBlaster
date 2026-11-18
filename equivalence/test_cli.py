@@ -566,7 +566,7 @@ class CheckerProcess(unittest.TestCase):
                 self.assertEqual(report["fixed_redeemer"], expected_redeemer)
 
     def test_fixed_datum_and_redeemer_find_escrow_price(self):
-        examples = ROOT / "equivalence/examples/two_party_escrow"
+        examples = ROOT / "equivalence/examples/two_party_escrow_old"
         result = subprocess.run(
             [str(CLI), str(examples / "Scalus_0.18.2_Unisay.cbor_hex"),
              str(examples / "Plinth_1.67.0.0_Unisay.cbor_hex"),
@@ -784,7 +784,7 @@ class CheckerProcess(unittest.TestCase):
                          {"map": [{"k": {"int": 1}, "v": {"int": 2}}]})
 
     def test_dispatch_discovers_escrow_without_fixed_arguments(self):
-        examples = ROOT / "equivalence/examples/two_party_escrow"
+        examples = ROOT / "equivalence/examples/two_party_escrow_old"
         result = subprocess.run(
             [str(CLI), str(examples / "Scalus_0.18.2_Unisay.cbor_hex"),
              str(examples / "Plinth_1.67.0.0_Unisay.cbor_hex"), "--split-dispatch",
