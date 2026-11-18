@@ -1,4 +1,5 @@
 import Equivalence.Checker
+import Equivalence.Pretty
 
 /-!
 Exposes the equivalence checker as a command-line tool for script files.
@@ -378,7 +379,7 @@ def printReport (json : Bool) (r : Json) : IO Unit := do
             IO.println s!"  {name}: Z3 portfolio finished with seed {seed}"
           | _ => IO.println s!"  {name}: Z3 returned unknown ({reason})"
     if let .ok witness := r.getObjVal? "counterexample" then
-      IO.println s!"Counterexample:\n{witness.pretty}"
+      IO.println <| Pretty.counterexample ((r.getObjValAs? String "mode").toOption == some "validator") witness
     if (r.getObjVal? "old_acceptance_witness").isOk then
       IO.println "OLD acceptance: confirmed by native replay (input available with --json)"
 

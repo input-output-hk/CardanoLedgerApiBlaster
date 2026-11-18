@@ -310,8 +310,16 @@ class CheckerProcess(unittest.TestCase):
         self.assertIn('Budget: {"cpu":1000000,"memory":10000}', output)
         self.assertIn("Cost model: bundled post-Conway E", output)
         self.assertIn("Counterexample:", output)
-        self.assertIn('"replayed": true', output)
-        self.assertIn('"input":', output)
+        self.assertIn("Replay: confirmed", output)
+        self.assertIn("OLD: accepts (unit)", output)
+        self.assertIn("NEW: rejects (error)", output)
+        self.assertIn("Ledger validation: valid (ledger model)", output)
+        self.assertIn("Context:", output)
+        self.assertIn("Spending input:", output)
+        self.assertIn("Fee:", output)
+        self.assertIn("Inputs:", output)
+        self.assertIn("Outputs:", output)
+        self.assertNotIn('"fields":', output)
 
     def test_generic_export_contains_one_goal_per_query(self):
         for symmetric in [False, True]:

@@ -367,6 +367,11 @@ script files, wall-clock supervision, Lean exports, and terminal formatting.
 Counterexamples are replayed natively. Progress goes to stderr with elapsed seconds
 since the check started (for example, `[4.356s] Phase: Z3 solving`); `--json` selects
 machine-readable stdout, and `--emit-lean FILE` exports the queries.
+Without `--json`, counterexamples show OLD/NEW outcomes and a named V3 context:
+spending reference, datum, redeemer, inputs, outputs, signers, validity range and
+auxiliary fields. ADA values display both exact lovelace and decimal ADA amounts;
+hashes are shown in full. Application-specific payloads retain textual Plutus Data
+syntax because their field names require the application's schema.
 Timeout reports identify the active phase and query: preprocessing, SMT translation,
 or Z3 solving. JSON wall-clock reports include a `timeout` object; completed checks
 retain Z3 timeout/unknown reasons in `query_diagnostics`, even when a later query
