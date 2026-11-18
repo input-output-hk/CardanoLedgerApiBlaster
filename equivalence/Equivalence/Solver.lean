@@ -10,6 +10,8 @@ open Lean
 
 namespace Equivalence.Solver
 
+abbrev Process := IO.Process.Child ⟨.piped, .piped, .piped⟩
+
 /-- The active stage of a check and, when applicable, its query. -/
 structure Phase where
   phase : String := "startup"
@@ -47,7 +49,8 @@ private def unknownReason (reply : String) : String :=
     does not depend on parsing Blaster's verbose diagnostic text. -/
 def runQuery (proposition : Expr) (query : String) (timeout : Nat) (generateCex : Bool)
     (diagnostics : Option (IO.Ref (Array (String × Json))) := none)
-    (observer : Observer := {}) (jobs : Nat := 1) (seed : Option Nat := none) : MetaM Blaster.Smt.Result := do
+    (observer : Observer := {}) (jobs : Nat := 1) (seed : Option Nat := none)
+    (activeProcess : Option (IO.Ref (Option Process)) := none) : MetaM Blaster.Smt.Result := do
   let env := { (default : Blaster.Optimize.TranslateEnv) with
     optEnv.options.solverOptions.timeout := some timeout
     optEnv.options.solverOptions.randomSeed := if jobs == 1 then seed else none
@@ -68,6 +71,7 @@ def runQuery (proposition : Expr) (query : String) (timeout : Nat) (generateCex 
     observer.reportPhase "translation" (some query)
     let result ← try
       Blaster.Smt.setBlasterProcess
+      if let some ref := activeProcess then ref.set (← get).smtEnv.smtProc
       let term ← Blaster.Smt.translateExpr optimized
       Blaster.Smt.assertTerm (Blaster.Smt.notSmt term)
       observer.reportPhase "z3" (some query)
@@ -106,11 +110,60 @@ def runQuery (proposition : Expr) (query : String) (timeout : Nat) (generateCex 
     catch error =>
       -- Cleanup must not replace the original setup/solver error with a broken pipe.
       try discard Blaster.Smt.exitSmt catch _ => pure ()
+      -- Retain the handle for the timed caller's finalizer if cleanup failed.
       throw error
     discard Blaster.Smt.exitSmt
+    if let some ref := activeProcess then ref.set none
     observer.reportPhase "validation" (some query)
     return result
   let (result, _) ← action.run env
   return result
+
+/-- A fresh Meta/Core state confines cancellation to one speculative case.
+The ordinary checker retains its outer process watchdog as a hard deadline. -/
+def runQueryTimed (environment : Environment) (proposition : Expr) (query : String)
+    (timeout wall : Nat) (diagnostics : Option (IO.Ref (Array (String × Json))))
+    (observer : Observer) (jobs : Nat) (seed : Option Nat) : IO (Option Blaster.Smt.Result) := do
+  let token ← IO.CancelToken.new
+  let done ← IO.mkRef false
+  let active ← IO.mkRef (none : Option Process)
+  let phase ← IO.mkRef ({} : Phase)
+  let deadline := (← IO.monoMsNow) + wall * 1000
+  let timer ← IO.asTask (prio := .dedicated) do
+    repeat
+      if ← done.get then break
+      if (← IO.monoMsNow) ≥ deadline then
+        token.set
+        -- A blocked solver read does not poll Lean's cancellation token.
+        if let some process ← active.get then
+          try process.kill catch _ => pure ()
+        break
+      IO.sleep 25
+  let observer := { observer with phase := fun state => do
+    phase.set state
+    observer.phase state }
+  try
+    let action := runQuery proposition query (min timeout wall) true diagnostics observer jobs seed (some active)
+    let (result, _) ← action.run' |>.toIO
+      { fileName := "<uplc_equiv dispatch>", fileMap := default,
+        maxRecDepth := 0, maxHeartbeats := 0, cancelTk? := some token } { env := environment }
+    return some result
+  catch error =>
+    unless ← token.isSet do throw error
+    let state ← phase.get
+    observer.message s!"Dispatch case stopped after {wall}s during {describe state}"
+    if let some ref := diagnostics then ref.modify (·.push (query, Json.mkObj [
+      ("phase", toJson state.phase), ("status", toJson "case_timeout"),
+      ("reason", toJson "dispatch case deadline"), ("limit_seconds", toJson wall)]))
+    return none
+  finally
+    done.set true
+    discard (IO.ofExcept timer.get)
+    -- Interrupts can bypass MetaM's ordinary exception handlers.
+    if let some process ← active.get then
+      try
+        if (← process.tryWait).isNone then process.kill
+        discard process.wait
+      catch _ => pure ()
 
 end Equivalence.Solver

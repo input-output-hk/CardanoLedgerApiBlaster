@@ -45,8 +45,8 @@ Function mode compares returned constants and success/error outcomes, ignoring e
   --bounded                                             Compare observations within step/budget limits; OLD results/acceptance preserved
 Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D).
   --inputs valid-context                                Validator default: structured V3 spending contexts, ledger-constrained queries and checked replays
-  --max-inputs N                                        Include 0..N structured inputs (validator only; default 2)
-  --max-outputs N                                       Include 0..N structured outputs (validator only; default 2)
+  --max-inputs N                                        Include 0..N transaction inputs (validator only; default 2)
+  --max-outputs N                                       Include 0..N transaction outputs (validator only; default 2)
   --max-signers N                                       Include 0..N signer keys (validator only; default 2)
   --redeemer DATA                                       Fix the spending redeemer (textual Plutus Data)
   --datum DATA                                          Fix the spending datum (textual Plutus Data); other context fields remain symbolic
@@ -58,6 +58,9 @@ Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D).
   --language VERSION                                    PlutusV3 (default); function mode also supports PlutusV1/PlutusV2
   --budget CPU MEMORY                                   Shared execution-unit limits (required for strict validators; optional with --bounded or function mode)
   --equivalence                                         Check both directions (validators or --bounded functions)
+  --dispatch-timeout SECONDS                            Deadline per case query, including preprocessing (default 10); implies --split-dispatch
+  --dispatch-cases N                                    Maximum case probes (default 16); implies --split-dispatch
+  --split-dispatch                                      Discover datum/redeemer equality cases and search them first; proofs retain the full domain
   --skip-old-rejected                                   Skip the deferred OLD rejection query; OLD acceptance still needs a witness
   -jN, -j N                                             Race N Z3 workers per query (default 1)
   --seed S                                              Starting seed; workers use S through S+N-1 (default 0)
@@ -147,6 +150,11 @@ def parse (c : Config) : List String → Except String Config
     parse { c with budget := some (← natOption "--budget CPU" cpu, ← natOption "--budget MEMORY" memory) } rest
   | "--json" :: rest => parse { c with json := true } rest
   | "--worker" :: rest => parse { c with worker := true, json := true } rest
+  | "--dispatch-timeout" :: v :: rest => do
+    parse { c with splitDispatch := true, dispatchTimeout := ← natOption "--dispatch-timeout" v true } rest
+  | "--dispatch-cases" :: v :: rest => do
+    parse { c with splitDispatch := true, dispatchCaseLimit := ← natOption "--dispatch-cases" v true } rest
+  | "--split-dispatch" :: rest => parse { c with splitDispatch := true } rest
   | "--skip-old-rejected" :: rest => parse { c with skipOldRejected := true } rest
   | "--format" :: v :: rest => parse { c with format := v, formatSpecified := true } rest
   | "--format-left" :: v :: rest => parse { c with leftFormat := some v } rest
@@ -210,6 +218,11 @@ def emitSource (env : Environment) (c : Config)
     (checkedResults : Array (Option Blaster.Smt.Result) := #[]) : IO Unit := do
   let some file := c.emitLean | return
   let header ← sourceHeader c
+  -- A subset countermodel falsifies the original property, but the original
+  -- unspecialized solver need not reproduce that result within the same timeout.
+  let checkedResults := if c.splitDispatch then #[] else checkedResults
+  let header := header ++ if c.splitDispatch then
+    "\n-- Dispatch search is a counterexample optimization. This export contains the\n-- original full-domain queries without per-result annotations. Discovered\n-- subsets and the winning case are reported in the JSON dispatch field.\n" else ""
   let chunks ← (queries c).toList.zipIdx.filterMapM fun (query, i) => do
     -- Skip queries derived logically or short-circuited by a native witness.
     let expected := if checkedResults.isEmpty then some "" else do
@@ -371,6 +384,10 @@ def printReport (json : Bool) (r : Json) : IO Unit := do
         for (name, diagnostic) in entries.toList do
           let reason := (diagnostic.getObjValAs? String "reason").toOption.getD "unknown"
           match (diagnostic.getObjValAs? String "status").toOption with
+          | some "case_timeout" =>
+            let limit := (diagnostic.getObjValAs? Nat "limit_seconds").toOption.getD 0
+            let phase := (diagnostic.getObjValAs? String "phase").toOption.getD "unknown"
+            IO.println s!"  {name}: dispatch case stopped after {limit}s during {phase}"
           | some "timeout" =>
             let limit := (diagnostic.getObjValAs? Nat "limit_seconds").toOption.getD 0
             IO.println s!"  {name}: Z3 timed out after {limit}s"
@@ -378,6 +395,16 @@ def printReport (json : Bool) (r : Json) : IO Unit := do
             let seed := (diagnostic.getObjValAs? Nat "winner_seed").toOption.map toString |>.getD "default"
             IO.println s!"  {name}: Z3 portfolio finished with seed {seed}"
           | _ => IO.println s!"  {name}: Z3 returned unknown ({reason})"
+    if let .ok dispatch := r.getObjVal? "dispatch" then
+      if let .ok cases := dispatch.getObjValAs? (Array Json) "cases" then
+        IO.println s!"Dispatch search: {cases.size} cases tried (original full domain retained)"
+      if let .ok winner := dispatch.getObjVal? "winning_case" then
+        if winner != Json.null then
+          let datum := (winner.getObjValAs? String "datum").toOption.getD "?"
+          let redeemer := (winner.getObjValAs? String "redeemer").toOption.getD "?"
+          IO.println s!"  Winning case: datum={datum}; redeemer={redeemer}"
+          if let .ok exclusions := winner.getObjValAs? (List String) "exclusions" then
+            for condition in exclusions do IO.println s!"    {condition}"
     if let .ok witness := r.getObjVal? "counterexample" then
       IO.println <| Pretty.counterexample ((r.getObjValAs? String "mode").toOption == some "validator") witness
     if (r.getObjVal? "old_acceptance_witness").isOk then

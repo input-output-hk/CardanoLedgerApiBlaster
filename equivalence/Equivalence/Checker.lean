@@ -2,6 +2,7 @@ import Equivalence.Queries
 import PlutusCore.Smt.Model
 import Equivalence.ValidContextModel
 import Equivalence.Solver
+import Equivalence.Dispatch.Discover
 
 /-!
 Provides the library entry point for checking two decoded UPLC programs.
@@ -39,6 +40,10 @@ structure Config extends ValidContext.Limits where
   solverJobs : Nat := 1
   solverSeed : Option Nat := none
   skipOldRejected : Bool := false
+  /-- Equality-guided subset search before the unrestricted queries. -/
+  splitDispatch : Bool := false
+  dispatchCaseLimit : Nat := 16
+  dispatchTimeout : Nat := 10
 
 /-- Steps restrict execution in bounded mode; otherwise they only guard analysis. -/
 def Config.stepLimitFields (c : Config) : List (String × Json) := [
@@ -51,6 +56,8 @@ def Config.stepLimitFields (c : Config) : List (String × Json) := [
 /-- Check semantic option combinations for library callers as well as the CLI. -/
 def Config.validate (c : Config) : Except String Unit := do
   unless ["validator", "function"].contains c.mode do throw s!"unsupported mode: {c.mode}"
+  if c.dispatchTimeout == 0 then throw "dispatch case timeout must be positive"
+  if c.dispatchCaseLimit == 0 then throw "dispatch case limit must be positive"
   if c.steps == 0 then throw "step limit must be positive"
   if c.timeout == 0 then throw "solver timeout must be positive"
   if c.solverJobs == 0 then throw "solver worker count must be positive"
@@ -59,6 +66,7 @@ def Config.validate (c : Config) : Except String Unit := do
   if c.mode == "validator" && !c.bounded && c.budget.isNone then
     throw "validator checking requires --budget CPU MEMORY or --bounded --steps N"
   if c.mode == "function" then
+    if c.splitDispatch then throw "--split-dispatch is a validator option"
     if c.datum.isSome then throw "--datum is a validator option"
     if c.redeemer.isSome then throw "--redeemer is a validator option"
     unless ["integer", "data", "data3"].contains c.inputs do
@@ -312,12 +320,81 @@ def replayOldAcceptance (c : Config) (left right : PlutusCore.UPLC.Term.Program)
 private def replayConfirmed (witness : Json) : Bool :=
   (witness.getObjValAs? Bool "replayed").toOption == some true
 
+/-- Discovered cases are search subsets, not an exhaustive proof partition.
+A result is promoted to the original domain only after independent native replay.
+Every unsuccessful/unsupported/capped search falls back to the original queries. -/
+private def searchDispatch (c : Config) (left right : PlutusCore.UPLC.Term.Program)
+    (programs : Array Expr) (info : Option (IO.Ref Json))
+    (diagnostics : Option (IO.Ref (Array (String × Json)))) (observer : Solver.Observer) : MetaM (Option (Array Blaster.Smt.Result)) := do
+  let discovery := Dispatch.discover c.toLimits left right c.dispatchCaseLimit
+  let plan := queries c
+  let mut tried : Array Json := #[]
+  let summary := fun (tried : Array Json) winner => Json.mkObj [
+    ("strategy", toJson "equality-guided subset search"),
+    ("discovered_cases", toJson discovery.cases.size), ("discovery_limited", toJson discovery.limited),
+    ("discovery_limits", toJson discovery.limitReasons),
+    ("facts", toJson discovery.factCount), ("cases", toJson tried),
+    ("winning_case", winner), ("proof_fallback", toJson "original full domain")]
+  observer.message s!"Dispatch discovery: {discovery.cases.size} cases, {discovery.factCount} facts{if discovery.limited then " (discovery limit reached: " ++ String.intercalate ", " discovery.limitReasons.toList ++ ")" else ""}"
+  for (candidate, index) in discovery.cases.zipIdx do
+    let mut outcomes := []
+    let label := s!"dispatch_{index}"
+    let caseReport := fun outcomes extra => Json.mkObj ([
+      ("id", toJson index), ("datum", toJson candidate.datum.describe),
+      ("redeemer", toJson candidate.redeemer.describe), ("exclusions", toJson candidate.exclusions),
+      ("queries", Json.mkObj outcomes)] ++ extra)
+    let replayModel := fun bindings reverse => do
+      let model ← candidate.model bindings
+      let probe := { c with
+        datum := candidate.datum.value "dispatch_datum" bindings
+        redeemer := candidate.redeemer.value "dispatch_redeemer" bindings }
+      if replayConfirmed (replayCounterexample probe left right model reverse) then some model else none
+    observer.message s!"Starting: {label}: {candidate.describe}"
+    for (query, queryIndex) in plan.zipIdx do
+      unless query.name.endsWith "no_acceptance_regression" do continue
+      let name := label ++ "_" ++ query.name
+      -- Literal/shape dispatch can already distinguish the scripts on a valid
+      -- default context. Z3 is needed only when other fields must be discovered.
+      if let some model := replayModel [] (query.sides[0]? == some 1) then
+        let record := caseReport (outcomes ++ [(query.name, toJson "native_falsified")])
+          [("replayed", toJson true), ("native_probe", toJson true)]
+        tried := tried.push record
+        if let some ref := info then ref.set (summary tried record)
+        observer.message s!"Finished: {name}: native probe confirmed a regression in the original domain"
+        return some ((Array.replicate plan.size (.Undetermined : Blaster.Smt.Result)).set! queryIndex (.Falsified model))
+      let predicate ← queryPredicate c query programs
+      let goal ← candidate.proposition c.toLimits predicate
+      let (result, resultStatus) ← try
+        match ← Solver.runQueryTimed (← getEnv) goal name c.timeout c.dispatchTimeout
+            diagnostics observer c.solverJobs c.solverSeed with
+        | some result => pure (result, status result)
+        | none => pure (.Undetermined, "case_timeout")
+      catch error =>
+        observer.message s!"Dispatch case could not be checked [{name}]: {← error.toMessageData.toString}"
+        pure (.Undetermined, "error")
+      outcomes := outcomes ++ [(query.name, toJson resultStatus)]
+      if let .Falsified bindings := result then
+        if let some model := replayModel bindings (query.sides[0]? == some 1) then
+          let record := caseReport outcomes [("replayed", toJson true)]
+          tried := tried.push record
+          if let some ref := info then ref.set (summary tried record)
+          observer.message s!"Finished: {name}: regression confirmed by native replay in the original domain"
+          let results := (Array.replicate plan.size (.Undetermined : Blaster.Smt.Result)).set! queryIndex (.Falsified model)
+          return some results
+        observer.message s!"Finished: {name}: countermodel did not pass strict decoding and native replay"
+    tried := tried.push (caseReport outcomes [])
+    if let some ref := info then ref.set (summary tried Json.null)
+  if let some ref := info then ref.set (summary tried Json.null)
+  observer.message "Dispatch cases did not establish a difference; checking the original full domain"
+  return none
+
 /-- Call Blaster in-process on propositions constructed from decoded programs.
     Results are consumed as an inductive type, without parsing diagnostic text. -/
 def solve (env : Environment) (c : Config) (left right : PlutusCore.UPLC.Term.Program)
     (checkedResults : Option (IO.Ref (Array (Option Blaster.Smt.Result))) := none)
     (diagnostics : Option (IO.Ref (Array (String × Json))) := none)
-    (observer : Solver.Observer := {}) : IO (Array Blaster.Smt.Result) := do
+    (observer : Solver.Observer := {})
+    (dispatchInfo : Option (IO.Ref Json) := none) : IO (Array Blaster.Smt.Result) := do
   let progress := observer.message
   let programs := #[toExpr left, toExpr right]
   let plan := queries c
@@ -326,6 +403,10 @@ def solve (env : Environment) (c : Config) (left right : PlutusCore.UPLC.Term.Pr
     for pending in plan.toList.drop checked do
       progress s!"Skipping: {pending.name} ({reason})"
   let action : MetaM (Array Blaster.Smt.Result) := do
+    if c.splitDispatch && c.mode == "validator" then
+      if let some found ← searchDispatch c left right programs dispatchInfo diagnostics observer then
+        if let some ref := checkedResults then ref.set (found.map some)
+        return found
     let mut results := #[]
     let comparisonsProved := fun (checked : Array Blaster.Smt.Result) =>
       let result := fun name => checked[names.idxOf name]?.getD .Undetermined
@@ -594,16 +675,24 @@ def check (c : Config) (left right : PlutusCore.UPLC.Term.Program)
   progress "Starting: preparing symbolic checker"
   observer.reportPhase "preprocessing"
   initSearchPath toolchainRoot (moduleSearchPath.map FilePath.mk)
-  let env ← importModules #[{ module := `Equivalence.Queries }, { module := `Equivalence.ValidContext }, { module := `Blaster }] {} (loadExts := true)
+  let env ← importModules #[{ module := `Equivalence.Queries }, { module := `Equivalence.ValidContext },
+    { module := `Equivalence.Dispatch.Pattern }, { module := `Blaster }] {} (loadExts := true)
   inspectQueries env #[]
   let checkedResults ← IO.mkRef #[]
   let diagnostics ← IO.mkRef #[]
   if c.skipOldRejected then progress "Skipping: old_rejected (--skip-old-rejected)"
-  let results ← solve env c left right (some checkedResults) (some diagnostics) observer
+  let dispatchInfo ← IO.mkRef Json.null
+  let results ← solve env c left right (some checkedResults) (some diagnostics) observer (some dispatchInfo)
   inspectQueries env (← checkedResults.get)
   progress "Starting: validating replay witnesses and classifying results"
   observer.reportPhase "validation"
   let result := classify c results left right domainWitness
+  let dispatch ← dispatchInfo.get
+  let result := if c.splitDispatch then result.setObjVal! "dispatch" dispatch else result
+  let nativeProbe := ((dispatch.getObjVal? "winning_case").toOption.bind fun winner =>
+    (winner.getObjValAs? Bool "native_probe").toOption).getD false
+  let result := if nativeProbe then result.setObjVal! "verification"
+    (toJson "Native replay of an automatically discovered dispatch case; no reconstructed Lean proof term") else result
   let diagnostics ← diagnostics.get
   return if diagnostics.isEmpty then result else
     result.setObjVal! "query_diagnostics" (Json.mkObj diagnostics.toList)

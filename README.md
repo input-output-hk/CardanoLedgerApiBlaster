@@ -309,6 +309,42 @@ keywords (`I`, `B`, `Constr`, `List`, `Map`) and parenthesized Data retain their
 explicit syntax, including errors for malformed values. Use a JSON string to pass
 literal text that resembles Data syntax. `B #...` remains available for binary data.
 
+Use `--split-dispatch` to discover datum/redeemer dispatch cases automatically
+before running the full comparison. Discovery follows projections and decoders
+through UPLC functions and looks for equality with constructor tags, integers,
+byte strings, UTF-8 text and literal Data. Both arguments support the same nested
+constructor, list and map patterns. Unspecified payloads and collection tails
+remain symbolic; explicit `--datum` and `--redeemer` restrictions are respected.
+
+```sh
+lake exe uplc_equiv \
+  equivalence/examples/two_party_escrow_old/Scalus_0.18.2_Unisay.cbor_hex \
+  equivalence/examples/two_party_escrow_old/Plinth_1.67.0.0_Unisay.cbor_hex \
+  --split-dispatch --bounded --steps 5000 \
+  --max-inputs 1 --max-outputs 1 --max-signers 1 \
+  --timeout 10 --wall-timeout 90
+```
+
+This is a counterexample-search optimization. Each discovered case first gets a
+native probe on a model-valid context, then a specialized Z3 query if needed.
+A difference is reported only after native replay of the original programs and
+independent validation against the original context domain. With `--equivalence`,
+both comparison directions are searched. Agreement on the discovered cases does
+not prove equivalence: unsuccessful searches fall back to the original full-domain
+queries. Unsupported dispatch, arithmetic ranges and cases missed by discovery
+remain covered by that fallback.
+
+`--dispatch-cases N` limits the search to N patterns (default 16), and
+`--dispatch-timeout SECONDS` limits each speculative query, including cooperative
+preprocessing cancellation (default 10 seconds). Either option enables dispatch
+search. The normal `--timeout` still bounds each solver invocation, and
+`--wall-timeout` bounds the entire run. JSON reports include discovered patterns,
+per-case outcomes, discovery limits and the winning case in `dispatch`.
+`dispatch.discovery_limits` names the reached bounds (for example, branch traces
+or pending branches); these can limit discovery even below the requested case count.
+`--emit-lean` exports the original full-domain queries; it does not present a
+successful subset search as a full-domain solver proof.
+
 These defaults accommodate an own input plus funding, a payment plus change,
 and two-party authorization. Increase or decrease them for the script under
 investigation. There are no minimum-count options or fixed implementation caps;
