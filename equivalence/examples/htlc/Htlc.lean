@@ -13,9 +13,12 @@ open PlutusCore.UPLC.PlutusScript (PlutusScript)
 #import_uplc Plinth_1_65_0_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/htlc/Plinth_1.65.0.0_Unisay.cbor_hex"
 #import_uplc Plinth_1_67_0_0_Unisay_asdata PlutusV3 single_cbor_hex "equivalence/examples/htlc/Plinth_1.67.0.0_Unisay_asdata.cbor_hex"
 #import_uplc Plinth_1_67_0_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/htlc/Plinth_1.67.0.0_Unisay.cbor_hex"
+#import_uplc Plinth_1_71_0_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/htlc/Plinth_1.71.0.0_Unisay.cbor_hex"
 #import_uplc Scalus_0_16_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/htlc/Scalus_0.16.0_Unisay.cbor_hex"
 #import_uplc Scalus_0_17_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/htlc/Scalus_0.17.0_Unisay.cbor_hex"
 #import_uplc Scalus_0_18_2_Unisay PlutusV3 single_cbor_hex "equivalence/examples/htlc/Scalus_0.18.2_Unisay.cbor_hex"
+#import_uplc Scalus_1_3_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/htlc/Scalus_1.3.0_Unisay.cbor_hex"
+#import_uplc Scalus_1_4_0_nau PlutusV3 single_cbor_hex "equivalence/examples/htlc/Scalus_1.4.0_nau.cbor_hex"
 
 /-- All submissions of this scenario, paired with their UPLC-CAPE submission name. -/
 def scripts : Array (String × PlutusScript) := #[
@@ -28,9 +31,12 @@ def scripts : Array (String × PlutusScript) := #[
   ("Plinth_1.65.0.0_Unisay", Plinth_1_65_0_0_Unisay),
   ("Plinth_1.67.0.0_Unisay_asdata", Plinth_1_67_0_0_Unisay_asdata),
   ("Plinth_1.67.0.0_Unisay", Plinth_1_67_0_0_Unisay),
+  ("Plinth_1.71.0.0_Unisay", Plinth_1_71_0_0_Unisay),
   ("Scalus_0.16.0_Unisay", Scalus_0_16_0_Unisay),
   ("Scalus_0.17.0_Unisay", Scalus_0_17_0_Unisay),
-  ("Scalus_0.18.2_Unisay", Scalus_0_18_2_Unisay)
+  ("Scalus_0.18.2_Unisay", Scalus_0_18_2_Unisay),
+  ("Scalus_1.3.0_Unisay", Scalus_1_3_0_Unisay),
+  ("Scalus_1.4.0_nau", Scalus_1_4_0_nau)
 ]
 
 end Equivalence.Examples.Htlc

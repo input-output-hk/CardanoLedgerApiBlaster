@@ -13,8 +13,8 @@ open PlutusCore.UPLC.PlutusScript (PlutusScript)
 #import_uplc htlcNew PlutusV3 single_cbor_hex "equivalence/examples/htlc/Plinth_1.67.0.0_Unisay.cbor_hex"
 #import_uplc vestingOld PlutusV3 single_cbor_hex "equivalence/examples/linear_vesting/Plinth_1.65.0.0_Unisay.cbor_hex"
 #import_uplc vestingNew PlutusV3 single_cbor_hex "equivalence/examples/linear_vesting/Plinth_1.67.0.0_Unisay.cbor_hex"
-#import_uplc escrowOld PlutusV3 single_cbor_hex "equivalence/examples/two_party_escrow/Plinth_1.65.0.0_Unisay.cbor_hex"
-#import_uplc escrowNew PlutusV3 single_cbor_hex "equivalence/examples/two_party_escrow/Plinth_1.67.0.0_Unisay.cbor_hex"
+#import_uplc escrowOld PlutusV3 single_cbor_hex "equivalence/examples/two_party_escrow_old/Plinth_1.65.0.0_Unisay.cbor_hex"
+#import_uplc escrowNew PlutusV3 single_cbor_hex "equivalence/examples/two_party_escrow_old/Plinth_1.67.0.0_Unisay.cbor_hex"
 
 def accepts (script : PlutusScript) (args : List Term) (budgeted : Bool) : Option Bool :=
   Acceptance.accepts true (Function.execute script.script args

@@ -9,6 +9,7 @@ open PlutusCore.UPLC.PlutusScript (PlutusScript)
 #import_uplc Scalus_0_12_1_Unisay PlutusV3 single_cbor_hex "equivalence/examples/factorial/Scalus_0.12.1_Unisay.cbor_hex"
 #import_uplc Scalus_0_16_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/factorial/Scalus_0.16.0_Unisay.cbor_hex"
 #import_uplc Scalus_0_17_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/factorial/Scalus_0.17.0_Unisay.cbor_hex"
+#import_uplc Scalus_1_4_0_nau PlutusV3 single_cbor_hex "equivalence/examples/factorial/Scalus_1.4.0_nau.cbor_hex"
 
 /-- All submissions of this scenario, paired with their UPLC-CAPE submission name. -/
 def scripts : Array (String × PlutusScript) := #[
@@ -16,7 +17,8 @@ def scripts : Array (String × PlutusScript) := #[
   ("Plutarch_1.11.0_SeungheonOh_size", Plutarch_1_11_0_SeungheonOh_size),
   ("Scalus_0.12.1_Unisay", Scalus_0_12_1_Unisay),
   ("Scalus_0.16.0_Unisay", Scalus_0_16_0_Unisay),
-  ("Scalus_0.17.0_Unisay", Scalus_0_17_0_Unisay)
+  ("Scalus_0.17.0_Unisay", Scalus_0_17_0_Unisay),
+  ("Scalus_1.4.0_nau", Scalus_1_4_0_nau)
 ]
 
 end Equivalence.Examples.Factorial

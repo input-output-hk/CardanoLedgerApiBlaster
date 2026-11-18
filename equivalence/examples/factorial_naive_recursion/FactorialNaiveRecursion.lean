@@ -4,33 +4,45 @@ import PlutusCore.UPLC
 namespace Equivalence.Examples.FactorialNaiveRecursion
 open PlutusCore.UPLC.PlutusScript (PlutusScript)
 
+#import_uplc OpShin_0_26_1_nielstron PlutusV3 single_cbor_hex "equivalence/examples/factorial_naive_recursion/OpShin_0.26.1_nielstron.cbor_hex"
 #import_uplc OpShin_1_0_0_nielstron PlutusV3 single_cbor_hex "equivalence/examples/factorial_naive_recursion/OpShin_1.0.0_nielstron.cbor_hex"
 #import_uplc Pebble_0_1_2_michele_nuzzi PlutusV3 single_cbor_hex "equivalence/examples/factorial_naive_recursion/Pebble_0.1.2_michele-nuzzi.cbor_hex"
+#import_uplc Pebble_0_4_4_michele_nuzzi PlutusV3 single_cbor_hex "equivalence/examples/factorial_naive_recursion/Pebble_0.4.4_michele-nuzzi.cbor_hex"
+#import_uplc Pebble_0_5_0_michele_nuzzi PlutusV3 single_cbor_hex "equivalence/examples/factorial_naive_recursion/Pebble_0.5.0_michele-nuzzi.cbor_hex"
 #import_uplc Plinth_1_45_0_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/factorial_naive_recursion/Plinth_1.45.0.0_Unisay.cbor_hex"
 #import_uplc Plinth_1_61_0_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/factorial_naive_recursion/Plinth_1.61.0.0_Unisay.cbor_hex"
 #import_uplc Plinth_1_64_0_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/factorial_naive_recursion/Plinth_1.64.0.0_Unisay.cbor_hex"
 #import_uplc Plinth_1_65_0_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/factorial_naive_recursion/Plinth_1.65.0.0_Unisay.cbor_hex"
 #import_uplc Plinth_1_67_0_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/factorial_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex"
+#import_uplc Plinth_1_71_0_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/factorial_naive_recursion/Plinth_1.71.0.0_Unisay.cbor_hex"
 #import_uplc Plutarch_1_11_0_SeungheonOh PlutusV3 single_cbor_hex "equivalence/examples/factorial_naive_recursion/Plutarch_1.11.0_SeungheonOh.cbor_hex"
 #import_uplc Scalus_0_12_1_Unisay PlutusV3 single_cbor_hex "equivalence/examples/factorial_naive_recursion/Scalus_0.12.1_Unisay.cbor_hex"
 #import_uplc Scalus_0_16_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/factorial_naive_recursion/Scalus_0.16.0_Unisay.cbor_hex"
 #import_uplc Scalus_0_17_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/factorial_naive_recursion/Scalus_0.17.0_Unisay.cbor_hex"
 #import_uplc Scalus_0_18_2_Unisay PlutusV3 single_cbor_hex "equivalence/examples/factorial_naive_recursion/Scalus_0.18.2_Unisay.cbor_hex"
+#import_uplc Scalus_1_3_0_Unisay PlutusV3 single_cbor_hex "equivalence/examples/factorial_naive_recursion/Scalus_1.3.0_Unisay.cbor_hex"
+#import_uplc Scalus_1_4_0_nau PlutusV3 single_cbor_hex "equivalence/examples/factorial_naive_recursion/Scalus_1.4.0_nau.cbor_hex"
 
 /-- All submissions of this scenario, paired with their UPLC-CAPE submission name. -/
 def scripts : Array (String × PlutusScript) := #[
+  ("OpShin_0.26.1_nielstron", OpShin_0_26_1_nielstron),
   ("OpShin_1.0.0_nielstron", OpShin_1_0_0_nielstron),
   ("Pebble_0.1.2_michele-nuzzi", Pebble_0_1_2_michele_nuzzi),
+  ("Pebble_0.4.4_michele-nuzzi", Pebble_0_4_4_michele_nuzzi),
+  ("Pebble_0.5.0_michele-nuzzi", Pebble_0_5_0_michele_nuzzi),
   ("Plinth_1.45.0.0_Unisay", Plinth_1_45_0_0_Unisay),
   ("Plinth_1.61.0.0_Unisay", Plinth_1_61_0_0_Unisay),
   ("Plinth_1.64.0.0_Unisay", Plinth_1_64_0_0_Unisay),
   ("Plinth_1.65.0.0_Unisay", Plinth_1_65_0_0_Unisay),
   ("Plinth_1.67.0.0_Unisay", Plinth_1_67_0_0_Unisay),
+  ("Plinth_1.71.0.0_Unisay", Plinth_1_71_0_0_Unisay),
   ("Plutarch_1.11.0_SeungheonOh", Plutarch_1_11_0_SeungheonOh),
   ("Scalus_0.12.1_Unisay", Scalus_0_12_1_Unisay),
   ("Scalus_0.16.0_Unisay", Scalus_0_16_0_Unisay),
   ("Scalus_0.17.0_Unisay", Scalus_0_17_0_Unisay),
-  ("Scalus_0.18.2_Unisay", Scalus_0_18_2_Unisay)
+  ("Scalus_0.18.2_Unisay", Scalus_0_18_2_Unisay),
+  ("Scalus_1.3.0_Unisay", Scalus_1_3_0_Unisay),
+  ("Scalus_1.4.0_nau", Scalus_1_4_0_nau)
 ]
 
 end Equivalence.Examples.FactorialNaiveRecursion
