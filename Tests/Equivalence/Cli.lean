@@ -79,6 +79,29 @@ open _root_.Equivalence.Cli (parse)
   unless c.mode == "validator" && c.bounded && c.budget.isNone && c.steps == 100 do
     throw <| IO.userError "Unexpected step-bounded validator defaults"
 
+-- Primitive shorthand shares the explicit Data representation; JSON quoting forces text.
+#eval show IO Unit from do
+  let cases : List (String × String) := [
+    ("1", "I 1"), ("-42", "I -42"),
+    ("123456789012345678901234567890", "I 123456789012345678901234567890"),
+    (" 7 ", "I 7"), ("hello", "B #68656c6c6f"),
+    ("hello world", "B #68656c6c6f20776f726c64"), ("", "B #"),
+    (" hello ", "B #2068656c6c6f20"), ("é🚀", "B #c3a9f09f9a80"),
+    ("1.5", "B #312e35"), ("1e3", "B #316533"), ("Irish", "B #4972697368"),
+    ("\"I 1\"", "B #492031"), ("\"hello\"", "B #68656c6c6f"),
+    ("\"42\"", "B #3432"), ("\"\"", "B #"),
+    ("\"é🚀\"", "B #c3a9f09f9a80"),
+    ("\"line\\n\\\"quoted\\\"\"", "B #6c696e650a2271756f74656422")]
+  for flag in ["--datum", "--redeemer"] do
+    for (shorthand, explicit) in cases do
+      let simple ← IO.ofExcept (Cli.parse {} ["old", "new", "--bounded", flag, shorthand])
+      let typed ← IO.ofExcept (Cli.parse {} ["old", "new", "--bounded", flag, explicit])
+      unless simple.datum == typed.datum && simple.redeemer == typed.redeemer do
+        throw <| IO.userError s!"Shorthand mismatch: {flag} {shorthand}"
+    for invalid in ["--json", "I", "B", "Constr", "List", "Map", "(I nope)", "\"unterminated", "\"hello\" trailing", "I nope"] do
+      unless (Cli.parse {} ["old", "new", "--bounded", flag, invalid]).toOption.isNone do
+        throw <| IO.userError s!"Invalid shorthand accepted: {flag} {invalid}"
+
 -- Exit status is presentation policy; checker verdicts are tested separately.
 #eval show IO Unit from do
   for (name, code) in [("bounded_preserved", 0), ("bounded_regression", 1),

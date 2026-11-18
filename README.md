@@ -283,6 +283,32 @@ validator input modes have been replaced by this configurable profile.
 | `--max-outputs N` | 2 | 0 through N transaction outputs |
 | `--max-signers N` | 2 | 0 through N signer keys |
 
+Use `--datum 'Constr 0 [Constr 0 [], I 1000000]'` to fix the spending datum,
+`--redeemer 'I 1'` to fix the spending redeemer, or both together. Arguments use
+textual Plutus Data (`I`, `B`, `Constr`, `List`, `Map`). Other context fields remain
+symbolic. These options restrict the comparison to the supplied values; they do
+not establish equivalence for other datums or redeemers. Completed reports include
+`fixed_datum` and/or `fixed_redeemer`, and native replay and `--emit-lean` enforce
+the same restrictions. Without either option its corresponding argument remains
+symbolic. Both options are validator-only.
+
+Primitive values also accept shorthand:
+
+```sh
+--redeemer 1             # I 1
+--redeemer -42           # I -42
+--datum hello           # UTF-8 bytes: B #68656c6c6f
+--datum "hello world"   # UTF-8 text, including the space
+--datum '"42"'          # Bytes B #3432, rather than integer 42
+```
+
+Shell quotes group text but do not change its type: both `42` and `"42"` become
+integer 42. JSON quotes force text and support escapes; the outer shell quotes in
+`'"42"'` preserve those JSON quotes. Text whitespace is preserved. Data constructor
+keywords (`I`, `B`, `Constr`, `List`, `Map`) and parenthesized Data retain their
+explicit syntax, including errors for malformed values. Use a JSON string to pass
+literal text that resembles Data syntax. `B #...` remains available for binary data.
+
 These defaults accommodate an own input plus funding, a payment plus change,
 and two-party authorization. Increase or decrease them for the script under
 investigation. There are no minimum-count options or fixed implementation caps;

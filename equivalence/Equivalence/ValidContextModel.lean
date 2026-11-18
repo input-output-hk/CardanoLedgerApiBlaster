@@ -78,7 +78,7 @@ def modelContexts (limits : Limits) (model : List String) : List Data := Id.run 
   let d : Fields := {}
   let f : Fields := {
     scriptTxId := key "scriptTxId" d.scriptTxId, scriptIndex := number "scriptIndex" d.scriptIndex
-    datum := raw "datum" d.datum, redeemer := raw "redeemer" d.redeemer
+    datum := limits.datum.getD (raw "datum" d.datum), redeemer := limits.redeemer.getD (raw "redeemer" d.redeemer)
     validRange := raw "validRange" d.validRange, unused := unusedFromModel data d.unused }
   let sanitized := sanitize f
   let input := fun (i : Nat) =>

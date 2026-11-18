@@ -44,7 +44,9 @@ structure Config extends ValidContext.Limits where
 def Config.stepLimitFields (c : Config) : List (String × Json) := [
   ("solver_seed", toJson (c.solverSeed.getD 0)), ("solver_workers", toJson c.solverJobs),
   ("steps", toJson c.steps), ("bounded", toJson c.bounded),
-  ("step_limit_kind", toJson (if c.bounded then "execution_bound" else "analysis_guard"))]
+  ("step_limit_kind", toJson (if c.bounded then "execution_bound" else "analysis_guard"))] ++
+  (c.datum.map (fun datum => [("fixed_datum", PlutusCore.Data.toDetailedJson datum)])).getD [] ++
+  (c.redeemer.map (fun redeemer => [("fixed_redeemer", PlutusCore.Data.toDetailedJson redeemer)])).getD []
 
 /-- Check semantic option combinations for library callers as well as the CLI. -/
 def Config.validate (c : Config) : Except String Unit := do
@@ -57,6 +59,8 @@ def Config.validate (c : Config) : Except String Unit := do
   if c.mode == "validator" && !c.bounded && c.budget.isNone then
     throw "validator checking requires --budget CPU MEMORY or --bounded --steps N"
   if c.mode == "function" then
+    if c.datum.isSome then throw "--datum is a validator option"
+    if c.redeemer.isSome then throw "--redeemer is a validator option"
     unless ["integer", "data", "data3"].contains c.inputs do
       throw "function mode supports --inputs integer, data or data3"
     if c.equivalence && !c.bounded then
@@ -161,7 +165,9 @@ def queryEvidence (c : Config) (query : Query) (results : Array Blaster.Smt.Resu
 
 def inputDomain (c : Config) : String :=
   if c.mode == "validator" then
-    s!"Structured V3 spending contexts with 0..{c.maxInputs} independently symbolic inputs, 0..{c.maxOutputs} outputs and 0..{c.maxSigners} signer byte strings; present script datum; typed independent input and spending references; input pubkey/script credentials without staking and absent/hash/inline datums; outputs have arbitrary addresses and inline datums; no reference scripts; each value has an ADA entry and one independent policy/token entry; arbitrary Data validity range, datum, redeemer and unused fields; unbounded integers and byte strings; symbolic queries require CardanoLedgerApi.V3.validSpendingContext; concrete witnesses and counterexamples are independently ledger-validated and natively replayed; model validity does not establish on-chain reachability"
+    s!"Structured V3 spending contexts with 0..{c.maxInputs} independently symbolic inputs, 0..{c.maxOutputs} outputs and 0..{c.maxSigners} signer byte strings; present script datum; typed independent input and spending references; input pubkey/script credentials without staking and absent/hash/inline datums; outputs have arbitrary addresses and inline datums; no reference scripts; each value has an ADA entry and one independent policy/token entry; arbitrary Data validity range, datum, redeemer and unused fields; unbounded integers and byte strings; symbolic queries require CardanoLedgerApi.V3.validSpendingContext; concrete witnesses and counterexamples are independently ledger-validated and natively replayed; model validity does not establish on-chain reachability" ++
+    (c.datum.map (fun datum => s!"; restricted to spending datum {datum}")).getD "" ++
+    (c.redeemer.map (fun redeemer => s!"; restricted to spending redeemer {redeemer}")).getD ""
   else if c.inputs == "integer" then "all integers, encoded as raw UPLC integer constants"
   else if c.inputs == "data" then "all Plutus Data values as a single function argument"
   else "all triples of Plutus Data as function arguments"
@@ -359,7 +365,7 @@ def solve (env : Environment) (c : Config) (left right : PlutusCore.UPLC.Term.Pr
         unless replayConfirmed (replayOldAcceptance c left right model) do
           progress "Starting: synthesizing an OLD-accepting structured spending witness"
           let predicate ← queryPredicate c query programs
-          let fast := c.maxInputs > 0 && c.maxOutputs > 0 && c.maxSigners > 0
+          let fast := c.datum.isNone && c.redeemer.isNone && c.maxInputs > 0 && c.maxOutputs > 0 && c.maxSigners > 0
           let (cpu, memory) := c.budget.getD (0, 0)
           let fastGoal := mkAppN (mkConst ``ValidContext.fastWitnessRejected)
             (query.sides.map (programs[·]!) ++ #[mkRawNatLit cpu, mkRawNatLit memory,

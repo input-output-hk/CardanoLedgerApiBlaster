@@ -47,6 +47,9 @@ Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D).
   --max-inputs N                                        Include 0..N structured inputs (validator only; default 2)
   --max-outputs N                                       Include 0..N structured outputs (validator only; default 2)
   --max-signers N                                       Include 0..N signer keys (validator only; default 2)
+  --redeemer DATA                                       Fix the spending redeemer (textual Plutus Data)
+  --datum DATA                                          Fix the spending datum (textual Plutus Data); other context fields remain symbolic
+  DATA shorthand: integers become I n; text becomes UTF-8 bytes; JSON quotes force text.
   --inputs integer|data|data3                            Function input domain (default integer)
   --format FORMAT                                       textual, flat, flat_hex, single_cbor_hex (default), double_cbor_hex; .uplc paths default to textual
   --format-left FORMAT                                  Override the left script format
@@ -100,6 +103,26 @@ def natOption (key value : String) (positive := false) : Except String Nat := do
   if positive && n == 0 then throw s!"{key} must be positive"
   return n
 
+/-- Integers and text are shorthand; JSON strings force text, and Data constructors stay explicit. -/
+def parseData (option source : String) : Except String PlutusCore.Data.Data := do
+  let original := source
+  let source := source.trim
+  if let some value := source.toInt? then return .I value
+  if source.startsWith "\"" then
+    let json ← (Json.parse source).mapError (fun error => s!"{option}: {error}")
+    let .str text := json | throw s!"{option} expects a JSON string"
+    return .B (PlutusCore.String.encodeUtf8 text)
+  if source.startsWith "--" then throw s!"{option} expects a value before {source}"
+  let keyword := String.mk (source.data.takeWhile (fun c => !c.isWhitespace))
+  if !["I", "B", "Constr", "List", "Map"].contains keyword && !source.startsWith "(" then
+    return .B (PlutusCore.String.encodeUtf8 original)
+  let program ← PlutusCore.UPLC.TextEncoding.programFromString
+    (s!"(program 1.1.0 (con data ({source})))")
+      |>.mapError (fun error => s!"{option}: {error}")
+  let .Program _ (.Const (.Data datum)) := program
+    | throw s!"{option} expects textual Plutus Data"
+  return datum
+
 def parse (c : Config) : List String → Except String Config
   | [] => do
     unless c.scripts.size == 2 do throw "expected old and new script paths"
@@ -128,6 +151,10 @@ def parse (c : Config) : List String → Except String Config
   | "--format-left" :: v :: rest => parse { c with leftFormat := some v } rest
   | "--format-right" :: v :: rest => parse { c with rightFormat := some v } rest
   | "--language" :: v :: rest => parse { c with language := v } rest
+  | "--redeemer" :: v :: rest => do
+    parse { c with redeemer := some (← parseData "--redeemer" v) } rest
+  | "--datum" :: v :: rest => do
+    parse { c with datum := some (← parseData "--datum" v) } rest
   | "--inputs" :: v :: rest => parse { c with inputs := v, inputsSpecified := true } rest
   | "--input" :: v :: rest => parse { c with inputs := v, inputsSpecified := true } rest
   | "--max-inputs" :: v :: rest => do
@@ -203,9 +230,21 @@ def emitSource (env : Environment) (c : Config)
           PrettyPrinter.ppExpr expression
     let (rendered, _) ← action.run' |>.toIO
       { fileName := "<uplc_equiv>", fileMap := default, maxRecDepth := 0, maxHeartbeats := 0 } { env }
-    let proposition := if c.mode == "validator" then
-      s!"valid_context% {c.maxInputs} {c.maxOutputs} {c.maxSigners} ({rendered.pretty})"
-      else rendered.pretty
+    let renderData := fun value => do
+      let action : MetaM Format := PrettyPrinter.ppExpr (toExpr value)
+      let (rendered, _) ← action.run' |>.toIO
+        { fileName := "<uplc_equiv>", fileMap := default } { env }
+      pure rendered.pretty
+    let datumText ← c.datum.mapM renderData
+    let redeemerText ← c.redeemer.mapM renderData
+    let counts := s!"{c.maxInputs} {c.maxOutputs} {c.maxSigners}"
+    let proposition := match datumText, redeemerText with
+      | some datum, some redeemer =>
+        s!"valid_context_fixed% {counts} ({datum}) ({redeemer}) ({rendered.pretty})"
+      | some datum, none => s!"valid_context_datum% {counts} ({datum}) ({rendered.pretty})"
+      | none, some redeemer => s!"valid_context_redeemer% {counts} ({redeemer}) ({rendered.pretty})"
+      | none, none => if c.mode == "validator" then
+          s!"valid_context% {counts} ({rendered.pretty})" else rendered.pretty
     let seed := c.solverSeed.map (fun seed => s!" (random-seed: {seed})") |>.getD ""
     return some s!"\n-- {query.name}\n#blaster (timeout: {c.timeout}){seed}{expected} (reconstruct-proofs: 0) (gen-cex: {if query.wantsCounterexample then 1 else 0}) [{proposition}]\n"
   let scope := if checksLedger c then

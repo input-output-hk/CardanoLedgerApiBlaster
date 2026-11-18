@@ -458,6 +458,127 @@ class CheckerProcess(unittest.TestCase):
             self.assertNotIn('broken pipe', report['explanation'])
             self.assert_portfolio_stopped(directory, 2)
 
+    def test_fixed_datum_restricts_queries_replay_and_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            old, new, emitted = (directory / name for name in
+                                  ["old.uplc", "new.uplc", "fixed.lean"])
+            old.write_text("(program 1.1.0 (lam c (con unit ())))")
+            new.write_text("(program 1.1.0 " + reject_data_at([2, 1, 0], "I 7") + ")")
+            for datum, code, verdict in [(7, 1, "bounded_regression"),
+                                          (8, 0, "bounded_preserved")]:
+                result = subprocess.run(
+                    [str(CLI), str(old), str(new), "--bounded", "--steps", "1000",
+                     "--max-inputs", "1", "--max-outputs", "1", "--max-signers", "1",
+                     "--datum", f"I {datum}", "--timeout", "10", "--wall-timeout", "30",
+                     "--emit-lean", str(emitted), "--json"],
+                    cwd=ROOT, capture_output=True, text=True, timeout=40)
+                report = json.loads(result.stdout)
+                self.assertEqual(result.returncode, code, report)
+                self.assertEqual(report["verdict"], verdict, report)
+                self.assertEqual(report["fixed_datum"], {"int": datum})
+                if datum == 7:
+                    witness = report["counterexample"]
+                    self.assertTrue(witness["replayed"])
+                    self.assertEqual(witness["input"]["fields"][2]["fields"][1]
+                                     ["fields"][0], {"int": 7})
+                self.assertIn("valid_context_datum%", emitted.read_text())
+            checked = subprocess.run(["lake", "env", "lean", str(emitted)], cwd=ROOT,
+                                     capture_output=True, text=True, timeout=40)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+            for flags in [["--datum", "I bogus"], ["--datum"],
+                          ["--mode", "function", "--datum", "I 7"]]:
+                result = subprocess.run([str(CLI), str(old), str(new), "--bounded",
+                                         *flags, "--json"], cwd=ROOT,
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 3, result.stdout)
+
+    def test_fixed_redeemer_restricts_queries_replay_and_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            old, new = directory / "old.uplc", directory / "new.uplc"
+            old.write_text("(program 1.1.0 (lam c (con unit ())))")
+            datum_matches = f"[[(builtin equalsData) {data_at([2, 1, 0])}] (con data (I 7))]"
+            redeemer_matches = f"[[(builtin equalsData) {data_at([1])}] (con data (I 11))]"
+            condition = (f"[[[(force (builtin ifThenElse)) {datum_matches}] "
+                         f"{redeemer_matches}] (con bool False)]")
+            new.write_text("(program 1.1.0 " + reject_if(condition) + ")")
+            cases = [(None, 11, 1, "bounded_regression"),
+                     (None, 12, 0, "bounded_preserved"),
+                     (8, 11, 0, "bounded_preserved")]
+            for index, (datum, redeemer, code, verdict) in enumerate(cases):
+                emitted = directory / f"fixed-{index}.lean"
+                flags = [] if datum is None else ["--datum", f"I {datum}"]
+                result = subprocess.run(
+                    [str(CLI), str(old), str(new), "--bounded", "--steps", "1000",
+                     "--max-inputs", "1", "--max-outputs", "1", "--max-signers", "1",
+                     "--redeemer", f"I {redeemer}", *flags, "--timeout", "10",
+                     "--wall-timeout", "30", "--emit-lean", str(emitted), "--json"],
+                    cwd=ROOT, capture_output=True, text=True, timeout=40)
+                report = json.loads(result.stdout)
+                self.assertEqual(result.returncode, code, report)
+                self.assertEqual(report["verdict"], verdict, report)
+                self.assertEqual(report["fixed_redeemer"], {"int": redeemer})
+                if datum is not None:
+                    self.assertEqual(report["fixed_datum"], {"int": datum})
+                if code == 1:
+                    witness = report["counterexample"]
+                    self.assertTrue(witness["replayed"])
+                    self.assertEqual(witness["input"]["fields"][1], {"int": redeemer})
+                    self.assertEqual(witness["input"]["fields"][2]["fields"][1]
+                                     ["fields"][0], {"int": 7})
+                self.assertIn("valid_context_fixed%" if datum is not None else
+                              "valid_context_redeemer%", emitted.read_text())
+                checked = subprocess.run(["lake", "env", "lean", str(emitted)], cwd=ROOT,
+                                         capture_output=True, text=True, timeout=40)
+                self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+            for flags in [["--redeemer", "I bogus"], ["--redeemer"],
+                          ["--mode", "function", "--redeemer", "I 11"]]:
+                result = subprocess.run([str(CLI), str(old), str(new), "--bounded",
+                                         *flags, "--json"], cwd=ROOT,
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 3, result.stdout)
+
+    def test_data_text_shorthand_reaches_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / "unit.uplc"
+            script.write_text("(program 1.1.0 (lam c (con unit ())))")
+            cases = [("hello world", "é🚀", {"bytes": "68656c6c6f20776f726c64"},
+                      {"bytes": "c3a9f09f9a80"}),
+                     ("42", '\"42\"', {"int": 42}, {"bytes": "3432"})]
+            for datum, redeemer, expected_datum, expected_redeemer in cases:
+                result = subprocess.run(
+                    [str(CLI), str(script), str(script), "--bounded", "--steps", "100",
+                     "--max-inputs", "1", "--max-outputs", "1", "--max-signers", "0",
+                     "--datum", datum, "--redeemer", redeemer, "--json"],
+                    cwd=ROOT, capture_output=True, text=True, timeout=30)
+                report = json.loads(result.stdout)
+                self.assertEqual(result.returncode, 0, report)
+                self.assertEqual(report["fixed_datum"], expected_datum)
+                self.assertEqual(report["fixed_redeemer"], expected_redeemer)
+
+    def test_fixed_datum_and_redeemer_find_escrow_price(self):
+        examples = ROOT / "equivalence/examples/two_party_escrow"
+        result = subprocess.run(
+            [str(CLI), str(examples / "Scalus_0.18.2_Unisay.cbor_hex"),
+             str(examples / "Plinth_1.67.0.0_Unisay.cbor_hex"),
+             "--datum", "Constr 0 [Constr 0 [], I 1000000]", "--redeemer", "1",
+             "--bounded", "--steps", "5000", "--max-inputs", "1",
+             "--max-outputs", "1", "--max-signers", "1",
+             "--timeout", "20", "--wall-timeout", "60", "--json"],
+            cwd=ROOT, capture_output=True, text=True, timeout=70)
+        report = json.loads(result.stdout)
+        self.assertEqual(result.returncode, 1, report)
+        self.assertEqual(report["verdict"], "bounded_regression", report)
+        witness = report["counterexample"]
+        self.assertTrue(witness["replayed"])
+        self.assertTrue(witness["ledger_validity"]["valid"])
+        self.assertTrue(witness["old"]["accepts"])
+        self.assertFalse(witness["new"]["accepts"])
+        tx = witness["input"]["fields"][0]["fields"]
+        output_ada = tx[2]["list"][0]["fields"][1]["map"][0]["v"]["map"][0]["v"]
+        self.assertEqual(output_ada, {"int": 75000000})
+
     def test_invalid_arguments_are_tool_errors(self):
         with tempfile.TemporaryDirectory() as directory:
             old_path, new_path = Path(directory) / "old.uplc", Path(directory) / "new.uplc"

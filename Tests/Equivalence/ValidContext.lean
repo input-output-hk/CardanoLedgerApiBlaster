@@ -16,6 +16,29 @@ def settings : Support.Config := { acceptanceConfig with
     | throw <| IO.userError "No default domain witness"
   unless Checker.validLedgerContext settings raw do
     throw <| IO.userError s!"Invalid domain witness: {(Ledger.audit raw).pretty}"
+  let datum := Data.Constr 0 [.Constr 0 [], .I 1000000]
+  let fixed : ValidContext.Limits := { datum := some datum }
+  let some pinned := ValidContext.validContext fixed
+    | throw <| IO.userError "No fixed-datum domain witness"
+  unless Checker.validLedgerContext { settings with datum := some datum } pinned &&
+      !ValidContext.contains fixed raw do
+    throw <| IO.userError "Fixed-datum domain was not enforced"
+  for candidate in ValidContext.modelContexts fixed ["datum: (Data.I 9)"] do
+    unless (Context.unpackSpendingContext candidate).any (fun f => f.datum == datum) do
+      throw <| IO.userError "Model overrode the supplied datum"
+  let redeemer := Data.Constr 3 [.I 11, .B "test"]
+  let both : ValidContext.Limits := { fixed with redeemer := some redeemer }
+  for outputLimit in [0, 1] do
+    let both := { both with maxOutputs := outputLimit }
+    let some pinned := ValidContext.validContext both
+      | throw <| IO.userError "No fixed-argument domain witness"
+    unless Ledger.validContext pinned && ValidContext.contains both pinned &&
+        !ValidContext.contains both (ValidContext.context { datum } [{ datum }]) do
+      throw <| IO.userError "Fixed redeemer was not enforced"
+    for candidate in ValidContext.modelContexts both ["datum: (Data.I 9)", "redeemer: (Data.I 99)"] do
+      unless (Context.unpackSpendingContext candidate).any
+          (fun f => f.datum == datum && f.redeemer == redeemer) do
+        throw <| IO.userError "Model overrode the supplied spending arguments"
   for isScript in [false, true] do
     for (hasDatum, inlineDatum) in [(false, false), (true, false), (true, true)] do
       let input : ValidContext.Input := {

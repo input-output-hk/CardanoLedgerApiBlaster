@@ -4,6 +4,9 @@ namespace EquivalenceTest
 
 open Lean
 
+deriving instance ToJson, FromJson for PlutusCore.ByteString.PlutusCore.ByteStringInternal.ByteString
+deriving instance ToJson, FromJson for PlutusCore.Data.PlutusCore.DataInternal.Data
+
 -- Test transport instances stay outside the production library.
 deriving instance ToJson, FromJson for Equivalence.ValidContext.Limits
 deriving instance ToJson, FromJson for Equivalence.Checker.Config
