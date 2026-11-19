@@ -1,0 +1,89 @@
+{
+  "ecd": {
+    "cases": 4,
+    "verdicts": {
+      "inconclusive": 4
+    },
+    "preprocessing_timeouts": 4,
+    "preprocessing_seconds_total": 18.227519540057983,
+    "max_rss_bytes": 1043382272
+  },
+  "factorial": {
+    "cases": 3,
+    "verdicts": {
+      "inconclusive": 3
+    },
+    "preprocessing_timeouts": 3,
+    "preprocessing_seconds_total": 14.4666499159066,
+    "max_rss_bytes": 1209286656
+  },
+  "factorial_naive_recursion": {
+    "cases": 9,
+    "verdicts": {
+      "bounded_preserved": 6,
+      "inconclusive": 3
+    },
+    "preprocessing_timeouts": 3,
+    "preprocessing_seconds_total": 31.793885166815016,
+    "max_rss_bytes": 1103347712
+  },
+  "fibonacci": {
+    "cases": 13,
+    "verdicts": {
+      "error": 5,
+      "bounded_preserved": 5,
+      "inconclusive": 3
+    },
+    "preprocessing_timeouts": 3,
+    "preprocessing_seconds_total": 38.34331137302797,
+    "max_rss_bytes": 1764065280
+  },
+  "fibonacci_naive_recursion": {
+    "cases": 10,
+    "verdicts": {
+      "inconclusive": 6,
+      "bounded_preserved": 4
+    },
+    "preprocessing_timeouts": 6,
+    "preprocessing_seconds_total": 44.5497080408968,
+    "max_rss_bytes": 1127940096
+  },
+  "htlc": {
+    "cases": 14,
+    "verdicts": {
+      "inconclusive": 14
+    },
+    "preprocessing_timeouts": 6,
+    "preprocessing_seconds_total": 43.7753492090269,
+    "max_rss_bytes": 1682636800
+  },
+  "linear_vesting": {
+    "cases": 13,
+    "verdicts": {
+      "inconclusive": 11,
+      "error": 2
+    },
+    "preprocessing_timeouts": 7,
+    "preprocessing_seconds_total": 43.03277300205082,
+    "max_rss_bytes": 1672151040
+  },
+  "two_party_escrow": {
+    "cases": 12,
+    "verdicts": {
+      "inconclusive": 11,
+      "error": 1
+    },
+    "preprocessing_timeouts": 11,
+    "preprocessing_seconds_total": 52.43053562816931,
+    "max_rss_bytes": 1599799296
+  },
+  "two_party_escrow_old": {
+    "cases": 10,
+    "verdicts": {
+      "inconclusive": 10
+    },
+    "preprocessing_timeouts": 7,
+    "preprocessing_seconds_total": 39.342933585110586,
+    "max_rss_bytes": 1672183808
+  }
+}

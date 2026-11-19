@@ -6,10 +6,10 @@ package «CardanoLedgerApi» where
   moreGlobalServerArgs := #["--threads=4"]
   moreLeanArgs := #["--threads=4"]
   -- Execution costs, the symbolic log2 workaround and shared SMT model decoding.
-  -- Blaster includes constructor-value caching, early list lookups and indexed contexts.
+  -- Blaster includes constructor-value caching and early list lookups.
   -- Blaster requires Z3 with the recfun-finder simplifier.
   require PlutusCore from git "https://github.com/input-output-hk/PlutusCoreBlaster" @ "0de84aad0446464ad46763140931de9be95b2035"
-  require Blaster from git "https://github.com/input-output-hk/Lean-blaster" @ "b4174f8832dc5e875bc0c3fbae52b6eb36387464"
+  require Blaster from git "https://github.com/input-output-hk/Lean-blaster" @ "d275fc88a70234506a60d04a6ab3d30a92d9f305"
 
 @[default_target]
 lean_lib «CardanoLedgerApi» where
@@ -39,4 +39,10 @@ lean_lib EquivalenceTestSupport where
 lean_exe equivalence_test_worker where
   srcDir := "test-support"
   root := `EquivalenceTest.Worker
+  supportInterpreter := true
+
+-- Isolated corpus measurements use the checker library and a process watchdog.
+lean_exe equivalence_benchmark_worker where
+  srcDir := "equivalence/benchmarks"
+  root := `CorpusWorker
   supportInterpreter := true

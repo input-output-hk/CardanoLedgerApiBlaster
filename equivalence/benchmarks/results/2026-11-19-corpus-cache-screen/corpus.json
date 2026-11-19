@@ -1,0 +1,1186 @@
+{
+  "cases": [
+    {
+      "id": "ecd--Plinth_1.45.0.0_Unisay",
+      "scenario": "ecd",
+      "script": "equivalence/examples/ecd/Plinth_1.45.0.0_Unisay.cbor_hex",
+      "binary_sha256": "fcefb8f3e0538f06b65c03695000dfe7cfb8d1184af5fdd8b5528efa7aab061c",
+      "aliases": [
+        "equivalence/examples/ecd/Plinth_1.45.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/ecd/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "0bc897aad5f148c06c1b3d71b8e9ac7d87873ffeab221c06712e0d1a8f229c1c",
+      "validator": false,
+      "ecd": true
+    },
+    {
+      "id": "ecd--Plinth_1.64.0.0_Unisay",
+      "scenario": "ecd",
+      "script": "equivalence/examples/ecd/Plinth_1.64.0.0_Unisay.cbor_hex",
+      "binary_sha256": "416921ef6fc35c52dc77b2cec745e52b513fc9b46e212e1182a7cba2df665511",
+      "aliases": [
+        "equivalence/examples/ecd/Plinth_1.64.0.0_Unisay.cbor_hex",
+        "equivalence/examples/ecd/Plinth_1.65.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/ecd/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "0bc897aad5f148c06c1b3d71b8e9ac7d87873ffeab221c06712e0d1a8f229c1c",
+      "validator": false,
+      "ecd": true
+    },
+    {
+      "id": "ecd--Plinth_1.67.0.0_Unisay",
+      "scenario": "ecd",
+      "script": "equivalence/examples/ecd/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "binary_sha256": "0bc897aad5f148c06c1b3d71b8e9ac7d87873ffeab221c06712e0d1a8f229c1c",
+      "aliases": [
+        "equivalence/examples/ecd/Plinth_1.61.0.0_Unisay.cbor_hex",
+        "equivalence/examples/ecd/Plinth_1.67.0.0_Unisay.cbor_hex",
+        "equivalence/examples/ecd/Plinth_1.71.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/ecd/Scalus_1.4.0_nau.cbor_hex",
+      "partner_binary_sha256": "159ebc39d50da39156f4f9904ba7f2571004d421346ac1d6553aa558feb92f19",
+      "validator": false,
+      "ecd": true
+    },
+    {
+      "id": "ecd--Scalus_1.4.0_nau",
+      "scenario": "ecd",
+      "script": "equivalence/examples/ecd/Scalus_1.4.0_nau.cbor_hex",
+      "binary_sha256": "159ebc39d50da39156f4f9904ba7f2571004d421346ac1d6553aa558feb92f19",
+      "aliases": [
+        "equivalence/examples/ecd/Scalus_1.4.0_nau.cbor_hex"
+      ],
+      "partner": "equivalence/examples/ecd/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "0bc897aad5f148c06c1b3d71b8e9ac7d87873ffeab221c06712e0d1a8f229c1c",
+      "validator": false,
+      "ecd": true
+    },
+    {
+      "id": "factorial--Plutarch_1.11.0_SeungheonOh_exbudget",
+      "scenario": "factorial",
+      "script": "equivalence/examples/factorial/Plutarch_1.11.0_SeungheonOh_exbudget.cbor_hex",
+      "binary_sha256": "65efcb9a6acc85c2adaa9467d6157ad3d66afa056a5fb62ea1e5014772b7e635",
+      "aliases": [
+        "equivalence/examples/factorial/Plutarch_1.11.0_SeungheonOh_exbudget.cbor_hex"
+      ],
+      "partner": "equivalence/examples/factorial/Scalus_1.4.0_nau.cbor_hex",
+      "partner_binary_sha256": "37b42f0bad0bb511fcb78f1732d76487c7dea949ac7032e67c81c3437887dbb0",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "factorial--Plutarch_1.11.0_SeungheonOh_size",
+      "scenario": "factorial",
+      "script": "equivalence/examples/factorial/Plutarch_1.11.0_SeungheonOh_size.cbor_hex",
+      "binary_sha256": "fca7e8c9728485efb58afd2554ee17fb787f8aa499493f48b7a6d251b26bcb0d",
+      "aliases": [
+        "equivalence/examples/factorial/Plutarch_1.11.0_SeungheonOh_size.cbor_hex",
+        "equivalence/examples/factorial/Scalus_0.12.1_Unisay.cbor_hex",
+        "equivalence/examples/factorial/Scalus_0.16.0_Unisay.cbor_hex",
+        "equivalence/examples/factorial/Scalus_0.17.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/factorial/Plutarch_1.11.0_SeungheonOh_exbudget.cbor_hex",
+      "partner_binary_sha256": "65efcb9a6acc85c2adaa9467d6157ad3d66afa056a5fb62ea1e5014772b7e635",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "factorial--Scalus_1.4.0_nau",
+      "scenario": "factorial",
+      "script": "equivalence/examples/factorial/Scalus_1.4.0_nau.cbor_hex",
+      "binary_sha256": "37b42f0bad0bb511fcb78f1732d76487c7dea949ac7032e67c81c3437887dbb0",
+      "aliases": [
+        "equivalence/examples/factorial/Scalus_1.4.0_nau.cbor_hex"
+      ],
+      "partner": "equivalence/examples/factorial/Plutarch_1.11.0_SeungheonOh_exbudget.cbor_hex",
+      "partner_binary_sha256": "65efcb9a6acc85c2adaa9467d6157ad3d66afa056a5fb62ea1e5014772b7e635",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "factorial_naive_recursion--OpShin_0.26.1_nielstron",
+      "scenario": "factorial_naive_recursion",
+      "script": "equivalence/examples/factorial_naive_recursion/OpShin_0.26.1_nielstron.cbor_hex",
+      "binary_sha256": "b5360fb94e15952a0ae0818e1431ecfde536b59a8f2e599617c55e7c638f05e1",
+      "aliases": [
+        "equivalence/examples/factorial_naive_recursion/OpShin_0.26.1_nielstron.cbor_hex",
+        "equivalence/examples/factorial_naive_recursion/OpShin_1.0.0_nielstron.cbor_hex"
+      ],
+      "partner": "equivalence/examples/factorial_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "f03b05406bab89245e441b523f5ecff20f2ebd1ff536f99adf937db13e69af96",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "factorial_naive_recursion--Pebble_0.1.2_michele-nuzzi",
+      "scenario": "factorial_naive_recursion",
+      "script": "equivalence/examples/factorial_naive_recursion/Pebble_0.1.2_michele-nuzzi.cbor_hex",
+      "binary_sha256": "b144f6305471bd2363ca1873d2c9287f17c0ee87dbc0939639d89d1fe615147e",
+      "aliases": [
+        "equivalence/examples/factorial_naive_recursion/Pebble_0.1.2_michele-nuzzi.cbor_hex"
+      ],
+      "partner": "equivalence/examples/factorial_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "f03b05406bab89245e441b523f5ecff20f2ebd1ff536f99adf937db13e69af96",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "factorial_naive_recursion--Pebble_0.4.4_michele-nuzzi",
+      "scenario": "factorial_naive_recursion",
+      "script": "equivalence/examples/factorial_naive_recursion/Pebble_0.4.4_michele-nuzzi.cbor_hex",
+      "binary_sha256": "c1b363e6d31af63712daf42920372905eb3af530236f6450c6e1750e76204688",
+      "aliases": [
+        "equivalence/examples/factorial_naive_recursion/Pebble_0.4.4_michele-nuzzi.cbor_hex",
+        "equivalence/examples/factorial_naive_recursion/Pebble_0.5.0_michele-nuzzi.cbor_hex"
+      ],
+      "partner": "equivalence/examples/factorial_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "f03b05406bab89245e441b523f5ecff20f2ebd1ff536f99adf937db13e69af96",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "factorial_naive_recursion--Plinth_1.45.0.0_Unisay",
+      "scenario": "factorial_naive_recursion",
+      "script": "equivalence/examples/factorial_naive_recursion/Plinth_1.45.0.0_Unisay.cbor_hex",
+      "binary_sha256": "7328e188c02f786326509d07dac4477f3b6edce9aa9c31353b67cc008dc77ae5",
+      "aliases": [
+        "equivalence/examples/factorial_naive_recursion/Plinth_1.45.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/factorial_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "f03b05406bab89245e441b523f5ecff20f2ebd1ff536f99adf937db13e69af96",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "factorial_naive_recursion--Plinth_1.67.0.0_Unisay",
+      "scenario": "factorial_naive_recursion",
+      "script": "equivalence/examples/factorial_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "binary_sha256": "f03b05406bab89245e441b523f5ecff20f2ebd1ff536f99adf937db13e69af96",
+      "aliases": [
+        "equivalence/examples/factorial_naive_recursion/Plinth_1.61.0.0_Unisay.cbor_hex",
+        "equivalence/examples/factorial_naive_recursion/Plinth_1.64.0.0_Unisay.cbor_hex",
+        "equivalence/examples/factorial_naive_recursion/Plinth_1.65.0.0_Unisay.cbor_hex",
+        "equivalence/examples/factorial_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+        "equivalence/examples/factorial_naive_recursion/Plinth_1.71.0.0_Unisay.cbor_hex",
+        "equivalence/examples/factorial_naive_recursion/Scalus_1.3.0_Unisay.cbor_hex",
+        "equivalence/examples/factorial_naive_recursion/Scalus_1.4.0_nau.cbor_hex"
+      ],
+      "partner": "equivalence/examples/factorial_naive_recursion/OpShin_0.26.1_nielstron.cbor_hex",
+      "partner_binary_sha256": "b5360fb94e15952a0ae0818e1431ecfde536b59a8f2e599617c55e7c638f05e1",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "factorial_naive_recursion--Plutarch_1.11.0_SeungheonOh",
+      "scenario": "factorial_naive_recursion",
+      "script": "equivalence/examples/factorial_naive_recursion/Plutarch_1.11.0_SeungheonOh.cbor_hex",
+      "binary_sha256": "ba7ea7efbb05c22af34760dfa4259dba80040a2b24e9e7f5a2c368755451caf3",
+      "aliases": [
+        "equivalence/examples/factorial_naive_recursion/Plutarch_1.11.0_SeungheonOh.cbor_hex"
+      ],
+      "partner": "equivalence/examples/factorial_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "f03b05406bab89245e441b523f5ecff20f2ebd1ff536f99adf937db13e69af96",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "factorial_naive_recursion--Scalus_0.12.1_Unisay",
+      "scenario": "factorial_naive_recursion",
+      "script": "equivalence/examples/factorial_naive_recursion/Scalus_0.12.1_Unisay.cbor_hex",
+      "binary_sha256": "ab4c8bcd8c836261aee3478a929fd9bb61802d08de3fc91f9b6a5571cf7fe5b2",
+      "aliases": [
+        "equivalence/examples/factorial_naive_recursion/Scalus_0.12.1_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/factorial_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "f03b05406bab89245e441b523f5ecff20f2ebd1ff536f99adf937db13e69af96",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "factorial_naive_recursion--Scalus_0.16.0_Unisay",
+      "scenario": "factorial_naive_recursion",
+      "script": "equivalence/examples/factorial_naive_recursion/Scalus_0.16.0_Unisay.cbor_hex",
+      "binary_sha256": "e9b59cd7a70e76f46aff40ddfc192ffe86b1c195a9a1e83bafb3ee88f2a2038e",
+      "aliases": [
+        "equivalence/examples/factorial_naive_recursion/Scalus_0.16.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/factorial_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "f03b05406bab89245e441b523f5ecff20f2ebd1ff536f99adf937db13e69af96",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "factorial_naive_recursion--Scalus_0.17.0_Unisay",
+      "scenario": "factorial_naive_recursion",
+      "script": "equivalence/examples/factorial_naive_recursion/Scalus_0.17.0_Unisay.cbor_hex",
+      "binary_sha256": "ce448081ce774c6a3e23061a288a63b59440e76a5f804107051f6bdf0abe4266",
+      "aliases": [
+        "equivalence/examples/factorial_naive_recursion/Scalus_0.17.0_Unisay.cbor_hex",
+        "equivalence/examples/factorial_naive_recursion/Scalus_0.18.2_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/factorial_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "f03b05406bab89245e441b523f5ecff20f2ebd1ff536f99adf937db13e69af96",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci--Aiken_1.1.19_KtorZ_prepacked",
+      "scenario": "fibonacci",
+      "script": "equivalence/examples/fibonacci/Aiken_1.1.19_KtorZ_prepacked.cbor_hex",
+      "binary_sha256": "636c7486c68775bcd1e8c5d3c2164386832b5c600845b2dd186b5767fcbc8211",
+      "aliases": [
+        "equivalence/examples/fibonacci/Aiken_1.1.19_KtorZ_prepacked.cbor_hex",
+        "equivalence/examples/fibonacci/Aiken_1.1.24_KtorZ_prepacked.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "6136546d9e26431d2f5aa3600832fe29a0881e0a45aae2be10950915e2449606",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci--Aiken_1.1.19_KtorZ_tailrec",
+      "scenario": "fibonacci",
+      "script": "equivalence/examples/fibonacci/Aiken_1.1.19_KtorZ_tailrec.cbor_hex",
+      "binary_sha256": "1fa978e6f45c678942c93e62b2349e268a838e426fc19d44b2807c211c4fdde4",
+      "aliases": [
+        "equivalence/examples/fibonacci/Aiken_1.1.19_KtorZ_tailrec.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "6136546d9e26431d2f5aa3600832fe29a0881e0a45aae2be10950915e2449606",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci--Aiken_1.1.24_KtorZ_tailrec",
+      "scenario": "fibonacci",
+      "script": "equivalence/examples/fibonacci/Aiken_1.1.24_KtorZ_tailrec.cbor_hex",
+      "binary_sha256": "515f990c2e13f5fd425d2d170565810b80de4294087b08366e08378997fdf5f1",
+      "aliases": [
+        "equivalence/examples/fibonacci/Aiken_1.1.24_KtorZ_tailrec.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "6136546d9e26431d2f5aa3600832fe29a0881e0a45aae2be10950915e2449606",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci--OpShin_0.26.1_nielstron",
+      "scenario": "fibonacci",
+      "script": "equivalence/examples/fibonacci/OpShin_0.26.1_nielstron.cbor_hex",
+      "binary_sha256": "bebce4f43631e4e00a11ced0b9c0769d42be1aa48dd4a66de36a597fa48c0095",
+      "aliases": [
+        "equivalence/examples/fibonacci/OpShin_0.26.1_nielstron.cbor_hex",
+        "equivalence/examples/fibonacci/OpShin_1.0.0_nielstron.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "6136546d9e26431d2f5aa3600832fe29a0881e0a45aae2be10950915e2449606",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci--Plinth_1.45.0.0_Unisay",
+      "scenario": "fibonacci",
+      "script": "equivalence/examples/fibonacci/Plinth_1.45.0.0_Unisay.cbor_hex",
+      "binary_sha256": "b13c234863e4b1d8733f1dfecadacfbbcb4220d0b9f4d4da07afce3c198cf01b",
+      "aliases": [
+        "equivalence/examples/fibonacci/Plinth_1.45.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "6136546d9e26431d2f5aa3600832fe29a0881e0a45aae2be10950915e2449606",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci--Plinth_1.61.0.0_Unisay",
+      "scenario": "fibonacci",
+      "script": "equivalence/examples/fibonacci/Plinth_1.61.0.0_Unisay.cbor_hex",
+      "binary_sha256": "804a063f51f8ae91cfeef4ffd423a8beea906057fc788aee9ac4d9f6086d79fc",
+      "aliases": [
+        "equivalence/examples/fibonacci/Plinth_1.61.0.0_Unisay.cbor_hex",
+        "equivalence/examples/fibonacci/Plinth_1.64.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "6136546d9e26431d2f5aa3600832fe29a0881e0a45aae2be10950915e2449606",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci--Plinth_1.67.0.0_Unisay",
+      "scenario": "fibonacci",
+      "script": "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "binary_sha256": "6136546d9e26431d2f5aa3600832fe29a0881e0a45aae2be10950915e2449606",
+      "aliases": [
+        "equivalence/examples/fibonacci/Plinth_1.65.0.0_Unisay.cbor_hex",
+        "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex",
+        "equivalence/examples/fibonacci/Plinth_1.71.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci/Aiken_1.1.19_KtorZ_prepacked.cbor_hex",
+      "partner_binary_sha256": "636c7486c68775bcd1e8c5d3c2164386832b5c600845b2dd186b5767fcbc8211",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci--Plutarch_1.11.0_SeungheonOh_exbudget",
+      "scenario": "fibonacci",
+      "script": "equivalence/examples/fibonacci/Plutarch_1.11.0_SeungheonOh_exbudget.cbor_hex",
+      "binary_sha256": "d58f9eb3ad8bfdfae55c272a56d5a08403164f400ff01cbbd0e69f5f4b13c6ae",
+      "aliases": [
+        "equivalence/examples/fibonacci/Plutarch_1.11.0_SeungheonOh_exbudget.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "6136546d9e26431d2f5aa3600832fe29a0881e0a45aae2be10950915e2449606",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci--Plutarch_1.11.0_SeungheonOh_prepacked",
+      "scenario": "fibonacci",
+      "script": "equivalence/examples/fibonacci/Plutarch_1.11.0_SeungheonOh_prepacked.cbor_hex",
+      "binary_sha256": "89d13e461d81a9a083e2ec8f60196b1d8a417df54791d5eaee275fc314a37af4",
+      "aliases": [
+        "equivalence/examples/fibonacci/Plutarch_1.11.0_SeungheonOh_prepacked.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "6136546d9e26431d2f5aa3600832fe29a0881e0a45aae2be10950915e2449606",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci--Plutarch_1.11.0_SeungheonOh_size",
+      "scenario": "fibonacci",
+      "script": "equivalence/examples/fibonacci/Plutarch_1.11.0_SeungheonOh_size.cbor_hex",
+      "binary_sha256": "95d01585658f7465552fb520e3df66e98009c3b9e3d99cbf97e52e6f6fc35e71",
+      "aliases": [
+        "equivalence/examples/fibonacci/Plutarch_1.11.0_SeungheonOh_size.cbor_hex",
+        "equivalence/examples/fibonacci/Scalus_0.12.1_Unisay.cbor_hex",
+        "equivalence/examples/fibonacci/Scalus_0.16.0_Unisay.cbor_hex",
+        "equivalence/examples/fibonacci/Scalus_0.17.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "6136546d9e26431d2f5aa3600832fe29a0881e0a45aae2be10950915e2449606",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci--Scalus_0.12.1_nau_prepacked",
+      "scenario": "fibonacci",
+      "script": "equivalence/examples/fibonacci/Scalus_0.12.1_nau_prepacked.cbor_hex",
+      "binary_sha256": "2534cc48086af43dca7c991e756080da0ea5076985446b07491194c628d96fb1",
+      "aliases": [
+        "equivalence/examples/fibonacci/Scalus_0.12.1_nau_prepacked.cbor_hex",
+        "equivalence/examples/fibonacci/Scalus_0.16.0_Unisay_prepacked.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "6136546d9e26431d2f5aa3600832fe29a0881e0a45aae2be10950915e2449606",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci--Scalus_0.18.2_Unisay",
+      "scenario": "fibonacci",
+      "script": "equivalence/examples/fibonacci/Scalus_0.18.2_Unisay.cbor_hex",
+      "binary_sha256": "e2e5521344242bda5538fa0792713a0d21ace772080f52e02bc69729f76ee825",
+      "aliases": [
+        "equivalence/examples/fibonacci/Scalus_0.18.2_Unisay.cbor_hex",
+        "equivalence/examples/fibonacci/Scalus_1.3.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "6136546d9e26431d2f5aa3600832fe29a0881e0a45aae2be10950915e2449606",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci--Scalus_1.4.0_nau",
+      "scenario": "fibonacci",
+      "script": "equivalence/examples/fibonacci/Scalus_1.4.0_nau.cbor_hex",
+      "binary_sha256": "860928dc24cf56d20f6202c8c188216c5e0a201c9fa06bad332864a190e9c70c",
+      "aliases": [
+        "equivalence/examples/fibonacci/Scalus_1.4.0_nau.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "6136546d9e26431d2f5aa3600832fe29a0881e0a45aae2be10950915e2449606",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci_naive_recursion--Aiken_1.1.17_KtorZ",
+      "scenario": "fibonacci_naive_recursion",
+      "script": "equivalence/examples/fibonacci_naive_recursion/Aiken_1.1.17_KtorZ.cbor_hex",
+      "binary_sha256": "03f34c4326e8cacfafcad15a35eebfac2b6d77f55ea59e99dfdda57000023cee",
+      "aliases": [
+        "equivalence/examples/fibonacci_naive_recursion/Aiken_1.1.17_KtorZ.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "c79e1482ce677ec8985da8bef6d45db80c1a6ea361b920befcaa2929e69b4aac",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci_naive_recursion--Aiken_1.1.24_KtorZ",
+      "scenario": "fibonacci_naive_recursion",
+      "script": "equivalence/examples/fibonacci_naive_recursion/Aiken_1.1.24_KtorZ.cbor_hex",
+      "binary_sha256": "c0c5fd69e166c35ba59211c1b72bc85da1b63e668f0aa087471d9422b6d07a09",
+      "aliases": [
+        "equivalence/examples/fibonacci_naive_recursion/Aiken_1.1.24_KtorZ.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "c79e1482ce677ec8985da8bef6d45db80c1a6ea361b920befcaa2929e69b4aac",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci_naive_recursion--Pebble_0.1.2_michele-nuzzi",
+      "scenario": "fibonacci_naive_recursion",
+      "script": "equivalence/examples/fibonacci_naive_recursion/Pebble_0.1.2_michele-nuzzi.cbor_hex",
+      "binary_sha256": "c007201acd497e705fabc5a25244206b18ff88e775b17ba769f87cae17a9b5b2",
+      "aliases": [
+        "equivalence/examples/fibonacci_naive_recursion/Pebble_0.1.2_michele-nuzzi.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "c79e1482ce677ec8985da8bef6d45db80c1a6ea361b920befcaa2929e69b4aac",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci_naive_recursion--Pebble_0.4.4_michele-nuzzi",
+      "scenario": "fibonacci_naive_recursion",
+      "script": "equivalence/examples/fibonacci_naive_recursion/Pebble_0.4.4_michele-nuzzi.cbor_hex",
+      "binary_sha256": "811666cfca4b006585a317c57a90419cb677470d54978ad58fcfa85f86aa7c96",
+      "aliases": [
+        "equivalence/examples/fibonacci_naive_recursion/Pebble_0.4.4_michele-nuzzi.cbor_hex",
+        "equivalence/examples/fibonacci_naive_recursion/Pebble_0.5.0_michele-nuzzi.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "c79e1482ce677ec8985da8bef6d45db80c1a6ea361b920befcaa2929e69b4aac",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci_naive_recursion--Plinth_1.45.0.0_Unisay",
+      "scenario": "fibonacci_naive_recursion",
+      "script": "equivalence/examples/fibonacci_naive_recursion/Plinth_1.45.0.0_Unisay.cbor_hex",
+      "binary_sha256": "2564b5b2b70359a57286cf2c6f831f9689ec2ea7d6f0706a4e10c082f3c6dad0",
+      "aliases": [
+        "equivalence/examples/fibonacci_naive_recursion/Plinth_1.45.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "c79e1482ce677ec8985da8bef6d45db80c1a6ea361b920befcaa2929e69b4aac",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci_naive_recursion--Plinth_1.67.0.0_Unisay",
+      "scenario": "fibonacci_naive_recursion",
+      "script": "equivalence/examples/fibonacci_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "binary_sha256": "c79e1482ce677ec8985da8bef6d45db80c1a6ea361b920befcaa2929e69b4aac",
+      "aliases": [
+        "equivalence/examples/fibonacci_naive_recursion/Plinth_1.61.0.0_Unisay.cbor_hex",
+        "equivalence/examples/fibonacci_naive_recursion/Plinth_1.64.0.0_Unisay.cbor_hex",
+        "equivalence/examples/fibonacci_naive_recursion/Plinth_1.65.0.0_Unisay.cbor_hex",
+        "equivalence/examples/fibonacci_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+        "equivalence/examples/fibonacci_naive_recursion/Plinth_1.71.0.0_Unisay.cbor_hex",
+        "equivalence/examples/fibonacci_naive_recursion/Scalus_1.3.0_Unisay.cbor_hex",
+        "equivalence/examples/fibonacci_naive_recursion/Scalus_1.4.0_nau.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci_naive_recursion/Aiken_1.1.17_KtorZ.cbor_hex",
+      "partner_binary_sha256": "03f34c4326e8cacfafcad15a35eebfac2b6d77f55ea59e99dfdda57000023cee",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci_naive_recursion--Plutarch_1.11.0_SeungheonOh",
+      "scenario": "fibonacci_naive_recursion",
+      "script": "equivalence/examples/fibonacci_naive_recursion/Plutarch_1.11.0_SeungheonOh.cbor_hex",
+      "binary_sha256": "8dda90084785fac789c51c54379a0473620b38c07dc5d46653f118ee2cedcf7e",
+      "aliases": [
+        "equivalence/examples/fibonacci_naive_recursion/Plutarch_1.11.0_SeungheonOh.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "c79e1482ce677ec8985da8bef6d45db80c1a6ea361b920befcaa2929e69b4aac",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci_naive_recursion--Scalus_0.12.1_Unisay",
+      "scenario": "fibonacci_naive_recursion",
+      "script": "equivalence/examples/fibonacci_naive_recursion/Scalus_0.12.1_Unisay.cbor_hex",
+      "binary_sha256": "77b96f4a54fc4eff8d137b8b8d58250c55767177b3ae99a745815e2eabbeebec",
+      "aliases": [
+        "equivalence/examples/fibonacci_naive_recursion/Scalus_0.12.1_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "c79e1482ce677ec8985da8bef6d45db80c1a6ea361b920befcaa2929e69b4aac",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci_naive_recursion--Scalus_0.16.0_Unisay",
+      "scenario": "fibonacci_naive_recursion",
+      "script": "equivalence/examples/fibonacci_naive_recursion/Scalus_0.16.0_Unisay.cbor_hex",
+      "binary_sha256": "a9f80624e8a9cc2e44663ce680a2a9e3755c3cf416e1c7c5c7bcf52ef6acef7c",
+      "aliases": [
+        "equivalence/examples/fibonacci_naive_recursion/Scalus_0.16.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "c79e1482ce677ec8985da8bef6d45db80c1a6ea361b920befcaa2929e69b4aac",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "fibonacci_naive_recursion--Scalus_0.17.0_Unisay",
+      "scenario": "fibonacci_naive_recursion",
+      "script": "equivalence/examples/fibonacci_naive_recursion/Scalus_0.17.0_Unisay.cbor_hex",
+      "binary_sha256": "91b1a1b35aaa97335be60e54c8e90c52269f4cd8c494fad03c1f59b9ec4eb09f",
+      "aliases": [
+        "equivalence/examples/fibonacci_naive_recursion/Scalus_0.17.0_Unisay.cbor_hex",
+        "equivalence/examples/fibonacci_naive_recursion/Scalus_0.18.2_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/fibonacci_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "c79e1482ce677ec8985da8bef6d45db80c1a6ea361b920befcaa2929e69b4aac",
+      "validator": false,
+      "ecd": false
+    },
+    {
+      "id": "htlc--Plinth_1.45.0.0_Unisay",
+      "scenario": "htlc",
+      "script": "equivalence/examples/htlc/Plinth_1.45.0.0_Unisay.cbor_hex",
+      "binary_sha256": "2858000bfdf482ca2f280237d4291f3e5f18e711e9ac39b038720ced6c8b4dbc",
+      "aliases": [
+        "equivalence/examples/htlc/Plinth_1.45.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/htlc/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "0ad131d3f4af9119f57ae272f82f7ae2a86fea3903e1381d7692fb4c21f210f2",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "htlc--Plinth_1.45.0.0_Unisay_asdata",
+      "scenario": "htlc",
+      "script": "equivalence/examples/htlc/Plinth_1.45.0.0_Unisay_asdata.cbor_hex",
+      "binary_sha256": "14a6802860ee643c90ba1ebf2cbf1c8fb96194431854897ef02087f44caf18d6",
+      "aliases": [
+        "equivalence/examples/htlc/Plinth_1.45.0.0_Unisay_asdata.cbor_hex"
+      ],
+      "partner": "equivalence/examples/htlc/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "0ad131d3f4af9119f57ae272f82f7ae2a86fea3903e1381d7692fb4c21f210f2",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "htlc--Plinth_1.61.0.0_Unisay",
+      "scenario": "htlc",
+      "script": "equivalence/examples/htlc/Plinth_1.61.0.0_Unisay.cbor_hex",
+      "binary_sha256": "bb0082eef051752d995784631ae4592ae1ec64a34299164274bba679ab405d44",
+      "aliases": [
+        "equivalence/examples/htlc/Plinth_1.61.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/htlc/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "0ad131d3f4af9119f57ae272f82f7ae2a86fea3903e1381d7692fb4c21f210f2",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "htlc--Plinth_1.64.0.0_Unisay",
+      "scenario": "htlc",
+      "script": "equivalence/examples/htlc/Plinth_1.64.0.0_Unisay.cbor_hex",
+      "binary_sha256": "cf035497594cd15b52f3ee227c8d094ac4cfe3ef406b93b3830e5648dc863db5",
+      "aliases": [
+        "equivalence/examples/htlc/Plinth_1.64.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/htlc/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "0ad131d3f4af9119f57ae272f82f7ae2a86fea3903e1381d7692fb4c21f210f2",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "htlc--Plinth_1.64.0.0_Unisay_asdata",
+      "scenario": "htlc",
+      "script": "equivalence/examples/htlc/Plinth_1.64.0.0_Unisay_asdata.cbor_hex",
+      "binary_sha256": "db1a214bc028f4fe3065571d7140bc9184db3083e397a266343e00e66a1632e1",
+      "aliases": [
+        "equivalence/examples/htlc/Plinth_1.64.0.0_Unisay_asdata.cbor_hex"
+      ],
+      "partner": "equivalence/examples/htlc/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "0ad131d3f4af9119f57ae272f82f7ae2a86fea3903e1381d7692fb4c21f210f2",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "htlc--Plinth_1.65.0.0_Unisay",
+      "scenario": "htlc",
+      "script": "equivalence/examples/htlc/Plinth_1.65.0.0_Unisay.cbor_hex",
+      "binary_sha256": "2b3be08f46b5ff9cf410bb86109bf5451a0508dfa484193070bf77e026823724",
+      "aliases": [
+        "equivalence/examples/htlc/Plinth_1.65.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/htlc/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "0ad131d3f4af9119f57ae272f82f7ae2a86fea3903e1381d7692fb4c21f210f2",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "htlc--Plinth_1.65.0.0_Unisay_asdata",
+      "scenario": "htlc",
+      "script": "equivalence/examples/htlc/Plinth_1.65.0.0_Unisay_asdata.cbor_hex",
+      "binary_sha256": "5f660ca255eeb82e817b9a0ec62bde15c9e1e27b61c6933f47db208acbeeb79f",
+      "aliases": [
+        "equivalence/examples/htlc/Plinth_1.65.0.0_Unisay_asdata.cbor_hex"
+      ],
+      "partner": "equivalence/examples/htlc/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "0ad131d3f4af9119f57ae272f82f7ae2a86fea3903e1381d7692fb4c21f210f2",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "htlc--Plinth_1.67.0.0_Unisay",
+      "scenario": "htlc",
+      "script": "equivalence/examples/htlc/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "binary_sha256": "0ad131d3f4af9119f57ae272f82f7ae2a86fea3903e1381d7692fb4c21f210f2",
+      "aliases": [
+        "equivalence/examples/htlc/Plinth_1.67.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/htlc/Scalus_0.16.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "6b5fabf4db486dc71bb2d79dd4e69bf1011ba9cd05b88a951dbbbf76b1e553f9",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "htlc--Plinth_1.67.0.0_Unisay_asdata",
+      "scenario": "htlc",
+      "script": "equivalence/examples/htlc/Plinth_1.67.0.0_Unisay_asdata.cbor_hex",
+      "binary_sha256": "e00eb3d4e6187e3bb571168931215494b48f276d700ef057b6b09544e8a2cb06",
+      "aliases": [
+        "equivalence/examples/htlc/Plinth_1.67.0.0_Unisay_asdata.cbor_hex"
+      ],
+      "partner": "equivalence/examples/htlc/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "0ad131d3f4af9119f57ae272f82f7ae2a86fea3903e1381d7692fb4c21f210f2",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "htlc--Plinth_1.71.0.0_Unisay",
+      "scenario": "htlc",
+      "script": "equivalence/examples/htlc/Plinth_1.71.0.0_Unisay.cbor_hex",
+      "binary_sha256": "13ec75c23b565b48261e44461a24279c4c0a58339971f02b1c53dd1c96d3ca87",
+      "aliases": [
+        "equivalence/examples/htlc/Plinth_1.71.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/htlc/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "0ad131d3f4af9119f57ae272f82f7ae2a86fea3903e1381d7692fb4c21f210f2",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "htlc--Scalus_0.16.0_Unisay",
+      "scenario": "htlc",
+      "script": "equivalence/examples/htlc/Scalus_0.16.0_Unisay.cbor_hex",
+      "binary_sha256": "6b5fabf4db486dc71bb2d79dd4e69bf1011ba9cd05b88a951dbbbf76b1e553f9",
+      "aliases": [
+        "equivalence/examples/htlc/Scalus_0.16.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/htlc/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "0ad131d3f4af9119f57ae272f82f7ae2a86fea3903e1381d7692fb4c21f210f2",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "htlc--Scalus_0.17.0_Unisay",
+      "scenario": "htlc",
+      "script": "equivalence/examples/htlc/Scalus_0.17.0_Unisay.cbor_hex",
+      "binary_sha256": "74b161881e1fd3a45c56916e631dbe5fe0222a9f4927f6f9cd953d3de95a4460",
+      "aliases": [
+        "equivalence/examples/htlc/Scalus_0.17.0_Unisay.cbor_hex",
+        "equivalence/examples/htlc/Scalus_0.18.2_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/htlc/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "0ad131d3f4af9119f57ae272f82f7ae2a86fea3903e1381d7692fb4c21f210f2",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "htlc--Scalus_1.3.0_Unisay",
+      "scenario": "htlc",
+      "script": "equivalence/examples/htlc/Scalus_1.3.0_Unisay.cbor_hex",
+      "binary_sha256": "3b325f48cc0c2566faec2548e5f8ebdf927f82d852409c1ea8bdcff2c7d2d126",
+      "aliases": [
+        "equivalence/examples/htlc/Scalus_1.3.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/htlc/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "0ad131d3f4af9119f57ae272f82f7ae2a86fea3903e1381d7692fb4c21f210f2",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "htlc--Scalus_1.4.0_nau",
+      "scenario": "htlc",
+      "script": "equivalence/examples/htlc/Scalus_1.4.0_nau.cbor_hex",
+      "binary_sha256": "ba246188a3fea74842b4752866115c47179a5982bd6c7b0b7faa168913954082",
+      "aliases": [
+        "equivalence/examples/htlc/Scalus_1.4.0_nau.cbor_hex"
+      ],
+      "partner": "equivalence/examples/htlc/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "0ad131d3f4af9119f57ae272f82f7ae2a86fea3903e1381d7692fb4c21f210f2",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "linear_vesting--Plinth_1.45.0.0_Unisay",
+      "scenario": "linear_vesting",
+      "script": "equivalence/examples/linear_vesting/Plinth_1.45.0.0_Unisay.cbor_hex",
+      "binary_sha256": "3ade0fd2272d78b9318b0ea0781c77c5ad837cee279d08de9ec57b27d7f47d0f",
+      "aliases": [
+        "equivalence/examples/linear_vesting/Plinth_1.45.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/linear_vesting/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5cab2fa06cb48a93e8be8a7c70de8c975a334ee1884f1eee5a0e2f180bd13d26",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "linear_vesting--Plinth_1.45.0.0_Unisay_plain",
+      "scenario": "linear_vesting",
+      "script": "equivalence/examples/linear_vesting/Plinth_1.45.0.0_Unisay_plain.cbor_hex",
+      "binary_sha256": "c10c12182aae8558cb71516a57e32436e8a7221c2d7c025ad80558ab27e428a5",
+      "aliases": [
+        "equivalence/examples/linear_vesting/Plinth_1.45.0.0_Unisay_plain.cbor_hex"
+      ],
+      "partner": "equivalence/examples/linear_vesting/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5cab2fa06cb48a93e8be8a7c70de8c975a334ee1884f1eee5a0e2f180bd13d26",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "linear_vesting--Plinth_1.61.0.0_Unisay",
+      "scenario": "linear_vesting",
+      "script": "equivalence/examples/linear_vesting/Plinth_1.61.0.0_Unisay.cbor_hex",
+      "binary_sha256": "b8ef45d3e1f74a1b8b64465c07f9e7cb3a0e4af4507cc2d29181cdb9aff94c4e",
+      "aliases": [
+        "equivalence/examples/linear_vesting/Plinth_1.61.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/linear_vesting/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5cab2fa06cb48a93e8be8a7c70de8c975a334ee1884f1eee5a0e2f180bd13d26",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "linear_vesting--Plinth_1.64.0.0_Unisay",
+      "scenario": "linear_vesting",
+      "script": "equivalence/examples/linear_vesting/Plinth_1.64.0.0_Unisay.cbor_hex",
+      "binary_sha256": "177983cd485465d3537841c0f4958ad943b4d2490d230cbe7fba999ef0ab78c1",
+      "aliases": [
+        "equivalence/examples/linear_vesting/Plinth_1.64.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/linear_vesting/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5cab2fa06cb48a93e8be8a7c70de8c975a334ee1884f1eee5a0e2f180bd13d26",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "linear_vesting--Plinth_1.64.0.0_Unisay_plain",
+      "scenario": "linear_vesting",
+      "script": "equivalence/examples/linear_vesting/Plinth_1.64.0.0_Unisay_plain.cbor_hex",
+      "binary_sha256": "ae4c318e520438fa72e14f32f1edd91c355f9bc229bd37d59f2b3fa56fd0fb1c",
+      "aliases": [
+        "equivalence/examples/linear_vesting/Plinth_1.64.0.0_Unisay_plain.cbor_hex"
+      ],
+      "partner": "equivalence/examples/linear_vesting/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5cab2fa06cb48a93e8be8a7c70de8c975a334ee1884f1eee5a0e2f180bd13d26",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "linear_vesting--Plinth_1.65.0.0_Unisay",
+      "scenario": "linear_vesting",
+      "script": "equivalence/examples/linear_vesting/Plinth_1.65.0.0_Unisay.cbor_hex",
+      "binary_sha256": "024e3443a26c07e2f587203573537050e0271790a9be9354c5bc7845f17e61e9",
+      "aliases": [
+        "equivalence/examples/linear_vesting/Plinth_1.65.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/linear_vesting/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5cab2fa06cb48a93e8be8a7c70de8c975a334ee1884f1eee5a0e2f180bd13d26",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "linear_vesting--Plinth_1.65.0.0_Unisay_plain",
+      "scenario": "linear_vesting",
+      "script": "equivalence/examples/linear_vesting/Plinth_1.65.0.0_Unisay_plain.cbor_hex",
+      "binary_sha256": "d9201409b3e3c48d3f44d68972930d2bd0ba377acba815a4d8f86478a1f296c2",
+      "aliases": [
+        "equivalence/examples/linear_vesting/Plinth_1.65.0.0_Unisay_plain.cbor_hex"
+      ],
+      "partner": "equivalence/examples/linear_vesting/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5cab2fa06cb48a93e8be8a7c70de8c975a334ee1884f1eee5a0e2f180bd13d26",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "linear_vesting--Plinth_1.67.0.0_Unisay",
+      "scenario": "linear_vesting",
+      "script": "equivalence/examples/linear_vesting/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "binary_sha256": "5cab2fa06cb48a93e8be8a7c70de8c975a334ee1884f1eee5a0e2f180bd13d26",
+      "aliases": [
+        "equivalence/examples/linear_vesting/Plinth_1.67.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/linear_vesting/Scalus_0.18.2_Unisay.cbor_hex",
+      "partner_binary_sha256": "e029b84deb5f6b8be8bada888cd821808ada1e232fbf4b569ce50639dc09ffdd",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "linear_vesting--Plinth_1.67.0.0_Unisay_asdata",
+      "scenario": "linear_vesting",
+      "script": "equivalence/examples/linear_vesting/Plinth_1.67.0.0_Unisay_asdata.cbor_hex",
+      "binary_sha256": "46d8b91586f445f5bfa2d419cfbbe3e87a226d35f5e01deb764f55d3828ad715",
+      "aliases": [
+        "equivalence/examples/linear_vesting/Plinth_1.67.0.0_Unisay_asdata.cbor_hex"
+      ],
+      "partner": "equivalence/examples/linear_vesting/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5cab2fa06cb48a93e8be8a7c70de8c975a334ee1884f1eee5a0e2f180bd13d26",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "linear_vesting--Plinth_1.71.0.0_Unisay",
+      "scenario": "linear_vesting",
+      "script": "equivalence/examples/linear_vesting/Plinth_1.71.0.0_Unisay.cbor_hex",
+      "binary_sha256": "fc77e540f3dea993327065e6a75729327eef288f6f7a05936f13396038741055",
+      "aliases": [
+        "equivalence/examples/linear_vesting/Plinth_1.71.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/linear_vesting/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5cab2fa06cb48a93e8be8a7c70de8c975a334ee1884f1eee5a0e2f180bd13d26",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "linear_vesting--Scalus_0.18.2_Unisay",
+      "scenario": "linear_vesting",
+      "script": "equivalence/examples/linear_vesting/Scalus_0.18.2_Unisay.cbor_hex",
+      "binary_sha256": "e029b84deb5f6b8be8bada888cd821808ada1e232fbf4b569ce50639dc09ffdd",
+      "aliases": [
+        "equivalence/examples/linear_vesting/Scalus_0.18.2_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/linear_vesting/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5cab2fa06cb48a93e8be8a7c70de8c975a334ee1884f1eee5a0e2f180bd13d26",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "linear_vesting--Scalus_1.3.0_Unisay",
+      "scenario": "linear_vesting",
+      "script": "equivalence/examples/linear_vesting/Scalus_1.3.0_Unisay.cbor_hex",
+      "binary_sha256": "b5eb154f56fb1cfd4347b9a5321352d12c4fa76f2285168e77767eb65d7bf0ef",
+      "aliases": [
+        "equivalence/examples/linear_vesting/Scalus_1.3.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/linear_vesting/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5cab2fa06cb48a93e8be8a7c70de8c975a334ee1884f1eee5a0e2f180bd13d26",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "linear_vesting--Scalus_1.4.0_nau",
+      "scenario": "linear_vesting",
+      "script": "equivalence/examples/linear_vesting/Scalus_1.4.0_nau.cbor_hex",
+      "binary_sha256": "8cd10ba04918433226f0cbcb8a5c571fad8188f863169eb84c93b2f05c27aab6",
+      "aliases": [
+        "equivalence/examples/linear_vesting/Scalus_1.4.0_nau.cbor_hex"
+      ],
+      "partner": "equivalence/examples/linear_vesting/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5cab2fa06cb48a93e8be8a7c70de8c975a334ee1884f1eee5a0e2f180bd13d26",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow--Plinth_1.45.0.0_Unisay",
+      "scenario": "two_party_escrow",
+      "script": "equivalence/examples/two_party_escrow/Plinth_1.45.0.0_Unisay.cbor_hex",
+      "binary_sha256": "d5ad051c674fa0d9deaafbb4082cbb6ef31cebb03c3e1c96dcc9f75c8ea38cf2",
+      "aliases": [
+        "equivalence/examples/two_party_escrow/Plinth_1.45.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "40ee7ae36f488019f61dcd6977622bd906524d47f3b53657486d41c4996bdb0f",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow--Plinth_1.45.0.0_Unisay_plain",
+      "scenario": "two_party_escrow",
+      "script": "equivalence/examples/two_party_escrow/Plinth_1.45.0.0_Unisay_plain.cbor_hex",
+      "binary_sha256": "13e1830ac5189e38bd8e0970b7282eb12ff5b485fb7ebd7495bd8eb6fd9077b8",
+      "aliases": [
+        "equivalence/examples/two_party_escrow/Plinth_1.45.0.0_Unisay_plain.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "40ee7ae36f488019f61dcd6977622bd906524d47f3b53657486d41c4996bdb0f",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow--Plinth_1.61.0.0_Unisay",
+      "scenario": "two_party_escrow",
+      "script": "equivalence/examples/two_party_escrow/Plinth_1.61.0.0_Unisay.cbor_hex",
+      "binary_sha256": "ee6035d4f642db8355079c759ce353475e6b92c2f32eededbf24937722477218",
+      "aliases": [
+        "equivalence/examples/two_party_escrow/Plinth_1.61.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "40ee7ae36f488019f61dcd6977622bd906524d47f3b53657486d41c4996bdb0f",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow--Plinth_1.64.0.0_Unisay",
+      "scenario": "two_party_escrow",
+      "script": "equivalence/examples/two_party_escrow/Plinth_1.64.0.0_Unisay.cbor_hex",
+      "binary_sha256": "07551f03fc8e5116ed5929ff06b2703c47b241d4d1d42f166b230723a681b29d",
+      "aliases": [
+        "equivalence/examples/two_party_escrow/Plinth_1.64.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "40ee7ae36f488019f61dcd6977622bd906524d47f3b53657486d41c4996bdb0f",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow--Plinth_1.64.0.0_Unisay_plain",
+      "scenario": "two_party_escrow",
+      "script": "equivalence/examples/two_party_escrow/Plinth_1.64.0.0_Unisay_plain.cbor_hex",
+      "binary_sha256": "dd0d30d9c5a3b76fbcfce83f4ccb51fd2c783c7e480afff70b2f6dac6a4bc8a3",
+      "aliases": [
+        "equivalence/examples/two_party_escrow/Plinth_1.64.0.0_Unisay_plain.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "40ee7ae36f488019f61dcd6977622bd906524d47f3b53657486d41c4996bdb0f",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow--Plinth_1.65.0.0_Unisay",
+      "scenario": "two_party_escrow",
+      "script": "equivalence/examples/two_party_escrow/Plinth_1.65.0.0_Unisay.cbor_hex",
+      "binary_sha256": "1fe2bfe689c35d7babc65844673f5ad08e2fd21ce4f05c1954530f1ae045c867",
+      "aliases": [
+        "equivalence/examples/two_party_escrow/Plinth_1.65.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "40ee7ae36f488019f61dcd6977622bd906524d47f3b53657486d41c4996bdb0f",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow--Plinth_1.65.0.0_Unisay_asdata",
+      "scenario": "two_party_escrow",
+      "script": "equivalence/examples/two_party_escrow/Plinth_1.65.0.0_Unisay_asdata.cbor_hex",
+      "binary_sha256": "352c0c4beca749f2f0b84ab749be648b1dc910275f46a05d85cf1b15b69e9d73",
+      "aliases": [
+        "equivalence/examples/two_party_escrow/Plinth_1.65.0.0_Unisay_asdata.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "40ee7ae36f488019f61dcd6977622bd906524d47f3b53657486d41c4996bdb0f",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow--Plinth_1.67.0.0_Unisay",
+      "scenario": "two_party_escrow",
+      "script": "equivalence/examples/two_party_escrow/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "binary_sha256": "40ee7ae36f488019f61dcd6977622bd906524d47f3b53657486d41c4996bdb0f",
+      "aliases": [
+        "equivalence/examples/two_party_escrow/Plinth_1.67.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow/Scalus_0.18.2_Unisay.cbor_hex",
+      "partner_binary_sha256": "56012738a68d5725ebe8768f87212d5e2adbbccb2fe0e06330e4887bc4ce196c",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow--Plinth_1.67.0.0_Unisay_asdata",
+      "scenario": "two_party_escrow",
+      "script": "equivalence/examples/two_party_escrow/Plinth_1.67.0.0_Unisay_asdata.cbor_hex",
+      "binary_sha256": "ed27eeeda6b1c56036638de5cb14a704c8c2f30765d975ed28a64bd52c103539",
+      "aliases": [
+        "equivalence/examples/two_party_escrow/Plinth_1.67.0.0_Unisay_asdata.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "40ee7ae36f488019f61dcd6977622bd906524d47f3b53657486d41c4996bdb0f",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow--Plinth_1.71.0.0_Unisay",
+      "scenario": "two_party_escrow",
+      "script": "equivalence/examples/two_party_escrow/Plinth_1.71.0.0_Unisay.cbor_hex",
+      "binary_sha256": "5bbbd0449d87f4bf858847c789636d42a9ea4e51fb1d844f937b577a0d38cb91",
+      "aliases": [
+        "equivalence/examples/two_party_escrow/Plinth_1.71.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "40ee7ae36f488019f61dcd6977622bd906524d47f3b53657486d41c4996bdb0f",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow--Scalus_0.18.2_Unisay",
+      "scenario": "two_party_escrow",
+      "script": "equivalence/examples/two_party_escrow/Scalus_0.18.2_Unisay.cbor_hex",
+      "binary_sha256": "56012738a68d5725ebe8768f87212d5e2adbbccb2fe0e06330e4887bc4ce196c",
+      "aliases": [
+        "equivalence/examples/two_party_escrow/Scalus_0.18.2_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "40ee7ae36f488019f61dcd6977622bd906524d47f3b53657486d41c4996bdb0f",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow--Scalus_1.3.0_Unisay",
+      "scenario": "two_party_escrow",
+      "script": "equivalence/examples/two_party_escrow/Scalus_1.3.0_Unisay.cbor_hex",
+      "binary_sha256": "ad39eefd0d1dc7fdca62a5d7acaafc80346e93a42dfb5731fe91ff45ac4d3be5",
+      "aliases": [
+        "equivalence/examples/two_party_escrow/Scalus_1.3.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "40ee7ae36f488019f61dcd6977622bd906524d47f3b53657486d41c4996bdb0f",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow_old--Plinth_1.45.0.0_Unisay",
+      "scenario": "two_party_escrow_old",
+      "script": "equivalence/examples/two_party_escrow_old/Plinth_1.45.0.0_Unisay.cbor_hex",
+      "binary_sha256": "2fc098cb28e1fd6890e961127949d65f81b59ac5d73177caa12838b6fb2620a0",
+      "aliases": [
+        "equivalence/examples/two_party_escrow_old/Plinth_1.45.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow_old/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5b59185a9e731294d2f5e522b7595978b9550e84712f6e7c869594880923ba10",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow_old--Plinth_1.45.0.0_Unisay_plain",
+      "scenario": "two_party_escrow_old",
+      "script": "equivalence/examples/two_party_escrow_old/Plinth_1.45.0.0_Unisay_plain.cbor_hex",
+      "binary_sha256": "0c3c4894d92a8be567fb2af15365fe23b7390cf6682ffc4a93bbea9270c39f73",
+      "aliases": [
+        "equivalence/examples/two_party_escrow_old/Plinth_1.45.0.0_Unisay_plain.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow_old/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5b59185a9e731294d2f5e522b7595978b9550e84712f6e7c869594880923ba10",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow_old--Plinth_1.61.0.0_Unisay",
+      "scenario": "two_party_escrow_old",
+      "script": "equivalence/examples/two_party_escrow_old/Plinth_1.61.0.0_Unisay.cbor_hex",
+      "binary_sha256": "b5a95f6b3adf1483080ccbb0e347920fa79f323191b4f997da035d6a69f60712",
+      "aliases": [
+        "equivalence/examples/two_party_escrow_old/Plinth_1.61.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow_old/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5b59185a9e731294d2f5e522b7595978b9550e84712f6e7c869594880923ba10",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow_old--Plinth_1.64.0.0_Unisay",
+      "scenario": "two_party_escrow_old",
+      "script": "equivalence/examples/two_party_escrow_old/Plinth_1.64.0.0_Unisay.cbor_hex",
+      "binary_sha256": "3783fae7ffa8752517b6257930984fb80b48b980d200feac63b77d898fa42b90",
+      "aliases": [
+        "equivalence/examples/two_party_escrow_old/Plinth_1.64.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow_old/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5b59185a9e731294d2f5e522b7595978b9550e84712f6e7c869594880923ba10",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow_old--Plinth_1.64.0.0_Unisay_plain",
+      "scenario": "two_party_escrow_old",
+      "script": "equivalence/examples/two_party_escrow_old/Plinth_1.64.0.0_Unisay_plain.cbor_hex",
+      "binary_sha256": "307ee59a747af7dcc20c1826a8026d977a651c36f173cbdf9f7c9abce6f7da6a",
+      "aliases": [
+        "equivalence/examples/two_party_escrow_old/Plinth_1.64.0.0_Unisay_plain.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow_old/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5b59185a9e731294d2f5e522b7595978b9550e84712f6e7c869594880923ba10",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow_old--Plinth_1.65.0.0_Unisay",
+      "scenario": "two_party_escrow_old",
+      "script": "equivalence/examples/two_party_escrow_old/Plinth_1.65.0.0_Unisay.cbor_hex",
+      "binary_sha256": "4f93bad061355c403e6de22238284a3b2c22b66bb5f59226837b91beb320f832",
+      "aliases": [
+        "equivalence/examples/two_party_escrow_old/Plinth_1.65.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow_old/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5b59185a9e731294d2f5e522b7595978b9550e84712f6e7c869594880923ba10",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow_old--Plinth_1.65.0.0_Unisay_asdata",
+      "scenario": "two_party_escrow_old",
+      "script": "equivalence/examples/two_party_escrow_old/Plinth_1.65.0.0_Unisay_asdata.cbor_hex",
+      "binary_sha256": "d385ca760f908df275894c09a5a2473581fc072d0af9fe4039b8d369c2ebc22e",
+      "aliases": [
+        "equivalence/examples/two_party_escrow_old/Plinth_1.65.0.0_Unisay_asdata.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow_old/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5b59185a9e731294d2f5e522b7595978b9550e84712f6e7c869594880923ba10",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow_old--Plinth_1.67.0.0_Unisay",
+      "scenario": "two_party_escrow_old",
+      "script": "equivalence/examples/two_party_escrow_old/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "binary_sha256": "5b59185a9e731294d2f5e522b7595978b9550e84712f6e7c869594880923ba10",
+      "aliases": [
+        "equivalence/examples/two_party_escrow_old/Plinth_1.67.0.0_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow_old/Scalus_0.18.2_Unisay.cbor_hex",
+      "partner_binary_sha256": "62497794357a7c110f2ea6e344f03ef84f219598598b4fbb3ca4caf928bcc24b",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow_old--Plinth_1.67.0.0_Unisay_asdata",
+      "scenario": "two_party_escrow_old",
+      "script": "equivalence/examples/two_party_escrow_old/Plinth_1.67.0.0_Unisay_asdata.cbor_hex",
+      "binary_sha256": "2fa6164043b318408359f39327d6ff449fb6bbe1b02dcaa5b74324a18608fee3",
+      "aliases": [
+        "equivalence/examples/two_party_escrow_old/Plinth_1.67.0.0_Unisay_asdata.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow_old/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5b59185a9e731294d2f5e522b7595978b9550e84712f6e7c869594880923ba10",
+      "validator": true,
+      "ecd": false
+    },
+    {
+      "id": "two_party_escrow_old--Scalus_0.18.2_Unisay",
+      "scenario": "two_party_escrow_old",
+      "script": "equivalence/examples/two_party_escrow_old/Scalus_0.18.2_Unisay.cbor_hex",
+      "binary_sha256": "62497794357a7c110f2ea6e344f03ef84f219598598b4fbb3ca4caf928bcc24b",
+      "aliases": [
+        "equivalence/examples/two_party_escrow_old/Scalus_0.18.2_Unisay.cbor_hex"
+      ],
+      "partner": "equivalence/examples/two_party_escrow_old/Plinth_1.67.0.0_Unisay.cbor_hex",
+      "partner_binary_sha256": "5b59185a9e731294d2f5e522b7595978b9550e84712f6e7c869594880923ba10",
+      "validator": true,
+      "ecd": false
+    }
+  ],
+  "file_count": 122,
+  "distinct_binary_count": 88,
+  "scenario_count": 9,
+  "ecd_domain": "gcd(x, 462), with x an arbitrary integer; adapter replayed at five concrete inputs"
+}
