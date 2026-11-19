@@ -449,6 +449,10 @@ constructor-value caching, early list lookups and indexed context caches).
 Lake fetches these revisions automatically; no edits to `.lake/packages` or
 benchmark artifacts are needed.
 
+For performance measurements across the collected UPLC examples, see the
+[corpus benchmarking guide](equivalence/benchmarks/CORPUS.md). It records
+preprocessing time and peak memory in isolated workers, grouped by scenario.
+
 ### Running the equivalence tests
 
 On Linux or macOS, install [elan](https://github.com/leanprover/elan) (which selects

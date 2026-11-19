@@ -40,3 +40,9 @@ lean_exe equivalence_test_worker where
   srcDir := "test-support"
   root := `EquivalenceTest.Worker
   supportInterpreter := true
+
+-- Isolated corpus measurements use the checker library and a process watchdog.
+lean_exe equivalence_benchmark_worker where
+  srcDir := "equivalence/benchmarks"
+  root := `CorpusWorker
+  supportInterpreter := true
