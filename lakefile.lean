@@ -15,3 +15,12 @@ lean_lib «CardanoLedgerApi» where
 @[test_driver]
 lean_lib «Tests» where
   -- add library configuration options here
+
+-- Standalone mapping experiments, including the editable Playground entry point.
+lean_lib MappingExamples where
+  roots := #[`equivalence.proofs.mappings.Structural,
+             `equivalence.proofs.mappings.Relational,
+             `equivalence.proofs.mappings.Playground,
+             `equivalence.proofs.mappings.MappingSupport,
+             `equivalence.proofs.mappings.MappingSupportTests,
+             `equivalence.proofs.mappings.AutomaticMapping]
