@@ -1,0 +1,50 @@
+[
+  {
+    "id": "fibonacci--Aiken_1.1.19_KtorZ_prepacked",
+    "script": "equivalence/examples/fibonacci/Aiken_1.1.19_KtorZ_prepacked.cbor_hex",
+    "partner": "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex",
+    "explanation": "Inductive datatype with instance parameters not supported: `BitVec"
+  },
+  {
+    "id": "fibonacci--Plinth_1.67.0.0_Unisay",
+    "script": "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex",
+    "partner": "equivalence/examples/fibonacci/Aiken_1.1.19_KtorZ_prepacked.cbor_hex",
+    "explanation": "Inductive datatype with instance parameters not supported: `BitVec"
+  },
+  {
+    "id": "fibonacci--Plutarch_1.11.0_SeungheonOh_prepacked",
+    "script": "equivalence/examples/fibonacci/Plutarch_1.11.0_SeungheonOh_prepacked.cbor_hex",
+    "partner": "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex",
+    "explanation": "Inductive datatype with instance parameters not supported: `BitVec"
+  },
+  {
+    "id": "fibonacci--Scalus_0.12.1_nau_prepacked",
+    "script": "equivalence/examples/fibonacci/Scalus_0.12.1_nau_prepacked.cbor_hex",
+    "partner": "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex",
+    "explanation": "Inductive datatype with instance parameters not supported: `BitVec"
+  },
+  {
+    "id": "fibonacci--Scalus_0.18.2_Unisay",
+    "script": "equivalence/examples/fibonacci/Scalus_0.18.2_Unisay.cbor_hex",
+    "partner": "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex",
+    "explanation": "Inductive datatype with instance parameters not supported: `BitVec"
+  },
+  {
+    "id": "linear_vesting--Scalus_1.3.0_Unisay",
+    "script": "equivalence/examples/linear_vesting/Scalus_1.3.0_Unisay.cbor_hex",
+    "partner": "equivalence/examples/linear_vesting/Plinth_1.67.0.0_Unisay.cbor_hex",
+    "explanation": "Could not decode program!"
+  },
+  {
+    "id": "linear_vesting--Scalus_1.4.0_nau",
+    "script": "equivalence/examples/linear_vesting/Scalus_1.4.0_nau.cbor_hex",
+    "partner": "equivalence/examples/linear_vesting/Plinth_1.67.0.0_Unisay.cbor_hex",
+    "explanation": "Could not decode program!"
+  },
+  {
+    "id": "two_party_escrow--Scalus_1.3.0_Unisay",
+    "script": "equivalence/examples/two_party_escrow/Scalus_1.3.0_Unisay.cbor_hex",
+    "partner": "equivalence/examples/two_party_escrow/Plinth_1.67.0.0_Unisay.cbor_hex",
+    "explanation": "Could not decode program!"
+  }
+]

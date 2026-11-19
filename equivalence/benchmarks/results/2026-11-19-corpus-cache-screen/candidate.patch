@@ -1,0 +1,13 @@
+diff --git a/Blaster/Optimize/Env/Types.lean b/Blaster/Optimize/Env/Types.lean
+index a1211c1..fcb73e6 100644
+--- a/Blaster/Optimize/Env/Types.lean
++++ b/Blaster/Optimize/Env/Types.lean
+@@ -898,7 +898,7 @@ def updateLocalRewriteCache (a : Expr) (b : Expr) (insertIfNew := false) : Trans
+   let ⟨_, rewriteCache, _, _, _, _, _, _, _, _, ⟨_, _, _, _, curCtx, _, _, _, _⟩, _, _, _⟩ := (← get).optEnv
+   match rewriteCache.get? curCtx with
+   | none =>
+-       let refEntry ← IO.mkRef $ (HashMap.emptyWithCapacity 256 : HashMap PtrExpr Expr).insert a b
++       let refEntry ← IO.mkRef $ (HashMap.emptyWithCapacity : HashMap PtrExpr Expr).insert a b
+        modifyOptEnv
+          fun ⟨o1, rewriteCache, o3, o4, o5, o6, o7, o8, o9, o10, options, o12, o13, o14⟩ =>
+              ⟨o1, rewriteCache.insert options.curCtx refEntry, o3, o4, o5, o6, o7, o8, o9, o10, options, o12, o13, o14⟩
