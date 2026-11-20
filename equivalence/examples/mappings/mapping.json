@@ -1,0 +1,14 @@
+{
+  "source": [
+    {"name": "amount", "unitsPerWhole": 1},
+    {"name": "rate", "unitsPerWhole": 100}
+  ],
+  "target": [
+    {"quantity": {"name": "rate", "unitsPerWhole": 10000}},
+    {"quantity": {"name": "amount", "unitsPerWhole": 1}},
+    "extraData",
+    {"fixed": 0}
+  ],
+  "oldOutput": "integer",
+  "newOutput": "dataInteger"
+}

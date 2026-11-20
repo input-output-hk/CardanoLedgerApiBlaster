@@ -5,6 +5,7 @@ import Tests.Equivalence.Validator
 import Tests.Equivalence.Context
 import Tests.Equivalence.ContextSyntax
 import Tests.Equivalence.Function
+import Tests.Equivalence.Mapping
 import Tests.Equivalence.BoundedValidator
 import Tests.Equivalence.OpaqueSerialization
 import Tests.Equivalence.ValidContext
