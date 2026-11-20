@@ -1,5 +1,6 @@
 import Equivalence.Acceptance
 import Equivalence.Function
+import Equivalence.Mapping
 
 /-!
 Defines the propositions submitted to the symbolic equivalence checker.

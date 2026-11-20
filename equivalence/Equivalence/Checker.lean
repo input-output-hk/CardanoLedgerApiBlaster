@@ -34,6 +34,8 @@ structure Config extends ValidContext.Limits where
   steps : Nat := 100000
   language : String := "PlutusV3"
   inputs : String := "valid-context"
+  /-- A schema-directed argument mapping, currently for strict function checks. -/
+  mapping : Option Mapping.Spec := none
   equivalence : Bool := false
   budget : Option (Nat × Nat) := none
   timeout : Nat := 20
@@ -51,11 +53,19 @@ def Config.stepLimitFields (c : Config) : List (String × Json) := [
   ("steps", toJson c.steps), ("bounded", toJson c.bounded),
   ("step_limit_kind", toJson (if c.bounded then "execution_bound" else "analysis_guard"))] ++
   (c.datum.map (fun datum => [("fixed_datum", PlutusCore.Data.toDetailedJson datum)])).getD [] ++
-  (c.redeemer.map (fun redeemer => [("fixed_redeemer", PlutusCore.Data.toDetailedJson redeemer)])).getD []
+  (c.redeemer.map (fun redeemer => [("fixed_redeemer", PlutusCore.Data.toDetailedJson redeemer)])).getD [] ++
+  (c.mapping.map (fun spec => [("mapping", toJson spec),
+    ("mapping_scope", toJson "All source integers and arbitrary extra Data; target inputs outside the mapped image are not compared."),
+    ("mapping_plan", (Mapping.infer spec).toOption.map toJson |>.getD Json.null)])).getD []
 
 /-- Check semantic option combinations for library callers as well as the CLI. -/
 def Config.validate (c : Config) : Except String Unit := do
   unless ["validator", "function"].contains c.mode do throw s!"unsupported mode: {c.mode}"
+  if let some spec := c.mapping then
+    unless c.mode == "function" do throw "mappings currently require function mode"
+    if c.bounded then throw "mappings currently require strict function checks (without --bounded)"
+    unless c.inputs == "integer" do throw "mapping schemas replace the default integer domain; --inputs data/data3 is not supported"
+    discard (Mapping.infer spec)
   if c.dispatchTimeout == 0 then throw "dispatch case timeout must be positive"
   if c.dispatchCaseLimit == 0 then throw "dispatch case limit must be positive"
   if c.steps == 0 then throw "step limit must be positive"
@@ -123,7 +133,7 @@ def Query.description (query : Query) : String :=
 /-- Domains choose declarations; the check determines query names and sides. -/
 def queries (c : Config) : Array Query :=
   if c.mode == "function" then
-    let declaration := if c.bounded && !c.equivalence then
+    let declaration := if c.mapping.isSome then ``Mapping.same else if c.bounded && !c.equivalence then
         if c.inputs == "data" then ``Queries.dataBoundedFunctionPreserved
         else if c.inputs == "data3" then ``Queries.data3BoundedFunctionPreserved
         else ``Queries.integerBoundedFunctionPreserved
@@ -172,7 +182,9 @@ def queryEvidence (c : Config) (query : Query) (results : Array Blaster.Smt.Resu
     return preserved
 
 def inputDomain (c : Config) : String :=
-  if c.mode == "validator" then
+  if let some spec := c.mapping then
+    s!"All integer values for the {spec.source.length} source quantities, in schema order, and arbitrary Data for every extra target argument; positive exact unit expansion retains every source field; target feature flags have the declared fixed values"
+  else if c.mode == "validator" then
     s!"Structured V3 spending contexts with 0..{c.maxInputs} independently symbolic inputs, 0..{c.maxOutputs} outputs and 0..{c.maxSigners} signer byte strings; present script datum; typed independent input and spending references; input pubkey/script credentials without staking and absent/hash/inline datums; outputs have arbitrary addresses and inline datums; no reference scripts; each value has an ADA entry and one independent policy/token entry; arbitrary Data validity range, datum, redeemer and unused fields; unbounded integers and byte strings; symbolic queries require CardanoLedgerApi.V3.validSpendingContext; concrete witnesses and counterexamples are independently ledger-validated and natively replayed; model validity does not establish on-chain reachability" ++
     (c.datum.map (fun datum => s!"; restricted to spending datum {datum}")).getD "" ++
     (c.redeemer.map (fun redeemer => s!"; restricted to spending redeemer {redeemer}")).getD ""
@@ -196,6 +208,9 @@ def nativeDomainWitness (c : Config) : Option PlutusCore.Data.Data :=
 def queryPredicate (c : Config) (query : Query) (programs : Array Expr) : MetaM Expr := do
   let (cpu, memory) := c.budget.getD (0, 0)
   let limits := #[mkRawNatLit cpu, mkRawNatLit memory, toExpr (c.language == "PlutusV3")]
+  if let some spec := c.mapping then
+    return ← Mapping.proposition spec programs[0]! programs[1]! cpu memory
+      (c.language == "PlutusV3") c.budget.isSome c.steps
   if c.mode == "function" then
     return mkAppN (mkConst query.declaration) (query.sides.map (programs[·]!) ++
       limits ++ #[toExpr c.budget.isSome, mkRawNatLit c.steps])
@@ -247,8 +262,42 @@ def functionOutcomeJson (budgeted : Bool) (result : Acceptance.Result) : Json :=
   | .budgetExhausted => Json.mkObj [("kind", toJson "budget_exhausted")]
   | .unfinished => Json.mkObj [("kind", toJson "unfinished")]
 
+/-- Replay the original programs with independently encoded argument lists. The
+    logical input and both argument lists are retained for inspection. -/
+def replayMapping (c : Config) (spec : Mapping.Spec)
+    (left right : PlutusCore.UPLC.Term.Program) (model : List String) : Json := Id.run do
+  let failure := Json.mkObj [("replayed", toJson false),
+    ("model", toJson (model.map String.trim)),
+    ("reason", toJson "Could not replay a mapped function difference; limits or unsupported output encodings remain inconclusive.")]
+  let .ok plan := Mapping.infer spec | return failure
+  let integers := model.filterMap Blaster.Smt.Model.integerBinding
+  let data := model.filterMap PlutusCore.Smt.Model.dataBinding
+  let values := (List.range plan.sourceCount).map fun i => (integers.lookup s!"input{i}").getD 0
+  let extras := (List.range plan.extraCount).map fun i => (data.lookup s!"extra{i}").getD (.I 0)
+  let (cpu, memory) := c.budget.getD (0, 0)
+  let argsJson := fun args => toJson (args.map fun
+    | .Const (.Integer n) => Json.mkObj [("integer", toJson n)]
+    | .Const (.Data d) => Json.mkObj [("data", PlutusCore.Data.toDetailedJson d)]
+    | term => toJson (reprStr term))
+  for (values, extras) in [(values, extras),
+      (List.replicate plan.sourceCount 0, List.replicate plan.extraCount (.I 0))] do
+    let some newArgs := plan.encode values extras | continue
+    let oldArgs := values.map Mapping.integer
+    let execute := fun program args => Function.execute program args cpu memory
+      (c.language == "PlutusV3") c.budget.isSome c.steps
+    let old := execute left oldArgs
+    let new := execute right newArgs
+    if Mapping.same spec.oldOutput spec.newOutput old new == some false then
+      return Json.mkObj [("replayed", toJson true), ("direction", toJson "mapped_function_outcomes"),
+        ("input", Json.mkObj [("source", Json.mkObj (spec.source.zip values |>.map fun (q, n) => (q.name, toJson n))),
+          ("extras", toJson (extras.map PlutusCore.Data.toDetailedJson))]),
+        ("old_arguments", argsJson oldArgs), ("new_arguments", argsJson newArgs),
+        ("old", functionOutcomeJson c.budget.isSome old), ("new", functionOutcomeJson c.budget.isSome new)]
+  return failure
+
 def replayWitness (c : Config) (left right : PlutusCore.UPLC.Term.Program)
     (model : List String) (reverse := false) (acceptanceOnly := false) : Json := Id.run do
+  if let some spec := c.mapping then return replayMapping c spec left right model
   let (cpu, memory) := c.budget.getD (0, 0)
   let v3 := c.language == "PlutusV3"
   let replay := fun args input => do
@@ -514,7 +563,7 @@ def classifyFunction (c : Config) (results : Array Blaster.Smt.Result)
     ("check", toJson (if c.bounded then if c.equivalence then "bounded constant-or-none observation equality" else "OLD constant observations preserved by NEW within supplied limits" else "function outcome and returned-value equality")),
     ("input_domain", toJson (inputDomain c)), ("language", toJson c.language),
     ("budget", c.budget.map (fun (cpu, memory) => Json.mkObj [("cpu", toJson cpu), ("memory", toJson memory)]) |>.getD Json.null)] ++ c.stepLimitFields
-  if left = right then
+  if c.mapping.isNone && decide (left = right) then
     return report equivalent "The decoded UPLC programs are identical; their behavior is identical for every input."
       (details ++ [("queries", Json.mkObj [("program_identity", toJson "valid"),
         (queryName, toJson "valid")]),
@@ -529,6 +578,8 @@ def classifyFunction (c : Config) (results : Array Blaster.Smt.Result)
       "NEW preserves every constant result produced by OLD within the supplied limits; additional NEW results are allowed."
       else if c.bounded then
       "Both functions have equal constant-or-none observations within the supplied limits for every input; this does not establish unrestricted equivalence."
+      else if c.mapping.isSome then
+        "Both functions have matching decoded results or both fail for every source input and arbitrary extra Data under the declared mapping. No equivalence is claimed outside the mapped target image."
       else "Both functions return equal constants or both fail for every input in the declared domain."
     return report equivalent explanation details
   | .Falsified model =>
@@ -661,7 +712,7 @@ def check (c : Config) (left right : PlutusCore.UPLC.Term.Program)
   IO.ofExcept c.validate
   let progress := observer.message
   observer.reportPhase "preprocessing"
-  if c.mode == "function" && decide (left = right) then
+  if c.mode == "function" && c.mapping.isNone && decide (left = right) then
     progress "Finished: program_identity: identical decoded UPLC programs"
     return classifyFunction c #[] left right
   observer.reportPhase "validation"

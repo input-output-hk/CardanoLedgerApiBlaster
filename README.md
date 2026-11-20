@@ -446,6 +446,58 @@ For performance measurements across the collected UPLC examples, see the
 [corpus benchmarking guide](equivalence/benchmarks/CORPUS.md). It records
 preprocessing time and peak memory in isolated workers, grouped by scenario.
 
+### Comparing different function interfaces
+
+Strict function checks accept a schema-directed mapping. Start with the percentage
+example (two small UPLC functions, not full ledger validators). Use Z3 5.4.0 on
+`PATH`, as described in the test prerequisites below:
+
+```sh
+lake build uplc_equiv
+lake exe uplc_equiv \
+  equivalence/examples/mappings/old.uplc \
+  equivalence/examples/mappings/new.uplc \
+  --mode function --mapping equivalence/examples/mappings/mapping.json --steps 200
+```
+
+OLD takes `(amount, percent)` and returns an integer payout. NEW takes
+`(rate, amount, metadata, bonus)` and returns the payout in `Data.I`.
+The mapping matches quantities by name and converts units: 25 percentage units
+become 2500 fractional units, with 10000 units per whole. It reorders arguments,
+quantifies over arbitrary metadata, and fixes the bonus to zero. The output
+encodings specify how each successful result is decoded for comparison.
+
+Edit `equivalence/examples/mappings/mapping.json` and rerun:
+
+- Change target rate units from 10000 to 100: a replayed counterexample shows the
+  incorrect scale.
+- Change the fixed bonus from 0 to 5: a replayed counterexample shows the new
+  feature changes the result.
+- Drop a source quantity from the target: schema validation rejects the mapping.
+
+Alternatively, edit the schemas in the single Lean entry point:
+
+```sh
+lake env lean equivalence/examples/mappings/Playground.lean
+```
+
+The reusable API is `Checker.check { mode := "function", inputs := "integer",
+mapping := some spec, ... } old new`. `Mapping.infer` accepts named integer
+quantities with positive units, exact integer unit expansion, arbitrary extra
+Data arguments, and fixed integer arguments. Every source quantity must be
+retained. Output encodings are `constant` (normalized UPLC constants), `integer`,
+and `dataInteger` (an integer wrapped in `Data.I`). A failed decoding is
+inconclusive, never equality of two missing outputs.
+
+Reports include the supplied schema, inferred plan, comparison scope, and both
+argument lists for counterexamples. `--emit-lean FILE` exports the same mapped
+query used by the checker. The comparison covers every source integer and every
+extra Data value, with the declared feature flags fixed; it does not establish
+equivalence on target inputs outside that image. Input names, units and output
+encodings are user hints, not inferred application semantics. Blueprint loading,
+validator-context mappings, and bounded mapping comparisons are not supported by
+this first version. The existing unmapped modes retain their behavior.
+
 ### Running the equivalence tests
 
 On Linux or macOS, install [elan](https://github.com/leanprover/elan) (which selects

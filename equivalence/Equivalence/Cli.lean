@@ -24,6 +24,7 @@ structure Config extends Checker.Config where
   rightFormat : Option String := none
   wallTimeout : Nat := 180
   emitLean : Option String := none
+  mappingFile : Option String := none
   json : Bool := false
   worker : Bool := false
 
@@ -52,6 +53,7 @@ Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D).
   --datum DATA                                          Fix the spending datum (textual Plutus Data); other context fields remain symbolic
   DATA shorthand: integers become I n; text becomes UTF-8 bytes; JSON quotes force text.
   --inputs integer|data|data3                            Function input domain (default integer)
+  --mapping FILE                                        JSON source/target schemas and output encodings (strict function mode)
   --format FORMAT                                       textual, flat, flat_hex, single_cbor_hex (default), double_cbor_hex; .uplc paths default to textual
   --format-left FORMAT                                  Override the left script format
   --format-right FORMAT                                 Override the right script format
@@ -138,6 +140,10 @@ def parse (c : Config) : List String → Except String Config
         rightFormat := c.rightFormat.orElse fun _ => if c.scripts[1]!.endsWith ".uplc" then some "textual" else none }
     if c.mode == "function" && c.maximaSpecified then
       throw "--max-inputs, --max-outputs and --max-signers are validator options"
+    if c.mappingFile.isSome then
+      unless c.mode == "function" do throw "--mapping requires --mode function"
+      if c.bounded then throw "--mapping currently requires strict checks (without --bounded)"
+      unless c.inputs == "integer" do throw "--mapping supplies its own domain; --inputs data/data3 is not supported"
     c.toConfig.validate
     for f in [c.format, c.leftFormat.getD c.format, c.rightFormat.getD c.format] do
       unless formats.contains f do throw s!"unsupported format: {f}"
@@ -173,6 +179,9 @@ def parse (c : Config) : List String → Except String Config
   | "--max-signers" :: v :: rest => do
     parse { c with maxSigners := ← natOption "--max-signers" v, maximaSpecified := true } rest
   | "--emit-lean" :: v :: rest => parse { c with emitLean := some v } rest
+  | "--mapping" :: v :: rest => do
+    if c.mappingFile.isSome then throw "--mapping may be supplied only once"
+    parse { c with mappingFile := some v } rest
   | "--seed" :: v :: rest => do parse { c with solverSeed := some (← natOption "--seed" v) } rest
   | "-j" :: v :: rest => do parse { c with solverJobs := ← natOption "-j" v true } rest
   | "--timeout" :: v :: rest => do parse { c with timeout := ← natOption "--timeout" v true } rest
@@ -271,6 +280,13 @@ def emitSource (env : Environment) (c : Config)
 
 def run (c : Config) : IO Json := do
   let c ← IO.ofExcept (parse c [])
+  let c ← match c.mappingFile with
+    | none => pure c
+    | some file => do
+      let json ← IO.ofExcept (Json.parse (← IO.FS.readFile file))
+      let spec : Mapping.Spec ← IO.ofExcept (fromJson? json)
+      pure { c with mapping := some spec }
+  IO.ofExcept c.toConfig.validate
   progress "Starting: loading OLD script"
   reportPhase "loading"
   let left ← readProgram c.scripts[0]! (c.leftFormat.getD c.format)
@@ -283,7 +299,7 @@ def run (c : Config) : IO Json := do
       reportPhase "exporting"
       emitSource env c results
   let result ← Checker.check c.toConfig left right observer inspectQueries
-  if c.emitLean.isSome && c.mode == "function" && decide (left = right) then
+  if c.emitLean.isSome && c.mode == "function" && c.mapping.isNone && decide (left = right) then
     progress "Starting: exporting program-identity proof"
     reportPhase "exporting"
     emitIdenticalSource c
@@ -364,6 +380,8 @@ def printReport (json : Bool) (r : Json) : IO Unit := do
     IO.println s!"{(r.getObjValAs? String "verdict").toOption.getD "error"}: {(r.getObjValAs? String "explanation").toOption.getD ""}"
     if let .ok domain := r.getObjValAs? String "input_domain" then
       IO.println s!"Input domain: {domain}"
+    if let .ok scope := r.getObjValAs? String "mapping_scope" then
+      IO.println s!"Mapping scope: {scope}"
     if let .ok steps := r.getObjValAs? Nat "steps" then
       if (r.getObjValAs? String "step_limit_kind").toOption == some "execution_bound" then
         IO.println s!"Execution step bound: {steps}"
