@@ -1,0 +1,89 @@
+{
+  "ecd": {
+    "cases": 4,
+    "verdicts": {
+      "inconclusive": 4
+    },
+    "preprocessing_timeouts": 4,
+    "preprocessing_seconds_total": 18.190810416068416,
+    "max_rss_bytes": 1042382848
+  },
+  "factorial": {
+    "cases": 3,
+    "verdicts": {
+      "inconclusive": 3
+    },
+    "preprocessing_timeouts": 3,
+    "preprocessing_seconds_total": 14.420823083084542,
+    "max_rss_bytes": 1154072576
+  },
+  "factorial_naive_recursion": {
+    "cases": 9,
+    "verdicts": {
+      "bounded_preserved": 6,
+      "inconclusive": 3
+    },
+    "preprocessing_timeouts": 3,
+    "preprocessing_seconds_total": 33.20716566522606,
+    "max_rss_bytes": 1076625408
+  },
+  "fibonacci": {
+    "cases": 13,
+    "verdicts": {
+      "error": 5,
+      "bounded_preserved": 4,
+      "inconclusive": 4
+    },
+    "preprocessing_timeouts": 4,
+    "preprocessing_seconds_total": 39.79979025101056,
+    "max_rss_bytes": 1342685184
+  },
+  "fibonacci_naive_recursion": {
+    "cases": 10,
+    "verdicts": {
+      "inconclusive": 6,
+      "bounded_preserved": 4
+    },
+    "preprocessing_timeouts": 6,
+    "preprocessing_seconds_total": 45.123890960006975,
+    "max_rss_bytes": 1137999872
+  },
+  "htlc": {
+    "cases": 14,
+    "verdicts": {
+      "inconclusive": 14
+    },
+    "preprocessing_timeouts": 6,
+    "preprocessing_seconds_total": 43.91795320890378,
+    "max_rss_bytes": 1336098816
+  },
+  "linear_vesting": {
+    "cases": 13,
+    "verdicts": {
+      "inconclusive": 11,
+      "error": 2
+    },
+    "preprocessing_timeouts": 7,
+    "preprocessing_seconds_total": 43.20735158014577,
+    "max_rss_bytes": 1332822016
+  },
+  "two_party_escrow": {
+    "cases": 12,
+    "verdicts": {
+      "inconclusive": 11,
+      "error": 1
+    },
+    "preprocessing_timeouts": 11,
+    "preprocessing_seconds_total": 52.38746895996155,
+    "max_rss_bytes": 1331085312
+  },
+  "two_party_escrow_old": {
+    "cases": 10,
+    "verdicts": {
+      "inconclusive": 10
+    },
+    "preprocessing_timeouts": 7,
+    "preprocessing_seconds_total": 39.236791167000774,
+    "max_rss_bytes": 1336770560
+  }
+}
