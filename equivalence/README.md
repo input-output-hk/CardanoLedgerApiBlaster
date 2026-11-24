@@ -54,13 +54,30 @@ so comparisons under execution budgets can differ from uncosted comparisons.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--format FORMAT` | `single_cbor_hex`; `.uplc` paths default to `textual` | Input encoding for both scripts. |
+| `--format FORMAT` | `.uplc` → `textual`, `.json` → `blueprint`, otherwise `single_cbor_hex` | Input encoding for both scripts. |
 | `--format-left FORMAT` | Shared format | Override OLD's encoding. |
 | `--format-right FORMAT` | Shared format | Override NEW's encoding. |
+| `--validator-left ID_OR_TITLE` | Sole compiled validator | Select OLD’s blueprint entry by ID or exact title. |
+| `--validator-right ID_OR_TITLE` | Sole compiled validator | Select NEW’s blueprint entry by ID or exact title. |
 | `--inputs DOMAIN` | `valid-context` for validators; `integer` for functions | Select the input domain. `--input` is an alias. |
 
 Supported formats: `textual`, `flat`, `flat_hex`, `single_cbor_hex`,
-`double_cbor_hex`.
+`double_cbor_hex`, `blueprint`. Explicit format options take precedence over
+file extensions.
+
+For [CIP-57](https://cips.cardano.org/cip/CIP-0057) blueprints, the usual filename
+is `plutus.json`. Each file must contain a selected validator with `compiledCode`.
+The CLI checks a declared script hash and requires the blueprint’s
+`preamble.plutusVersion` to match the comparison’s `--language` (default V3).
+Apply any template parameters before comparing deployed validators. The checker
+uses the same input domain as for raw UPLC and does not derive restrictions from
+blueprint schemas.
+
+```sh
+lake exe uplc_equiv old/plutus.json new/plutus.json \
+  --validator-left escrow.spend --validator-right escrow.spend \
+  --bounded --equivalence --max-inputs 1 --max-outputs 1
+```
 
 Function domains are `integer` (one raw UPLC integer), `data` (one unrestricted
 Plutus Data argument), and `data3` (three unrestricted Plutus Data arguments).

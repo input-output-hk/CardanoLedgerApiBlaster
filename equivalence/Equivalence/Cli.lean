@@ -22,6 +22,8 @@ structure Config extends Checker.Config where
   format : String := "single_cbor_hex"
   leftFormat : Option String := none
   rightFormat : Option String := none
+  leftValidator : Option String := none
+  rightValidator : Option String := none
   wallTimeout : Nat := 180
   emitLean : Option String := none
   json : Bool := false
@@ -52,9 +54,12 @@ Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D).
   --datum DATA                                          Fix the spending datum (textual Plutus Data); other context fields remain symbolic
   DATA shorthand: integers become I n; text becomes UTF-8 bytes; JSON quotes force text.
   --inputs integer|data|data3                            Function input domain (default integer)
-  --format FORMAT                                       textual, flat, flat_hex, single_cbor_hex (default), double_cbor_hex; .uplc paths default to textual
+  --format FORMAT                                       textual, flat, flat_hex, single_cbor_hex (default), double_cbor_hex, blueprint
+                                                        Auto: .uplc is textual; .json (including plutus.json) is blueprint
   --format-left FORMAT                                  Override the left script format
   --format-right FORMAT                                 Override the right script format
+  --validator-left ID_OR_TITLE                          Select a validator in the OLD blueprint
+  --validator-right ID_OR_TITLE                         Select a validator in the NEW blueprint
   --language VERSION                                    PlutusV3 (default); function mode also supports PlutusV1/PlutusV2
   --budget CPU MEMORY                                   Shared execution-unit limits (required for strict validators; optional with --bounded or function mode)
   --equivalence                                         Check both directions (validators or --bounded functions)
@@ -83,7 +88,7 @@ Counterexamples include the input and both outcomes, replayed with the same limi
 Progress is printed live on stderr; the final text or JSON report is printed on stdout.
 Verification uses Blaster's SMT results without reconstructed Lean proof terms.\n"
 
-def formats : List String := ["textual", "flat", "flat_hex", "single_cbor_hex", "double_cbor_hex"]
+def formats : List String := ["textual", "flat", "flat_hex", "single_cbor_hex", "double_cbor_hex", "blueprint"]
 
 /-- Structured phase events are an internal worker-to-supervisor protocol. -/
 def phasePrefix : String := "[uplc_equiv:phase] "
@@ -127,6 +132,11 @@ def parseData (option source : String) : Except String PlutusCore.Data.Data := d
     | throw s!"{option} expects textual Plutus Data"
   return datum
 
+private def inferFormat (path : String) : Option String :=
+  if path.endsWith ".uplc" then some "textual"
+  else if path.endsWith ".json" then some "blueprint"
+  else none
+
 def parse (c : Config) : List String → Except String Config
   | [] => do
     unless c.scripts.size == 2 do throw "expected old and new script paths"
@@ -134,13 +144,17 @@ def parse (c : Config) : List String → Except String Config
       { c with inputs := "integer" } else c
     let c := if c.formatSpecified then c else
       { c with
-        leftFormat := c.leftFormat.orElse fun _ => if c.scripts[0]!.endsWith ".uplc" then some "textual" else none
-        rightFormat := c.rightFormat.orElse fun _ => if c.scripts[1]!.endsWith ".uplc" then some "textual" else none }
+        leftFormat := c.leftFormat.orElse fun _ => inferFormat c.scripts[0]!
+        rightFormat := c.rightFormat.orElse fun _ => inferFormat c.scripts[1]! }
     if c.mode == "function" && c.maximaSpecified then
       throw "--max-inputs, --max-outputs and --max-signers are validator options"
     c.toConfig.validate
     for f in [c.format, c.leftFormat.getD c.format, c.rightFormat.getD c.format] do
       unless formats.contains f do throw s!"unsupported format: {f}"
+    if c.leftValidator.isSome && c.leftFormat.getD c.format != "blueprint" then
+      throw "--validator-left requires a blueprint OLD input"
+    if c.rightValidator.isSome && c.rightFormat.getD c.format != "blueprint" then
+      throw "--validator-right requires a blueprint NEW input"
     return c
   | "--bounded" :: rest => parse { c with bounded := true } rest
   | "--mode" :: v :: rest => parse { c with mode := v } rest
@@ -159,6 +173,8 @@ def parse (c : Config) : List String → Except String Config
   | "--format" :: v :: rest => parse { c with format := v, formatSpecified := true } rest
   | "--format-left" :: v :: rest => parse { c with leftFormat := some v } rest
   | "--format-right" :: v :: rest => parse { c with rightFormat := some v } rest
+  | "--validator-left" :: v :: rest => parse { c with leftValidator := some v } rest
+  | "--validator-right" :: v :: rest => parse { c with rightValidator := some v } rest
   | "--language" :: v :: rest => parse { c with language := v } rest
   | "--redeemer" :: v :: rest => do
     parse { c with redeemer := some (← parseData "--redeemer" v) } rest
@@ -183,7 +199,39 @@ def parse (c : Config) : List String → Except String Config
     else if v.startsWith "-" then .error s!"unknown or incomplete option: {v}"
     else parse { c with scripts := c.scripts.push v } rest
 
-def readProgram (path format : String) : IO PlutusCore.UPLC.Term.Program := do
+private def blueprintCode (source : String) (selector language : Option String) :
+    Except String String := do
+  let blueprint ← PlutusCore.UPLC.BlueprintEncoding.Internal.parseBlueprint source
+  let version := blueprint.preamble.plutusVersion
+  if let some language := language then
+    unless version == language.replace "PlutusV" "v" do
+      throw s!"blueprint declares '{version}', but the comparison uses {language}; select the matching --language"
+  let validator ← match selector with
+    | some name => PlutusCore.UPLC.BlueprintEncoding.Internal.resolveValidator blueprint.validators name
+    | none =>
+      match (blueprint.validators.filter (·.compiledCode.isSome)).toList with
+      | [validator] => pure validator
+      | [] => throw "no validator with compiledCode in the blueprint"
+      | validators =>
+        let choices := String.intercalate ", " (validators.map fun v => v.id.getD v.title)
+        throw s!"multiple validators with compiledCode; use --validator-left or --validator-right ({choices})"
+  let some code := validator.compiledCode | throw s!"validator '{validator.title}' has no compiledCode"
+  let code := code.trim
+  if let some expected := validator.hash then
+    let actual ← PlutusCore.UPLC.BlueprintEncoding.Internal.actualScriptHash version code
+    unless expected.toLower == actual do
+      throw s!"validator '{validator.title}': compiledCode hash mismatch (declared {expected}, computed {actual})"
+  return code
+
+private def readInput (path format : String) (selector language : Option String) :
+    IO (PlutusCore.UPLC.Term.Program × Option String) := do
+  if format == "blueprint" then
+    let source ← IO.FS.readFile path
+    let result := do
+      let code ← blueprintCode source selector language
+      let program ← singleCborEncodedScriptFromHex? code
+      return (program, some code)
+    return ← IO.ofExcept (result.mapError fun error => s!"Cannot import {path}: {error}")
   let parsed : Except String PlutusCore.UPLC.Term.Program ← match format with
     | "textual" => do pure <| PlutusCore.UPLC.TextEncoding.programFromString (← IO.FS.readFile path)
     | "flat" => do
@@ -194,19 +242,28 @@ def readProgram (path format : String) : IO PlutusCore.UPLC.Term.Program := do
     | "double_cbor_hex" => do pure <| doubleCborEncodedScriptFromHex? (← IO.FS.readFile path).trim
     | _ => throw <| IO.userError s!"unsupported format: {format}"
   match parsed with
-  | .ok program => return program
+  | .ok program => return (program, none)
   | .error error => throw <| IO.userError s!"Cannot import {path}: {error}"
 
-def sourceHeader (c : Config) : IO String := do
-  let left ← IO.FS.realPath c.scripts[0]!
-  let right ← IO.FS.realPath c.scripts[1]!
-  return s!"import Equivalence.Queries\nimport Equivalence.ValidContext\nimport Blaster\nopen Equivalence.Queries\n#import_uplc left {c.language} {c.leftFormat.getD c.format} {toJson left.toString |>.compress}\n#import_uplc right {c.language} {c.rightFormat.getD c.format} {toJson right.toString |>.compress}\n"
+def readProgram (path format : String) : IO PlutusCore.UPLC.Term.Program := do
+  return (← readInput path format none none).1
+
+private def sourceHeader (c : Config) (leftCode rightCode : Option String) : IO String := do
+  let scriptDecl (name path format : String) (code : Option String) : IO String := do
+    if let some hex := code then
+      return s!"abbrev {name} : PlutusCore.UPLC.PlutusScript.PlutusScript := " ++
+        s!"⟨.{c.language}, singleCborEncodedScriptFromHexM {toJson hex |>.compress}⟩\n"
+    let path ← IO.FS.realPath path
+    return s!"#import_uplc {name} {c.language} {format} {toJson path.toString |>.compress}\n"
+  let left ← scriptDecl "left" c.scripts[0]! (c.leftFormat.getD c.format) leftCode
+  let right ← scriptDecl "right" c.scripts[1]! (c.rightFormat.getD c.format) rightCode
+  return "import Equivalence.Queries\nimport Equivalence.ValidContext\nimport Blaster\nopen Equivalence.Queries\n" ++
+    left ++ right
 
 /-- An identity check needs neither recursive evaluation nor an SMT solver.
     Export a kernel-checkable proof of the same function query. -/
-def emitIdenticalSource (c : Config) : IO Unit := do
+private def emitIdenticalSource (c : Config) (header : String) : IO Unit := do
   let some file := c.emitLean | return
-  let header ← sourceHeader c
   let some query := (queries c)[0]?
     | throw <| IO.userError "No function query to export"
   let (cpu, memory) := c.budget.getD (0, 0)
@@ -214,10 +271,9 @@ def emitIdenticalSource (c : Config) : IO Unit := do
   IO.FS.writeFile file (header ++
     s!"\n-- Identical decoded programs establish equivalence without evaluating them.\nexample : {query.declaration} left.script right.script {cpu} {memory} {c.language == "PlutusV3"} {c.budget.isSome} {c.steps} := by\n  intro {binders}\n  exact Or.inl rfl\n")
 
-def emitSource (env : Environment) (c : Config)
+private def emitSource (env : Environment) (c : Config) (header : String)
     (checkedResults : Array (Option Blaster.Smt.Result) := #[]) : IO Unit := do
   let some file := c.emitLean | return
-  let header ← sourceHeader c
   -- A subset countermodel falsifies the original property, but the original
   -- unspecialized solver need not reproduce that result within the same timeout.
   let checkedResults := if c.splitDispatch then #[] else checkedResults
@@ -273,20 +329,21 @@ def run (c : Config) : IO Json := do
   let c ← IO.ofExcept (parse c [])
   progress "Starting: loading OLD script"
   reportPhase "loading"
-  let left ← readProgram c.scripts[0]! (c.leftFormat.getD c.format)
+  let (left, leftCode) ← readInput c.scripts[0]! (c.leftFormat.getD c.format) c.leftValidator (some c.language)
   progress "Starting: loading NEW script"
-  let right ← readProgram c.scripts[1]! (c.rightFormat.getD c.format)
+  let (right, rightCode) ← readInput c.scripts[1]! (c.rightFormat.getD c.format) c.rightValidator (some c.language)
+  let header ← if c.emitLean.isSome then sourceHeader c leftCode rightCode else pure ""
   let inspectQueries := fun env results => do
     if c.emitLean.isSome then
       progress (if results.isEmpty then "Starting: exporting initial Lean queries"
         else "Starting: exporting checked Lean queries")
       reportPhase "exporting"
-      emitSource env c results
+      emitSource env c header results
   let result ← Checker.check c.toConfig left right observer inspectQueries
   if c.emitLean.isSome && c.mode == "function" && decide (left = right) then
     progress "Starting: exporting program-identity proof"
     reportPhase "exporting"
-    emitIdenticalSource c
+    emitIdenticalSource c header
   return result
 
 partial def waitUntil (child : IO.Process.Child cfg) (deadline : Nat) : IO Bool := do

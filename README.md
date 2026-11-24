@@ -324,7 +324,10 @@ one integer input and uncosted execution by default:
 lake exe uplc_equiv old.uplc new.uplc --mode function
 ```
 
-`.uplc` paths default to textual UPLC; other paths default to single-CBOR hex.
+The CLI recognizes textual `.uplc` files and CIP-57 JSON blueprints such as
+`plutus.json`. Other paths default to single-CBOR hex. If a blueprint contains
+several compiled validators, use `--validator-left` or `--validator-right` to select
+one by ID or title.
 Strict function mode already checks equality of outcomes. Its bounded mode instead
 preserves observed OLD constants unless `--equivalence` is requested.
 

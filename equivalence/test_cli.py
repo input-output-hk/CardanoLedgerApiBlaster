@@ -3,6 +3,7 @@
 Functional acceptance, model replay and context tests live in Tests/Equivalence/*.lean.
 """
 
+import hashlib
 import json
 import contextlib
 import sys
@@ -101,6 +102,62 @@ def portfolio_z3(default_mode, seeded_mode='real'):
 
 
 class CheckerProcess(unittest.TestCase):
+    def test_blueprint_inputs_and_lean_export(self):
+        script = ROOT / "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex"
+        code = script.read_text().strip()
+        validator = {
+            "id": "fib",
+            "title": "Fibonacci example",
+            "redeemer": {"schema": {"dataType": "integer"}},
+            "compiledCode": code,
+            "hash": hashlib.blake2b(b"\x03" + bytes.fromhex(code), digest_size=28).hexdigest(),
+        }
+        blueprint = {
+            "preamble": {"title": "Example", "version": "1.0.0", "plutusVersion": "v3"},
+            "validators": [validator],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "plutus.json"
+            named = Path(directory) / "blueprint.txt"
+            emitted = Path(directory) / "check.lean"
+            path.write_text(json.dumps(blueprint))
+
+            def check(left, right, *args):
+                result = subprocess.run(
+                    [str(CLI), str(left), str(right), "--mode", "function", "--json", *args],
+                    cwd=ROOT, capture_output=True, text=True, timeout=30,
+                )
+                return result.returncode, json.loads(result.stdout)
+
+            status, report = check(path, script, "--emit-lean", str(emitted))
+            self.assertEqual(status, 0, report)
+            self.assertEqual(report["verdict"], "equivalent")
+            checked = subprocess.run(
+                ["lake", "env", "lean", str(emitted)],
+                cwd=ROOT, capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
+            other_code = (script.parent / "Plinth_1.61.0.0_Unisay.cbor_hex").read_text().strip()
+            self.assertNotEqual(other_code, code)
+            blueprint["validators"].insert(0, {
+                **validator, "id": "other", "title": "Other example", "compiledCode": other_code,
+                "hash": hashlib.blake2b(b"\x03" + bytes.fromhex(other_code), digest_size=28).hexdigest(),
+            })
+            named.write_text(json.dumps(blueprint))
+            status, report = check(script, named, "--format-right", "blueprint")
+            self.assertEqual(status, 3, report)
+            self.assertIn("multiple validators with compiledCode", report["explanation"])
+            for selector in ("fib", "Fibonacci example"):
+                status, report = check(script, named, "--format-right", "blueprint",
+                                       "--validator-right", selector)
+                self.assertEqual(status, 0, report)
+                self.assertEqual(report["derived_queries"]["function_equivalent"], "program_identity")
+
+            status, report = check(path, script, "--language", "PlutusV2")
+            self.assertEqual(status, 3, report)
+            self.assertIn("comparison uses PlutusV2", report["explanation"])
+
     def test_progress_identifies_query_order_without_polluting_json(self):
         for skip in [False, True]:
             with self.subTest(skip=skip), tempfile.TemporaryDirectory() as directory:
