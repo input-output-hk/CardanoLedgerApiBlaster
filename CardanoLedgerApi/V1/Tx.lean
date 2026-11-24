@@ -153,7 +153,10 @@ instance : DecidableLE TxOutRef :=
 instance : IsData TxOutRef where
  toData tref := mkDataConstr 0 [IsData.toData tref.txOutRefId, IsData.toData tref.txOutRefIdx]
  fromData
- | Data.Constr 0 [Data.B tid, Data.I ref] => some ⟨tid, ref⟩
+ | Data.Constr 0 [r_tid, r_ref] =>
+     match IsData.fromData r_tid, IsData.fromData r_ref with
+     | some tid, some ref => some ⟨tid, ref⟩
+     | _, _ => none
  | _ => none
 
 /-- A transaction output, consisting of an `Address`, a `Value` and optionally a `DatumHash` -/
