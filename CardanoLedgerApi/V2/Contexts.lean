@@ -846,13 +846,16 @@ def validRedeemerMap (redeemers : RedeemerMap) : Bool :=
   | x :: xs => visit xs x.1
 
 
-/-- [LEDGER-RULE]: A V2 pending transaction is balanced if and only if:
-      - Value in inputs + txInfoMint = Value in outputs + txInfoFees
+/-- [LEDGER-RULE]: V2 balance checks ADA from inputs and reward withdrawals
+    against outputs and fees. Other assets balance against minting and burning.
+    This check does not account for deposits, refunds, or treasury donations.
 -/
 def isBalanced (ctx : ScriptContext) : Bool :=
   let sv := valueSpent ctx
   let pv := valueProduced ctx
-  lovelaceOf sv = lovelaceOf pv + lovelaceOf ctx.scriptContextTxInfo.txInfoFee &&
+  let withdrawals : List (_ × Integer) := ctx.scriptContextTxInfo.txInfoWdrl
+  let rewards := withdrawals.foldl (fun total entry => total + entry.2) 0
+  lovelaceOf sv + rewards = lovelaceOf pv + lovelaceOf ctx.scriptContextTxInfo.txInfoFee &&
   withoutLovelace (merge sv ctx.scriptContextTxInfo.txInfoMint) == withoutLovelace pv
 
 

@@ -986,7 +986,7 @@ def sortedChangeParameters (cp : Data) : Bool :=
     The withdrawal map is valid if and only if one of the following conditions is satisfied:
       1. Withdrawal map is empty
           - ctx.scriptContextTxInfo.txInfoWdrl = []
-      2. Withdrawal map is sorted w.r.t. Credential
+      2. Amounts are nonnegative and the withdrawal map is sorted w.r.t. Credential
           ctx.scriptContextTxInfo.txInfoWdrl = [(cred₁, n₁), ..., (credₖ, nₖ)] ∧
           cred₁ < cred₂ < .. < credₖ
 -/
@@ -994,10 +994,10 @@ def validWithdrawals (withdrawals : Withdrawals) : Bool :=
   let rec visit (withdrawals : Withdrawals) (prev_cred : V2.Credential) : Bool :=
    match withdrawals with
    | [] => true
-   | x :: xs => prev_cred < x.1 && visit xs x.1
+   | x :: xs => 0 ≤ x.2 && prev_cred < x.1 && visit xs x.1
   match withdrawals with
   | [] => true
-  | x :: xs => visit xs x.1
+  | x :: xs => 0 ≤ x.2 && visit xs x.1
 
 /-- [LEDGER-RULE]: Ledger rules for the proposal procedure of certificate of the current proposing script (V3).
     The proposal `p` is valid if and only if one of the following conditions is satisfied:
@@ -1203,13 +1203,16 @@ def validTreasuryDonation (r_amount : Data) : Bool :=
   | none => true
   | some n => n > 0
 
-/-- [LEDGER-RULE]: A V3 pending transaction is balanced if and only if:
-      - Value in inputs + txInfoMint = Value in outputs + txInfoFees
+/-- [LEDGER-RULE]: V3 balance checks ADA from inputs and reward withdrawals
+    against outputs and fees. Other assets balance against minting and burning.
+    This check does not account for deposits, refunds, or treasury donations.
 -/
 def isBalanced (ctx : ScriptContext) : Bool :=
   let sv := valueSpent ctx
   let pv := valueProduced ctx
-  V2.lovelaceOf sv = V2.lovelaceOf pv + ctx.scriptContextTxInfo.txInfoFee &&
+  let withdrawals : List (_ × Integer) := ctx.scriptContextTxInfo.txInfoWdrl
+  let rewards := withdrawals.foldl (fun total entry => total + entry.2) 0
+  V2.lovelaceOf sv + rewards = V2.lovelaceOf pv + ctx.scriptContextTxInfo.txInfoFee &&
   V2.merge (V2.withoutLovelace sv) ctx.scriptContextTxInfo.txInfoMint == V2.withoutLovelace pv
 
 

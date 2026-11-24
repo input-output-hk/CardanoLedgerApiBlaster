@@ -143,7 +143,7 @@ Each predicate enforces:
 4. Valid fee (non-zero Ada only)
 5. Valid minted value (sorted currency symbols and token names)
 6. Sorted withdrawals, signatories, and datum map
-7. Transaction balance (`inputs + mint = outputs + fee`)
+7. ADA balance (`inputs + reward withdrawals = outputs + fee`) and non-ADA asset balance including minting and burning
 
 ### IsData Encoding
 

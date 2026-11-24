@@ -7,15 +7,26 @@ open _root_.Equivalence
 open PlutusCore.Data (Data)
 open Support
 
-def fixture (datum : Data) : Data :=
+def fixture (datum : Data) (paid : Int := 9800000) (withdrawals : Data := .Map []) : Data :=
   let ref := Context.outputReference ⟨String.mk (List.replicate 32 'r')⟩
   let address := Context.scriptAddress ⟨String.mk (List.replicate 28 's')⟩
   let receiver := Context.pubKeyAddress ⟨String.mk (List.replicate 28 'p')⟩
   let input := Context.txInput ref (Context.txOutput address (Context.lovelace 10000000) (some datum))
-  let output := Context.txOutput receiver (Context.lovelace 9800000)
-  let tx := ({ fee := .I 200000, outputs := .List [output] } : Context.RawUnusedTxInfo).txInfo
+  let output := Context.txOutput receiver (Context.lovelace paid)
+  let tx := ({ fee := .I 200000, outputs := .List [output], withdrawals } : Context.RawUnusedTxInfo).txInfo
     [input] [] 1700000000000 1700000000100
   Context.spendingContext tx (.Constr 0 []) ref datum
+
+#eval show IO Unit from do
+  let credential (key : PlutusCore.ByteString.ByteString) := Data.Constr 0 [.B key]
+  let first := credential ⟨String.mk (List.replicate 28 'a')⟩
+  let second := credential ⟨String.mk (List.replicate 28 'b')⟩
+  let rewards := Data.Map [(first, .I 1000000), (second, .I 2000000)]
+  let valid paid withdrawals := _root_.Equivalence.Ledger.validContext (fixture (.I 0) paid withdrawals)
+  unless valid 12800000 rewards && valid 9800000 (.Map [(first, .I 0)]) do
+    throw <| IO.userError "Ledger model rejected a balanced reward withdrawal"
+  if valid 9800000 rewards || valid 8800000 (.Map [(first, .I (-1000000))]) then
+    throw <| IO.userError "Ledger model accepted unaccounted rewards or a negative withdrawal"
 
 #eval show IO Unit from do
   -- An application-invalid datum can still satisfy the ledger model.
@@ -83,7 +94,8 @@ def fixture (datum : Data) : Data :=
   expect report ["domain_status"] "nonempty"
   expect report ["ledger_validity", "valid"] true
   expect report ["old_acceptance_witness", "ledger_validity", "valid"] true
-  let report ← comparePrograms accept (rejectDataAt [0, 3] "I 0") settings
+  -- Seed 4 keeps the zero-fee preservation query within the test deadline.
+  let report ← comparePrograms accept (rejectDataAt [0, 3] "I 0") { settings with solverSeed := some 4 }
   verdict report "preserved"
   noCounterexample report
   let malformedFee ← comparePrograms accept (rejectDataAt [0, 3] "B #00") settings
