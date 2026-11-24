@@ -26,7 +26,14 @@ CardanoLedgerApi provides a formal Lean4 model of the Cardano Ledger API — the
   - [SellNFT](#sellnft)
   - [ParamFeed](#paramfeed)
   - [Functions: Fibonacci](#functions-fibonacci)
-- [Script acceptance preservation](#script-acceptance-preservation)
+- [UPLC equivalence checker](#uplc-equivalence-checker)
+  - [Build the checker](#build-the-checker)
+  - [Cross-compiler escrow counterexample](#cross-compiler-escrow-counterexample)
+  - [Compare your own programs](#compare-your-own-programs)
+  - [Choose the input domain and limits](#choose-the-input-domain-and-limits)
+  - [Read the result](#read-the-result)
+  - [Library API](#library-api)
+  - [Running the equivalence tests](#running-the-equivalence-tests)
 - [General Description](#general-description)
   - [API Versions and Types](#api-versions-and-types)
   - [Ledger Rules as Decidable Predicates](#ledger-rules-as-decidable-predicates)
@@ -239,240 +246,157 @@ theorem fibonacci_equiv :
     (fromFrameToInt $ compiledNaiveRecursion.prop n) = (fromFrameToInt $ compiledSeungheonOhSize.prop n) := by blaster
 ```
 
-## Script acceptance preservation
+## UPLC equivalence checker
 
-`uplc_equiv` compares two UPLC programs in either mode:
+`uplc_equiv` compares UPLC programs from optimizers, compiler versions or different
+implementations. It can prove the requested relationship within a declared input
+domain and execution limits, or find a counterexample and replay both programs on
+that input.
 
-- **Validator** (default): NEW must accept every input accepted by OLD within a
-  shared per-script budget. `--equivalence` checks both directions; successful
-  return values are not compared. V3 requires unit; V1/V2 accept any successful return.
-- **Function**: compares returned constants and success/error outcomes. Defaults
-  to one integer argument and uncosted evaluation. Identical programs are checked
-  directly. Otherwise, closures, constructor returns,
-  and exhausted analysis or optional execution budgets remain inconclusive.
+### Build the checker
 
-Use `--bounded --steps N` to compare within a step limit, with an optional
-execution budget. This preserves validator acceptance or function results;
-`--equivalence` checks both directions. Bounded validators still require an
-OLD-accepting witness; a bound admitting no OLD inputs is explicitly vacuous.
-Bounded functions treat errors, nonconstant returns, and exhausted limits as `none`.
-Results use `bounded_preserved`/`bounded_regression`, or
-`bounded_equivalent`/`bounded_inequivalent` with `--equivalence`.
+On Linux or macOS, install [elan](https://github.com/leanprover/elan), Git and
+[Z3 5.4.0](https://github.com/Z3Prover/z3/releases/tag/z3-5.4.0). Put Z3's `bin`
+directory on `PATH`. Elan selects the Lean version in `lean-toolchain`; Lake fetches
+the pinned library dependencies.
 
 ```sh
+git clone https://github.com/input-output-hk/CardanoLedgerApiBlaster.git
+cd CardanoLedgerApiBlaster
 lake build uplc_equiv
-lake exe uplc_equiv old.cbor_hex new.cbor_hex --budget 10000000 100000
-lake exe uplc_equiv old.cbor_hex new.cbor_hex --bounded --steps 2000
-lake exe uplc_equiv old.uplc new.uplc --mode function
 ```
 
-`.uplc` paths default to textual encoding. Function mode supports
-`--inputs integer` (default), `data` for one unrestricted Data argument, or `data3`
-for three. `--language PlutusV1|PlutusV2|PlutusV3` selects function evaluation
-semantics; the validator context profile currently supports V3 spending only.
+The checked-in examples do not require their original compilers to be installed.
 
-Validators use a single **`valid-context`** profile: structured V3 spending
-contexts with a present script datum and independently symbolic contents.
-`--inputs valid-context` is optional; `--input` remains an alias for `--inputs`.
-The former small-context, medium-context, unrestricted valid-context, and raw
-validator input modes have been replaced by this configurable profile.
+### Cross-compiler escrow counterexample
 
-| Option | Default | Included counts |
-|---|---:|---|
-| `--max-inputs N` | 2 | 0 through N transaction inputs |
-| `--max-outputs N` | 2 | 0 through N transaction outputs |
-| `--max-signers N` | 2 | 0 through N signer keys |
-
-Use `--datum 'Constr 0 [Constr 0 [], I 1000000]'` to fix the spending datum,
-`--redeemer 'I 1'` to fix the spending redeemer, or both together. Arguments use
-textual Plutus Data (`I`, `B`, `Constr`, `List`, `Map`). Other context fields remain
-symbolic. These options restrict the comparison to the supplied values; they do
-not establish equivalence for other datums or redeemers. Completed reports include
-`fixed_datum` and/or `fixed_redeemer`, and native replay and `--emit-lean` enforce
-the same restrictions. Without either option its corresponding argument remains
-symbolic. Both options are validator-only.
-
-Primitive values also accept shorthand:
-
-```sh
---redeemer 1             # I 1
---redeemer -42           # I -42
---datum hello           # UTF-8 bytes: B #68656c6c6f
---datum "hello world"   # UTF-8 text, including the space
---datum '"42"'          # Bytes B #3432, rather than integer 42
-```
-
-Shell quotes group text but do not change its type: both `42` and `"42"` become
-integer 42. JSON quotes force text and support escapes; the outer shell quotes in
-`'"42"'` preserve those JSON quotes. Text whitespace is preserved. Data constructor
-keywords (`I`, `B`, `Constr`, `List`, `Map`) and parenthesized Data retain their
-explicit syntax, including errors for malformed values. Use a JSON string to pass
-literal text that resembles Data syntax. `B #...` remains available for binary data.
-
-Use `--split-dispatch` to discover datum/redeemer dispatch cases automatically
-before running the full comparison. Discovery follows projections and decoders
-through UPLC functions and looks for equality with constructor tags, integers,
-byte strings, UTF-8 text and literal Data. Both arguments support the same nested
-constructor, list and map patterns. Unspecified payloads and collection tails
-remain symbolic; explicit `--datum` and `--redeemer` restrictions are respected.
+This command finds a context accepted by the historical Scalus escrow
+implementation and rejected by the Plinth implementation:
 
 ```sh
 lake exe uplc_equiv \
   equivalence/examples/two_party_escrow_old/Scalus_0.18.2_Unisay.cbor_hex \
   equivalence/examples/two_party_escrow_old/Plinth_1.67.0.0_Unisay.cbor_hex \
-  --split-dispatch --bounded --steps 5000 \
-  --max-inputs 1 --max-outputs 1 --max-signers 1 \
-  --timeout 10 --wall-timeout 90
+  --bounded --max-inputs 1 --max-outputs 1
 ```
 
-Discovery first guides native probes and specialized counterexample queries. If
-these find no replayed difference, the checker attempts a proof partition. For
-proofs, cases are checked over the original context schema, excluding earlier
-cases. An explicit catch-all covers every remaining input, including undiscovered
-values, malformed payload shapes and other Data kinds. Discovery need not be
-complete: only proofs covering **all** parts establish full-domain preservation.
-Combine `--split-dispatch` with `--equivalence` to prove both directions. Differences
-still require native replay of the original programs and independent validation
-of the context.
+Expected: **`bounded_regression`**, exit status **1**. A reference run discovers
+an output of **75,000,000 lovelace (75 ADA)** without being supplied a datum,
+redeemer, amount or transaction template. The reported context passes ledger-model
+validation, and native replay confirms both outcomes.
 
-Unknown, timed-out or unsupported parts cannot establish a partition proof. The
-checker retains completed directional proofs and falls back to the original
-full-domain queries for any remaining directions. The usual OLD-acceptance witness
-requirement still applies.
+The [escrow walkthrough](equivalence/examples/two_party_escrow_old/README.md)
+explains the counterexample and historical scenario. For an actual optimizer bug,
+follow the [optimizer regression tutorial](equivalence/examples/uplc-optimize/tutorial/README.md):
+detect the faulty optimization of a V3 validator, then verify the corrected output
+using the same comparison limits.
 
-`--dispatch-cases N` limits discovery to N patterns (default 16); the catch-all is
-additional. `--dispatch-timeout SECONDS` limits each case query, including cooperative
-preprocessing cancellation (default 10 seconds). Either option enables splitting.
-The normal `--timeout` still bounds each solver invocation, and `--wall-timeout`
-bounds the entire run. JSON reports include search and proof-case outcomes, a
-`catch_all` marker, `proved_queries`, discovery limits and any winning counterexample
-in `dispatch`.
-`dispatch.discovery_limits` names the reached bounds (for example, branch traces
-or pending branches); these can limit discovery even below the requested case count.
-`--emit-lean` exports the original full-domain queries; it does not present a
-partition proof as a single full-domain solver result.
+### Compare your own programs
 
-These defaults accommodate an own input plus funding, a payment plus change,
-and two-party authorization. Increase or decrease them for the script under
-investigation. There are no minimum-count options or fixed implementation caps;
-larger maxima generate more primitive binders and explicit count cases and can
-cost substantially more preprocessing time. The maxima are validator options.
+The first script is OLD and the second is NEW. **Validator mode** is the default:
+NEW must accept every input accepted by OLD. Add `--equivalence` to require the
+same acceptance in both directions, as normally needed when checking an
+optimization:
 
 ```sh
 lake exe uplc_equiv old.cbor_hex new.cbor_hex \
-  --bounded --steps 5000 --max-inputs 3 --max-outputs 2 --max-signers 2 \
-  --timeout 60 --wall-timeout 240
+  --bounded --equivalence --max-inputs 1 --max-outputs 1
 ```
 
-Input credentials can be pubkey or script credentials without staking; input
-outputs can have no datum, a datum hash, or an inline datum. Input and spending
-references have typed transaction-id/index encodings. Every input/output value
-has an ADA entry and one independent policy/token entry. Transaction outputs
-have arbitrary addresses and inline datums; reference scripts are absent.
-The validity range, script datum, redeemer and unused fields remain arbitrary
-Data. Integers and byte strings have no size bounds. Each count case has a
-literal list spine, including the zero-count cases.
+`--bounded` compares acceptance within an execution-step limit (default 100,000;
+set it with `--steps N`). Step exhaustion counts as nonacceptance in this mode.
+Without `--bounded`, validator checks require `--budget CPU MEMORY`; the step
+limit then acts as an analysis guard, whose exhaustion is inconclusive:
 
-Symbolic queries require `Ledger.validContext ctx` in addition to the configured
-structure. The ledger premise is processed before specializing the scripts, so
-invalid count cases can be discarded without expanding their executions. Domain witnesses, OLD-acceptance witnesses and counterexamples are
-also independently checked against both the profile and the ledger model,
-and reported behavior is confirmed by native replay. Zero-input frames are
-excluded by the ledger premise. `--max-inputs 0` therefore cannot establish a nonempty
-ledger-valid spending domain. Zero-output frames can be model-valid, for
-example by burning the token and paying the input ADA as the fee. Failure to
-extract and validate a counterexample or find an accepting witness can make checks
-inconclusive. Model validity does not establish on-chain reachability.
+```sh
+lake exe uplc_equiv old.cbor_hex new.cbor_hex \
+  --equivalence --budget 10000000 100000
+```
 
-Reports include the configured maxima. `--emit-lean` exports compact
-`valid_context% INPUTS OUTPUTS SIGNERS (...)` goals using the same generator as
-the checker; the standalone file reproduces the symbolic queries, while the
-native witness-validation checks remain separate.
+The same execution-unit limits are applied independently to each script. Budget
+exhaustion counts as rejection, so changes in execution costs can affect
+acceptance under a budget. Bounded, uncosted checks omit that budget comparison.
 
-Validator success requires a replayed OLD-accepting input. Proven universal OLD
-rejection is reported as vacuous; failure to establish either is inconclusive.
-Comparisons run first. Confirmed regressions and native OLD-accepting witnesses
-skip the rejection query; otherwise it runs afterward. `--skip-old-rejected`
-omits that fallback while retaining the witness requirement. Function mode
-compares outcomes directly.
+**Function mode** compares returned constants and success/error outcomes, using
+one integer input and uncosted execution by default:
 
-Exit codes: **0** preserved/equivalent, **1** regression/inequivalent,
-**2** inconclusive, **3** tool/usage error, **4** vacuous validator preservation/equivalence.
-The library entry point is `Equivalence.Checker.check options old new`, taking
-decoded UPLC programs and a `Checker.Config` containing the semantic settings.
-It plans and solves queries, validates witnesses, replays counterexamples, and
-returns the report. Optional `Solver.Observer` callbacks receive progress and
-phase changes; library calls are silent by default.
-Run `lake build Tests.Equivalence.Library` for the library suite; its isolated
-test worker calls the checker directly. The CLI handles arguments,
-script files, wall-clock supervision, Lean exports, and terminal formatting.
+```sh
+lake exe uplc_equiv old.uplc new.uplc --mode function
+```
 
-Counterexamples are replayed natively. Progress goes to stderr with elapsed seconds
-since the check started (for example, `[4.356s] Phase: Z3 solving`); `--json` selects
-machine-readable stdout, and `--emit-lean FILE` exports the queries.
-Without `--json`, counterexamples show OLD/NEW outcomes and a named V3 context:
-spending reference, datum, redeemer, inputs, outputs, signers, validity range and
-auxiliary fields. ADA values display both exact lovelace and decimal ADA amounts;
-hashes are shown in full. Application-specific payloads retain textual Plutus Data
-syntax because their field names require the application's schema.
-Timeout reports identify the active phase and query: preprocessing, SMT translation,
-or Z3 solving. JSON wall-clock reports include a `timeout` object; completed checks
-retain Z3 timeout/unknown reasons in `query_diagnostics`, even when a later query
-establishes the verdict. Other Z3 `unknown` responses are not labelled as timeouts.
-Use `-j4` (or `-j 4`) to race four Z3 workers per query. The default is `-j1`.
-Preprocessing and SMT translation run once. `--seed 42 -j4` uses seeds 42, 43,
-44, and 45; `--seed 42 -j1` uses only 42. Without `--seed`, workers use the Z3
-default (0), followed by 1, 2, and 3. Seeds must fit in an unsigned 32-bit integer,
-including the final worker's seed. The first conclusive solver result wins, and
-counterexamples still require native replay. An early `unknown` does not cancel the other workers. Workers
-share the `--timeout` deadline, including query submission, and stop together
-when a result or the deadline is reached. This uses additional CPU and memory;
-it does not accelerate preprocessing. JSON records `solver_seed`,
-`solver_workers` and, for portfolio queries, the winning seed in `query_diagnostics`. On a conclusive
-result, `null` means the default seed; inconclusive results have no winner.
+`.uplc` paths default to textual UPLC; other paths default to single-CBOR hex.
+Strict function mode already checks equality of outcomes. Its bounded mode instead
+preserves observed OLD constants unless `--equivalence` is requested.
 
-With `--bounded`, text reports show `Execution step bound`; otherwise they show
-`Analysis step guard`. Exhausting the guard makes the result inconclusive. JSON
-retains `steps` and `bounded`, with `step_limit_kind` set to `execution_bound` or
-`analysis_guard` in both validator and function mode.
-See `lake exe uplc_equiv --help` for domains, formats, and limits.
+### Choose the input domain and limits
 
-Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D), rather
-than current network parameters. Solver and wall-clock limits, and step exhaustion
-without `--bounded`, yield inconclusive results. Verification uses Blaster's SMT results
-without reconstructed Lean proof terms.
+Validator checking currently supports structured, ledger-model-valid **Plutus V3
+spending contexts** with a present datum. Datum, redeemer and transaction contents
+remain symbolic. The profile has additional encoding and value-shape restrictions;
+see the [full input-domain description](equivalence/README.md#structured-context-profile).
 
-PlutusCoreBlaster is pinned to `0de84aad` (execution costs, the symbolic
-logarithm workaround, opaque serialization primitives and Plutus model decoding).
-Blaster is pinned to `b4174f88` (the equivalence integration, SMT model parser,
-constructor-value caching, early list lookups and indexed context caches).
-Lake fetches these revisions automatically; no edits to `.lake/packages` or
-benchmark artifacts are needed.
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `--max-inputs N` | 2 | Include up to N transaction inputs. |
+| `--max-outputs N` | 2 | Include up to N transaction outputs. |
+| `--max-signers N` | 2 | Include up to N signer keys. |
+| `--datum DATA`, `--redeemer DATA` | Symbolic | Fix a value to focus the comparison. |
+| `--timeout SECONDS` | 20 | Bound each Z3 query. |
+| `--wall-timeout SECONDS` | 180 | Bound the complete check, including preprocessing. |
 
-For performance measurements across the collected UPLC examples, see the
-[corpus benchmarking guide](equivalence/benchmarks/CORPUS.md). It records
-preprocessing time and peak memory in isolated workers, grouped by scenario.
+Start with small count limits and expand them as needed. These settings change
+the domain of the claim; they are not merely performance hints. Fixing datum or
+redeemer similarly restricts the claim to those values. Data accepts explicit
+syntax such as `--datum 'Constr 0 [Constr 0 [], I 1000000]'`, integer shorthand
+such as `--redeemer 1`, and UTF-8 text such as `--datum "hello"`.
+
+For slow solver searches, `-j4` races four Z3 workers with different seeds;
+`--seed 42 -j4` uses 42 through 45. This uses more CPU and memory and does not
+accelerate preprocessing. `--split-dispatch` can discover datum/redeemer cases
+and check them separately, with full-domain fallback when needed.
+
+See the [complete CLI reference](equivalence/README.md) for every option, supported
+encoding, Data syntax, dispatch settings and detailed comparison semantics.
+
+### Read the result
+
+| Result | Exit code | Meaning |
+| --- | ---: | --- |
+| `preserved` / `equivalent`, including `bounded_` variants | 0 | The requested relationship holds in the stated scope. |
+| `regression` / `inequivalent`, including `bounded_` variants | 1 | A natively replayed counterexample distinguishes the scripts. |
+| `inconclusive` | 2 | The checker could not establish a result within its limits. |
+| `error` | 3 | Invalid arguments, unsupported input or a tool failure. |
+| `vacuously_…` | 4 | OLD rejects every input in the validator domain. |
+
+A positive validator verdict requires a concrete OLD-accepting witness as well
+as successful preservation queries. A timeout, an individual `valid` query or
+failure to find a counterexample is not by itself an equivalence result.
+
+Progress goes to stderr; the final report goes to stdout. Counterexamples show
+both outcomes and a readable context with datum, redeemer, inputs, outputs and
+ADA amounts. Add `--json` for machine-readable results or `--emit-lean FILE` to
+export the queries. Verification uses Blaster's SMT results without reconstructed
+Lean proof terms. Ledger-model validity does not establish on-chain reachability.
+
+### Library API
+
+Build the reusable library with `lake build UplcEquivalence`. Applications can call
+`Equivalence.Checker.check options old new` with decoded UPLC programs and a
+`Checker.Config`. It returns the report; optional `Solver.Observer` callbacks
+receive progress and phase changes. Library calls are silent by default.
 
 ### Running the equivalence tests
 
-On Linux or macOS, install [elan](https://github.com/leanprover/elan) (which selects
-the Lean version in `lean-toolchain`), Git, Python 3.9 or later, and the
-[Z3 5.4.0 release](https://github.com/Z3Prover/z3/releases/tag/z3-5.4.0).
-Put the release's `bin` directory on `PATH`. The test target checks the Z3 version
-and its `recfun-finder` support before building.
+With the build prerequisites above and Python 3.9 or later installed, run:
 
 ```sh
-git clone https://github.com/input-output-hk/CardanoLedgerApiBlaster.git
-cd CardanoLedgerApiBlaster
 make check_equivalence
 ```
 
-The first run downloads and builds the pinned Lean dependencies. Every check
-rebuilds the equivalence library, CLI and Lean test modules, then runs the Python
-CLI tests. Library checker invocations run one at a time, including the
-direct library-API test; waiting for that slot does not consume a test's watchdog.
-An individual check can still use its configured `-jN` portfolio. This avoids
-load-dependent failures from launching many independent solver searches together.
+This checks the solver prerequisites, rebuilds the CLI and library, and runs the
+Lean and Python integration tests, including the optimizer tutorial fixtures.
+For performance measurements over the collected examples, see the
+[corpus benchmarking guide](equivalence/benchmarks/CORPUS.md).
 
 
 ## General Description

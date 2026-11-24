@@ -76,6 +76,55 @@ def paths (name : String) : Array String := #[
     verdict report "equivalent"
     noCounterexample report
 
+-- The exact upstream fix from PR #8022 preserves the strict integer function.
+#eval show IO Unit from do
+  let report ← compareFixtures { config with
+    scripts := #["equivalence/examples/uplc-optimize/ifthenelse.uplc",
+      "equivalence/examples/uplc-optimize/ifthenelse-fixed.uplc"]
+    steps := 1000, timeout := 10, wallTimeout := 60 }
+  verdict report "equivalent"
+  noCounterexample report
+
+-- The tutorial uses actual before/after optimizer outputs for a V3 validator.
+-- Check native-replayed acceptance differences and a non-vacuous positive proof.
+#eval show IO Unit from do
+  let tutorial : Support.Config := {
+    mode := "validator", format := "textual", bounded := true, equivalence := true
+    steps := 1000, maxInputs := 1, maxOutputs := 1, maxSigners := 1
+    timeout := 10, wallTimeout := 60, solverSeed := some 0 }
+  let original := "equivalence/examples/uplc-optimize/tutorial/validator.uplc"
+  for datum in [(0 : Int), 1] do
+    let some context := Checker.nativeDomainWitness
+        { tutorial.toConfig with datum := some (.I datum) }
+      | throw <| IO.userError "Tutorial needs a ledger-valid concrete context"
+    for (path, buggy) in [(original, false),
+        ("equivalence/examples/uplc-optimize/tutorial/validator-buggy.uplc", true),
+        ("equivalence/examples/uplc-optimize/tutorial/validator-fixed.uplc", false)] do
+      let program ← readProgram path "textual"
+      let result := Function.executeValidator program [.Const (.Data context)]
+        0 0 true true false tutorial.steps
+      unless Acceptance.accepts true result == some (buggy || datum != 1) do
+        throw <| IO.userError s!"Unexpected tutorial acceptance for {path}, datum {datum}"
+  let bad ← compareFixtures { tutorial with scripts := #[original,
+    "equivalence/examples/uplc-optimize/tutorial/validator-buggy.uplc"] }
+  verdict bad "bounded_inequivalent"
+  expect bad ["queries", "acceptance_preserved"] "valid"
+  expect bad ["queries", "reverse_acceptance_preserved"] "falsified"
+  let counterexample ← witness bad
+  expect counterexample ["direction"] "new_to_old"
+  expect counterexample ["ledger_validity", "valid"] true
+  expect counterexample ["old", "accepts"] false
+  expect counterexample ["new", "accepts"] true
+  let fixed ← compareFixtures { tutorial with scripts := #[original,
+    "equivalence/examples/uplc-optimize/tutorial/validator-fixed.uplc"] }
+  verdict fixed "bounded_equivalent"
+  expect fixed ["queries", "acceptance_preserved"] "valid"
+  expect fixed ["queries", "reverse_acceptance_preserved"] "valid"
+  expect fixed ["old_acceptance_status"] "accepted"
+  expect fixed ["old_acceptance_witness", "replayed"] true
+  expect fixed ["old_acceptance_witness", "ledger_validity", "valid"] true
+  noCounterexample fixed
+
 -- Additional acceptance is permitted by bounded preservation, so optimizer
 -- verification needs strict function checking or bounded equivalence.
 #eval show IO Unit from do

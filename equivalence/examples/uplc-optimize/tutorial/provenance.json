@@ -1,0 +1,60 @@
+{
+  "upstream_fix": "https://github.com/IntersectMBO/plutus/pull/8022",
+  "generation_platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "generators": {
+    "historical": {
+      "revision": "261766ad1d582bce8c86bad1af7a3b0e5355b21c",
+      "version": "1.71.0.0 - git rev 261766ad1d582bce8c86bad1af7a3b0e5355b21c - 2026-09-29T19:16:57Z",
+      "binary_sha256": "8677fb4353cce61a52e5cfea0dfd37931ca3ae3986dfc464f8780f990b39251f"
+    },
+    "fixed": {
+      "revision": "1ef5a0eef37772e35b1e587f7a3b0afa61be4358",
+      "version": "1.72.0.0 - git rev 1ef5a0eef37772e35b1e587f7a3b0afa61be4358 - 2026-10-31T11:52:13Z",
+      "binary_sha256": "45938f62c6b665061562492bdbf7c1808d17e87f8dde0797ebf3ef6446808588"
+    }
+  },
+  "optimizer_arguments": [
+    "optimize",
+    "--if",
+    "textual",
+    "--of",
+    "textual",
+    "-i",
+    "INPUT",
+    "-o",
+    "OUTPUT"
+  ],
+  "source": "Handwritten integer reproducer and a V3 spending-validator adaptation reading its datum. Optimized files are actual tool outputs.",
+  "files_sha256": {
+    "ifthenelse.uplc": "5807461501b81661b500102a159f4d726bb56a121cef50f02fbbd8212b897be6",
+    "ifthenelseopt.uplc": "8fdb6483be6fd0fc9980c51e9fc453e4016facbc8c8d7aa138a497144830eb91",
+    "ifthenelse-fixed.uplc": "c5cba23752b4a0b23286b9c2477b2574fbbd9df721a0b815dcad35e065288639",
+    "tutorial/validator.uplc": "5a6aa94afb9a787ab0e1c7f965f5e70a76918cfc720e61cca18f851a38852f60",
+    "tutorial/validator-buggy.uplc": "c37643febaf5fa0feaf88df5a81d7cfff193c38eef10f0cc179fac010d0aa093",
+    "tutorial/validator-fixed.uplc": "fc3d64cc2a265684b2ba79cebb7f2e6c464c4d3a1b1a786f35a16bcad1221b68"
+  },
+  "paths_relative_to": "equivalence/examples/uplc-optimize",
+  "validator_check": {
+    "mode": "validator",
+    "language": "PlutusV3",
+    "bounded": true,
+    "equivalence": true,
+    "steps": 1000,
+    "max_inputs": 1,
+    "max_outputs": 1,
+    "max_signers": 1,
+    "timeout": 10,
+    "wall_timeout": 60,
+    "expected_buggy_verdict": "bounded_inequivalent",
+    "expected_fixed_verdict": "bounded_equivalent"
+  },
+  "function_check": {
+    "mode": "function",
+    "inputs": "integer",
+    "steps": 1000,
+    "timeout": 10,
+    "wall_timeout": 60,
+    "expected_buggy_verdict": "inequivalent",
+    "expected_fixed_verdict": "equivalent"
+  }
+}

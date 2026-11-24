@@ -1,7 +1,11 @@
 # UPLC optimizer regressions
 
-Original programs and actual `uplc optimize` outputs from **1.71.0.0**,
-revision `261766ad1d582bce8c86bad1af7a3b0e5355b21c` (default options).
+Start with the [step-by-step optimizer regression tutorial](tutorial/README.md). It
+compares an original V3 spending validator with actual historical and corrected
+optimizer outputs, and also covers the smallest integer-function reproducer.
+
+The historical optimized fixtures listed below are actual `uplc optimize` outputs
+from **1.71.0.0**, revision `261766ad1d582bce8c86bad1af7a3b0e5355b21c` (default options).
 
 | Program | Counterexample input | Original | Optimized |
 |---|---:|---|---:|
@@ -24,5 +28,15 @@ New counterexamples were also confirmed with `uplc evaluate` under variants E an
 reports unsupported `BitVec` translation when the decoder input is symbolic.
 It is covered separately as a known limitation, not a successful detection.
 
-Regenerate with `sh equivalence/examples/uplc-optimize/regenerate.sh /path/to/uplc`.
-The Lean tests use the checked-in outputs; they do not require the optimizer.
+The historical bug is fixed by [Plutus PR #8022](https://github.com/IntersectMBO/plutus/pull/8022).
+`ifthenelse-fixed.uplc` and `tutorial/validator-fixed.uplc` were generated with
+version **1.72.0.0**, revision `1ef5a0eef37772e35b1e587f7a3b0afa61be4358`.
+The tests check both corrected outputs against their originals; the validator
+comparison includes an accepted transaction witness.
+
+Regenerate historical outputs with
+`sh equivalence/examples/uplc-optimize/regenerate.sh /path/to/historical/uplc`.
+Regenerate the two corrected tutorial outputs with
+`sh equivalence/examples/uplc-optimize/regenerate-fixed.sh /path/to/fixed/uplc`.
+Both scripts check the generator revision to protect the historical fixtures.
+The Lean tests use checked-in outputs; they do not require either optimizer.
