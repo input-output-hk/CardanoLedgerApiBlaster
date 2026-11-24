@@ -1,5 +1,6 @@
 import Equivalence.Checker
 import Equivalence.Pretty
+import Equivalence.AssuranceExport
 
 /-!
 Exposes the equivalence checker as a command-line tool for script files.
@@ -26,6 +27,7 @@ structure Config extends Checker.Config where
   rightValidator : Option String := none
   wallTimeout : Nat := 180
   emitLean : Option String := none
+  emitAssurance : Option String := none
   json : Bool := false
   worker : Bool := false
 
@@ -72,6 +74,7 @@ Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D).
   --timeout SECONDS                                     Shared Z3 deadline per query (default 20)
   --wall-timeout SECONDS                                Limit the complete check, including preprocessing (default 180)
   --emit-lean FILE                                      Save the checked Lean queries for inspection
+  --emit-assurance DIR                                  Write assurance.json and comparison.json to a new directory (NEW must be a blueprint)
   --json                                                Emit a JSON report
   --help                                                Show this help
 
@@ -155,6 +158,8 @@ def parse (c : Config) : List String → Except String Config
       throw "--validator-left requires a blueprint OLD input"
     if c.rightValidator.isSome && c.rightFormat.getD c.format != "blueprint" then
       throw "--validator-right requires a blueprint NEW input"
+    if c.emitAssurance.isSome && c.rightFormat.getD c.format != "blueprint" then
+      throw "--emit-assurance requires a blueprint NEW input"
     return c
   | "--bounded" :: rest => parse { c with bounded := true } rest
   | "--mode" :: v :: rest => parse { c with mode := v } rest
@@ -188,6 +193,7 @@ def parse (c : Config) : List String → Except String Config
     parse { c with maxOutputs := ← natOption "--max-outputs" v, maximaSpecified := true } rest
   | "--max-signers" :: v :: rest => do
     parse { c with maxSigners := ← natOption "--max-signers" v, maximaSpecified := true } rest
+  | "--emit-assurance" :: v :: rest => parse { c with emitAssurance := some v } rest
   | "--emit-lean" :: v :: rest => parse { c with emitLean := some v } rest
   | "--seed" :: v :: rest => do parse { c with solverSeed := some (← natOption "--seed" v) } rest
   | "-j" :: v :: rest => do parse { c with solverJobs := ← natOption "-j" v true } rest
@@ -199,8 +205,9 @@ def parse (c : Config) : List String → Except String Config
     else if v.startsWith "-" then .error s!"unknown or incomplete option: {v}"
     else parse { c with scripts := c.scripts.push v } rest
 
-private def blueprintCode (source : String) (selector language : Option String) :
-    Except String String := do
+private def blueprintScript (source : String) (selector language : Option String)
+    (requireReference : Bool) :
+    Except String AssuranceExport.BlueprintScript := do
   let blueprint ← PlutusCore.UPLC.BlueprintEncoding.Internal.parseBlueprint source
   let version := blueprint.preamble.plutusVersion
   if let some language := language then
@@ -217,33 +224,40 @@ private def blueprintCode (source : String) (selector language : Option String) 
         throw s!"multiple validators with compiledCode; use --validator-left or --validator-right ({choices})"
   let some code := validator.compiledCode | throw s!"validator '{validator.title}' has no compiledCode"
   let code := code.trim
+  let hash ← PlutusCore.UPLC.BlueprintEncoding.Internal.actualScriptHash version code
   if let some expected := validator.hash then
-    let actual ← PlutusCore.UPLC.BlueprintEncoding.Internal.actualScriptHash version code
-    unless expected.toLower == actual do
-      throw s!"validator '{validator.title}': compiledCode hash mismatch (declared {expected}, computed {actual})"
-  return code
+    unless expected.toLower == hash do
+      throw s!"validator '{validator.title}': compiledCode hash mismatch (declared {expected}, computed {hash})"
+  let reference := selector.getD (validator.id.getD validator.title)
+  if requireReference && selector.isNone then
+    unless (PlutusCore.UPLC.BlueprintEncoding.Internal.resolveValidator blueprint.validators reference).toOption.any
+        (fun v => v.id == validator.id && v.title == validator.title && v.compiledCode == validator.compiledCode) do
+      throw "assurance export needs an unambiguous validator reference; use --validator-left or --validator-right"
+  return { code, hash, reference }
 
-private def readInput (path format : String) (selector language : Option String) :
-    IO (PlutusCore.UPLC.Term.Program × Option String) := do
-  if format == "blueprint" then
-    let source ← IO.FS.readFile path
-    let result := do
-      let code ← blueprintCode source selector language
-      let program ← singleCborEncodedScriptFromHex? code
-      return (program, some code)
-    return ← IO.ofExcept (result.mapError fun error => s!"Cannot import {path}: {error}")
-  let parsed : Except String PlutusCore.UPLC.Term.Program ← match format with
-    | "textual" => do pure <| PlutusCore.UPLC.TextEncoding.programFromString (← IO.FS.readFile path)
-    | "flat" => do
-      let bytes ← IO.FS.readBinFile path
-      pure <| flatEncodedScriptFromBytestring? (String.mk (bytes.data.toList.map (fun b => Char.ofNat b.toNat)))
-    | "flat_hex" => do pure <| flatEncodedScriptFromHex? (← IO.FS.readFile path).trim
-    | "single_cbor_hex" => do pure <| singleCborEncodedScriptFromHex? (← IO.FS.readFile path).trim
-    | "double_cbor_hex" => do pure <| doubleCborEncodedScriptFromHex? (← IO.FS.readFile path).trim
-    | _ => throw <| IO.userError s!"unsupported format: {format}"
-  match parsed with
-  | .ok program => return (program, none)
-  | .error error => throw <| IO.userError s!"Cannot import {path}: {error}"
+private def readInput (path : FilePath) (format : String) (selector language : Option String)
+    (requireReference := false) :
+    IO (PlutusCore.UPLC.Term.Program × AssuranceExport.Input) := do
+  let bytes ← IO.FS.readBinFile path
+  let input : AssuranceExport.Input := { path, format, bytes }
+  let parsed : Except String (PlutusCore.UPLC.Term.Program × AssuranceExport.Input) := do
+    if format == "flat" then
+      let program ← flatEncodedScriptFromBytestring?
+        (String.mk (bytes.data.toList.map (fun b => Char.ofNat b.toNat)))
+      return (program, input)
+    let some source := String.fromUTF8? bytes | throw "expected UTF-8 input"
+    if format == "blueprint" then
+      let script ← blueprintScript source selector language requireReference
+      let program ← singleCborEncodedScriptFromHex? script.code
+      return (program, { input with blueprint := some script })
+    let program ← match format with
+      | "textual" => PlutusCore.UPLC.TextEncoding.programFromString source
+      | "flat_hex" => flatEncodedScriptFromHex? source.trim
+      | "single_cbor_hex" => singleCborEncodedScriptFromHex? source.trim
+      | "double_cbor_hex" => doubleCborEncodedScriptFromHex? source.trim
+      | _ => throw s!"unsupported format: {format}"
+    return (program, input)
+  IO.ofExcept (parsed.mapError fun error => s!"Cannot import {path}: {error}")
 
 def readProgram (path format : String) : IO PlutusCore.UPLC.Term.Program := do
   return (← readInput path format none none).1
@@ -325,14 +339,44 @@ private def emitSource (env : Environment) (c : Config) (header : String)
       "\n-- The checker separately replays an OLD-accepting input before reporting\n-- nonvacuous preservation. These queries alone do not reproduce that replay.\n") ++
     scope ++ String.join chunks)
 
+private def assuranceSettings (c : Config) : Json :=
+  Json.mkObj (c.toConfig.stepLimitFields ++ [
+    ("mode", toJson c.mode), ("language", toJson c.language), ("inputs", toJson c.inputs),
+    ("equivalence", toJson c.equivalence),
+    ("budget", c.budget.map (fun (cpu, memory) =>
+      Json.mkObj [("cpu", toJson cpu), ("memory", toJson memory)]) |>.getD Json.null),
+    ("max_inputs", toJson c.maxInputs), ("max_outputs", toJson c.maxOutputs),
+    ("max_signers", toJson c.maxSigners), ("timeout", toJson c.timeout),
+    ("wall_timeout", toJson c.wallTimeout), ("skip_old_rejected", toJson c.skipOldRejected),
+    ("split_dispatch", toJson c.splitDispatch), ("dispatch_cases", toJson c.dispatchCaseLimit),
+    ("dispatch_timeout", toJson c.dispatchTimeout)])
+
+private def assuranceClaim (c : Config) : String :=
+  let relation := if c.mode == "validator" then
+    if c.equivalence then "NEW and OLD accept the same inputs"
+    else "NEW accepts every input accepted by OLD"
+  else if !c.bounded then "NEW and OLD have equal function outcomes"
+  else if c.equivalence then "NEW and OLD observe the same function results"
+  else "NEW preserves every function result observed from OLD"
+  relation ++ " in the input domain and limits recorded in the comparison artifact."
+
 def run (c : Config) : IO Json := do
   let c ← IO.ofExcept (parse c [])
+  if let some dir := c.emitAssurance then
+    if ← (FilePath.mk dir).pathExists then
+      throw (IO.userError s!"Assurance output directory already exists: {dir}")
+  let inputPath (path : String) : IO FilePath :=
+    if c.emitAssurance.isSome then IO.FS.realPath path else pure path
   progress "Starting: loading OLD script"
   reportPhase "loading"
-  let (left, leftCode) ← readInput c.scripts[0]! (c.leftFormat.getD c.format) c.leftValidator (some c.language)
+  let (left, oldInput) ← readInput (← inputPath c.scripts[0]!) (c.leftFormat.getD c.format)
+    c.leftValidator (some c.language) c.emitAssurance.isSome
   progress "Starting: loading NEW script"
-  let (right, rightCode) ← readInput c.scripts[1]! (c.rightFormat.getD c.format) c.rightValidator (some c.language)
-  let header ← if c.emitLean.isSome then sourceHeader c leftCode rightCode else pure ""
+  let (right, newInput) ← readInput (← inputPath c.scripts[1]!) (c.rightFormat.getD c.format)
+    c.rightValidator (some c.language) c.emitAssurance.isSome
+  let header ← if c.emitLean.isSome then
+    sourceHeader c (oldInput.blueprint.map (·.code)) (newInput.blueprint.map (·.code))
+    else pure ""
   let inspectQueries := fun env results => do
     if c.emitLean.isSome then
       progress (if results.isEmpty then "Starting: exporting initial Lean queries"
@@ -344,6 +388,11 @@ def run (c : Config) : IO Json := do
     progress "Starting: exporting program-identity proof"
     reportPhase "exporting"
     emitIdenticalSource c header
+  if let some dir := c.emitAssurance then
+    if (result.getObjValAs? String "verdict").toOption != some "error" then
+      progress "Starting: exporting assurance evidence"
+      reportPhase "exporting"
+      AssuranceExport.write dir oldInput newInput (assuranceClaim c) (assuranceSettings c) result
   return result
 
 partial def waitUntil (child : IO.Process.Child cfg) (deadline : Nat) : IO Bool := do

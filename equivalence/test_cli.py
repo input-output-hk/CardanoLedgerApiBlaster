@@ -154,6 +154,46 @@ class CheckerProcess(unittest.TestCase):
                 self.assertEqual(status, 0, report)
                 self.assertEqual(report["derived_queries"]["function_equivalent"], "program_identity")
 
+            export = Path(directory) / "evidence"
+            named_bytes = named.read_bytes()
+            status, report = check(path, named, "--format-right", "blueprint",
+                                   "--validator-right", "fib", "--emit-assurance", str(export))
+            self.assertEqual(status, 0, report)
+            assurance_path = export / "assurance.json"
+            assurance = json.loads(assurance_path.read_text())
+            claim = assurance["properties"][0]
+            evidence = claim["evidence"][0]
+            self.assertEqual(claim["scope"]["validators"], ["fib"])
+            self.assertEqual(evidence["outcome"], "verified")
+            self.assertEqual(evidence["scriptHash"], validator["hash"])
+            self.assertEqual(assurance["blueprint"]["hash"]["digest"],
+                             hashlib.sha256(named_bytes).hexdigest())
+            artifact = export / evidence["artifact"]["uri"]
+            self.assertEqual(evidence["artifact"]["hash"]["digest"],
+                             hashlib.sha256(artifact.read_bytes()).hexdigest())
+            comparison = json.loads(artifact.read_text())
+            self.assertEqual(comparison["old"]["scriptHash"], validator["hash"])
+            self.assertEqual(comparison["new"]["scriptHash"], validator["hash"])
+            self.assertEqual(comparison["result"], report)
+            self.assertEqual(comparison["settings"]["inputs"], "integer")
+            self.assertEqual(named.read_bytes(), named_bytes)
+            self.assertEqual(path.read_text(), json.dumps({**blueprint, "validators": [validator]}))
+            status, report = check(path, named, "--format-right", "blueprint",
+                                   "--validator-right", "fib", "--emit-assurance", str(export))
+            self.assertEqual(status, 3, report)
+            self.assertIn("already exists", report["explanation"])
+            self.assertEqual(json.loads(assurance_path.read_text()), assurance)
+
+            verify = Path(directory) / "verify.lean"
+            verify.write_text("import PlutusCore.UPLC\n"
+                              f"#verify_blueprint Comparison {json.dumps(str(assurance_path))}\n")
+            checked = subprocess.run(
+                ["lake", "env", "lean", str(verify)], cwd=ROOT,
+                capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+            self.assertIn("natural-language only", checked.stdout + checked.stderr)
+
             status, report = check(path, script, "--language", "PlutusV2")
             self.assertEqual(status, 3, report)
             self.assertIn("comparison uses PlutusV2", report["explanation"])

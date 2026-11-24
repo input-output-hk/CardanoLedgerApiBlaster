@@ -194,6 +194,7 @@ object.
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--json` | Off | Print the final report as JSON instead of readable text. |
+| `--emit-assurance DIR` | None | Export assurance evidence for a NEW blueprint to a fresh directory. |
 | `--emit-lean FILE` | None | Export the checked Lean queries with the same domain and bounds. |
 | `--help` | — | Print usage and options. |
 
@@ -213,6 +214,38 @@ dispatch splitting, exports contain the original full-domain queries, not a
 partition proof presented as a single solver result. Native witness validation
 remains separate. CLI verification uses Blaster's SMT result without reconstructed
 Lean proof terms.
+
+### Export assurance evidence
+
+When NEW is a blueprint, `--emit-assurance DIR` saves a completed comparison:
+
+```sh
+lake exe uplc_equiv old/plutus.json new/plutus.json \
+  --validator-left escrow.spend --validator-right escrow.spend \
+  --bounded --equivalence --max-inputs 1 --max-outputs 1 \
+  --emit-assurance escrow-evidence
+```
+
+Choose a new directory under an existing parent. The export contains:
+
+- `assurance.json` references the NEW blueprint by local path and SHA-256, names
+  the selected validator, and records the comparison claim and evidence outcome.
+- `comparison.json` records both inputs and their file digests, the selected
+  script hashes for blueprint inputs, the effective settings, and the full
+  checker report including any replayed counterexample. Its SHA-256 is recorded
+  in the assurance document.
+
+The export uses the draft assurance schema bundled with PlutusCoreBlaster.
+`#verify_blueprint` can check the blueprint and artifact bindings. The comparison
+is historical evidence with a natural-language statement, so that command does
+not rerun it. To repeat the comparison, run `uplc_equiv` with the recorded inputs
+and settings. The generated blueprint reference is an absolute local path.
+
+A replayed difference is recorded as `falsified`, a positive verdict as
+`verified`, a vacuous verdict as `partial`, and an inconclusive verdict as
+`inconclusive`. Export starts after the checker returns a verdict. A tool error or timeout that
+interrupts the comparison produces no assurance evidence. The regular report and exit status retain their
+usual meanings.
 
 ### Verdicts and exit codes
 
