@@ -343,6 +343,7 @@ see the [full input-domain description](equivalence/README.md#structured-context
 | `--max-inputs N` | 2 | Include up to N transaction inputs. |
 | `--max-outputs N` | 2 | Include up to N transaction outputs. |
 | `--max-signers N` | 2 | Include up to N signer keys. |
+| `--max-earlier-spending-redeemers N` | 0 | Include up to N spending redeemers before the current map entry. |
 | `--datum DATA`, `--redeemer DATA` | Symbolic | Fix a value to focus the comparison. |
 | `--timeout SECONDS` | 20 | Bound each Z3 query. |
 | `--wall-timeout SECONDS` | 180 | Bound the complete check, including preprocessing. |

@@ -22,6 +22,8 @@ structure Limits where
   datum : Option Data := none
   /-- Optional fixed spending redeemer. -/
   redeemer : Option Data := none
+  /-- Maximum number of spending redeemers before the current entry in the map. -/
+  maxEarlierSpendingRedeemers : Nat := 0
   deriving Repr
 
 /-- Fixed TxInInfo/TxOut encodings with independent symbolic contents.
@@ -100,19 +102,32 @@ structure Fields where
   validRange : Data := Context.range 0 3000000
   unused : Context.RawUnusedTxInfo := { fee := .I 1 }
 
+def earlierRedeemerStem (index : Nat) : String := s!"earlierRedeemer{index}"
+
+def earlierRedeemerEntry (txId : ByteString) (index : Int) (value : Data) : Data × Data :=
+  Context.spendingRedeemerEntry (Context.outputReference txId index) value
+
 def args (f : Fields) (inputs : List Input) (outputs : List Output) (signers : List Data) : List Term :=
   let tx := context_tx_info% f.unused (inputs.map Input.toData)
     (.List (outputs.map Output.toData)) signers f.validRange
   Queries.contextArgs (Context.spendingContext tx f.redeemer
     (Context.outputReference f.scriptTxId f.scriptIndex) f.datum)
 
+private def argsWithEarlierRedeemers (base : List Term) (earlier : List (Data × Data)) : List Term :=
+  match base with
+  | [.Const (.Data raw)] => Queries.contextArgs (Context.prependEarlierRedeemers raw earlier)
+  | _ => base
+
 def context (f : Fields := {}) (inputs : List Input := [{}])
-    (outputs : List Output := [{}]) (signers : List Data := []) : Data :=
+    (outputs : List Output := [{}]) (signers : List Data := [])
+    (earlierRedeemers : List (Data × Data) := []) : Data :=
   match args f inputs outputs signers with
-  | [.Const (.Data raw)] => raw
+  | [.Const (.Data raw)] =>
+    if earlierRedeemers.isEmpty then raw else Context.prependEarlierRedeemers raw earlierRedeemers
   | _ => .I 0
 
-def unpack (limits : Limits) (raw : Data) : Option (Fields × List Input × List Output × List Data) := do
+def unpackWithEarlierRedeemers (limits : Limits) (raw : Data) :
+    Option ((Fields × List Input × List Output × List Data) × List (Data × Data)) := do
   let frame ← Context.unpackSpendingContext raw
   if let some datum := limits.datum then
     unless frame.datum == datum do none
@@ -122,12 +137,20 @@ def unpack (limits : Limits) (raw : Data) : Option (Fields × List Input × List
   unless frame.inputs.length ≤ limits.maxInputs && frame.outputs.length ≤ limits.maxOutputs &&
       frame.signers.length ≤ limits.maxSigners &&
       frame.signers.all (fun d => match d with | .B _ => true | _ => false) do none
+  unless frame.earlierRedeemers.length ≤ limits.maxEarlierSpendingRedeemers &&
+      frame.earlierRedeemers.all (fun (purpose, _) => match purpose with
+        | .Constr 1 [.Constr 0 [.B _, .I _]] => true
+        | _ => false) do none
   let inputs ← frame.inputs.mapM Input.fromData
   let outputs ← frame.outputs.mapM Output.fromData
-  return ({
+  return (({
     scriptTxId := scriptTxId, scriptIndex := scriptIndex, datum := frame.datum
     redeemer := frame.redeemer, validRange := frame.validRange, unused := frame.unused },
-    inputs, outputs, frame.signers)
+    inputs, outputs, frame.signers), frame.earlierRedeemers)
+
+/-- Decode the base fields of a context. Use `unpackWithEarlierRedeemers` to retain the prefix. -/
+def unpack (limits : Limits) (raw : Data) : Option (Fields × List Input × List Output × List Data) :=
+  (unpackWithEarlierRedeemers limits raw).map Prod.fst
 
 def contains (limits : Limits) (raw : Data) : Bool := (unpack limits raw).isSome
 
@@ -255,6 +278,11 @@ def proposition (limits : Limits) (predicate : Expr)
   specs := specs ++ rawFields.filter (fun (name, _) => name != `outputs)
   for i in [:limits.maxSigners] do
     specs := specs.push (Name.mkSimple s!"signer{i}", mkConst ``ByteString)
+  for i in [:limits.maxEarlierSpendingRedeemers] do
+    let stem := earlierRedeemerStem i
+    specs := specs ++ #[(Name.mkSimple (stem ++ "TxId"), mkConst ``ByteString),
+      (Name.mkSimple (stem ++ "Index"), mkConst ``Int),
+      (Name.mkSimple (stem ++ "Value"), mkConst ``Data)]
   let result ← withVariables specs.toList fun vars => do
     let bindings := (specs.map Prod.fst).zip vars
     let find := fun name => ((fixed.lookup name).orElse fun _ =>
@@ -262,6 +290,11 @@ def proposition (limits : Limits) (predicate : Expr)
     let unused := recordExpr ``Context.RawUnusedTxInfo (rawFields.map fun (name, _) =>
       if name == `outputs then toExpr (Data.List []) else find name)
     let frame := recordExpr ``Fields ((frameFields.map (fun (name, _) => find name)).push unused)
+    let earlierEntries := (Array.range limits.maxEarlierSpendingRedeemers).map fun i =>
+      let stem := earlierRedeemerStem i
+      mkApp3 (mkConst ``earlierRedeemerEntry)
+        (find (Name.mkSimple (stem ++ "TxId"))) (find (Name.mkSimple (stem ++ "Index")))
+        (find (Name.mkSimple (stem ++ "Value")))
     let mut records := #[]
     for (fields, i) in inputs.zipIdx do
       records := records.push (Name.mkSimple s!"i{i}", mkConst ``Input,
@@ -269,6 +302,9 @@ def proposition (limits : Limits) (predicate : Expr)
     for (fields, i) in outputs.zipIdx do
       records := records.push (Name.mkSimple s!"o{i}", mkConst ``Output,
         recordExpr ``Output (fields.map fun (name, _) => find name))
+    let entryType := mkApp2 (mkConst ``Prod [.zero, .zero]) (mkConst ``Data) (mkConst ``Data)
+    let prefixes ← (List.range' 1 limits.maxEarlierSpendingRedeemers).mapM fun n =>
+      mkListLit entryType (earlierEntries.extract 0 n).toList
     records := records.push (`f, mkConst ``Fields, frame)
     let body ← withRecords records.toList fun records => do
       let inputVars := records.extract 0 limits.maxInputs
@@ -285,6 +321,9 @@ def proposition (limits : Limits) (predicate : Expr)
               (← mkListLit (mkConst ``Output) (outputVars.extract 0 o).toList),
               (← mkListLit (mkConst ``Data) (keys.extract 0 s).toList)]
             cases := mkApp predicate args :: cases
+            for earlier in prefixes do
+              let extended := mkApp2 (mkConst ``argsWithEarlierRedeemers) args earlier
+              cases := mkApp predicate extended :: cases
       return mkAndN cases.reverse
     if let some restriction := restriction then
       return ← mkArrow (← mkEq (mkApp2 restriction (find `datum) (find `redeemer)) (toExpr true)) body
@@ -292,8 +331,9 @@ def proposition (limits : Limits) (predicate : Expr)
   check result
   return result
 
-/-- Generate balanced search subsets for all permitted counts. Only a native
-    ledger-valid replay of a falsifying model counts as acceptance evidence. -/
+/-- Generate balanced search subsets for the input, output and signer counts,
+    with the current redeemer first. Only a native ledger-valid replay of a
+    falsifying model counts as acceptance evidence. -/
 def witnessProposition (limits : Limits) (predicate : Expr) : MetaM Expr := do
   let mut specs := #[(`datum, mkConst ``Data), (`redeemer, mkConst ``Data),
     (`input0AddressHash, mkConst ``ByteString)]
@@ -367,19 +407,21 @@ def witnessProposition (limits : Limits) (predicate : Expr) : MetaM Expr := do
   return result
 
 /-- Standalone exports use the same generator as the checker. -/
-syntax "valid_context% " num num num term:max : term
+syntax "valid_context% " num num num (" earlier_redeemers " num)? term:max : term
 
 elab_rules : term
-  | `(valid_context% $inputs:num $outputs:num $signers:num $predicate) => do
+  | `(valid_context% $inputs:num $outputs:num $signers:num $[earlier_redeemers $earlier:num]? $predicate) => do
     let type ← Lean.mkArrow (mkApp (mkConst ``List [.zero]) (mkConst ``PlutusCore.UPLC.Term.Term)) (mkSort .zero)
     let predicate ← Elab.Term.elabTerm predicate (some type)
     Elab.Term.synthesizeSyntheticMVarsNoPostponing
     proposition {
       maxInputs := inputs.getNat, maxOutputs := outputs.getNat,
-      maxSigners := signers.getNat } (← instantiateMVars predicate)
+      maxSigners := signers.getNat,
+      maxEarlierSpendingRedeemers := (earlier.map (·.getNat)).getD 0 } (← instantiateMVars predicate)
 
 private def elabFixedContext (inputs outputs signers : TSyntax `num)
-    (datum redeemer : Option (TSyntax `term)) (predicate : TSyntax `term) : Elab.Term.TermElabM Expr := do
+    (earlier : Option (TSyntax `num)) (datum redeemer : Option (TSyntax `term))
+    (predicate : TSyntax `term) : Elab.Term.TermElabM Expr := do
   let elaborate := fun value => do
     let result ← Elab.Term.elabTerm value (some (mkConst ``Data))
     Elab.Term.synthesizeSyntheticMVarsNoPostponing
@@ -391,18 +433,19 @@ private def elabFixedContext (inputs outputs signers : TSyntax `num)
   Elab.Term.synthesizeSyntheticMVarsNoPostponing
   proposition {
     maxInputs := inputs.getNat, maxOutputs := outputs.getNat,
-    maxSigners := signers.getNat } (← instantiateMVars predicate)
+    maxSigners := signers.getNat,
+    maxEarlierSpendingRedeemers := (earlier.map (·.getNat)).getD 0 } (← instantiateMVars predicate)
     (fixedDatum := datum) (fixedRedeemer := redeemer)
 
 /-- Standalone exports preserve optional fixed spending arguments. -/
-syntax "valid_context_datum% " num num num term:max term:max : term
-syntax "valid_context_redeemer% " num num num term:max term:max : term
-syntax "valid_context_fixed% " num num num term:max term:max term:max : term
+syntax "valid_context_datum% " num num num (" earlier_redeemers " num)? term:max term:max : term
+syntax "valid_context_redeemer% " num num num (" earlier_redeemers " num)? term:max term:max : term
+syntax "valid_context_fixed% " num num num (" earlier_redeemers " num)? term:max term:max term:max : term
 elab_rules : term
-  | `(valid_context_datum% $inputs:num $outputs:num $signers:num $datum $predicate) =>
-    elabFixedContext inputs outputs signers (some datum) none predicate
-  | `(valid_context_redeemer% $inputs:num $outputs:num $signers:num $redeemer $predicate) =>
-    elabFixedContext inputs outputs signers none (some redeemer) predicate
-  | `(valid_context_fixed% $inputs:num $outputs:num $signers:num $datum $redeemer $predicate) =>
-    elabFixedContext inputs outputs signers (some datum) (some redeemer) predicate
+  | `(valid_context_datum% $inputs:num $outputs:num $signers:num $[earlier_redeemers $earlier:num]? $datum $predicate) =>
+    elabFixedContext inputs outputs signers earlier (some datum) none predicate
+  | `(valid_context_redeemer% $inputs:num $outputs:num $signers:num $[earlier_redeemers $earlier:num]? $redeemer $predicate) =>
+    elabFixedContext inputs outputs signers earlier none (some redeemer) predicate
+  | `(valid_context_fixed% $inputs:num $outputs:num $signers:num $[earlier_redeemers $earlier:num]? $datum $redeemer $predicate) =>
+    elabFixedContext inputs outputs signers earlier (some datum) (some redeemer) predicate
 end Equivalence.ValidContext

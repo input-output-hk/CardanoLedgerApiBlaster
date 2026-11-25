@@ -52,6 +52,7 @@ Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D).
   --max-inputs N                                        Include 0..N transaction inputs (validator only; default 2)
   --max-outputs N                                       Include 0..N transaction outputs (validator only; default 2)
   --max-signers N                                       Include 0..N signer keys (validator only; default 2)
+  --max-earlier-spending-redeemers N                     Include 0..N spending redeemers before the current entry (validator only; default 0)
   --redeemer DATA                                       Fix the spending redeemer (textual Plutus Data)
   --datum DATA                                          Fix the spending datum (textual Plutus Data); other context fields remain symbolic
   DATA shorthand: integers become I n; text becomes UTF-8 bytes; JSON quotes force text.
@@ -150,7 +151,7 @@ def parse (c : Config) : List String → Except String Config
         leftFormat := c.leftFormat.orElse fun _ => inferFormat c.scripts[0]!
         rightFormat := c.rightFormat.orElse fun _ => inferFormat c.scripts[1]! }
     if c.mode == "function" && c.maximaSpecified then
-      throw "--max-inputs, --max-outputs and --max-signers are validator options"
+      throw "transaction count limits are validator options"
     c.toConfig.validate
     for f in [c.format, c.leftFormat.getD c.format, c.rightFormat.getD c.format] do
       unless formats.contains f do throw s!"unsupported format: {f}"
@@ -193,6 +194,9 @@ def parse (c : Config) : List String → Except String Config
     parse { c with maxOutputs := ← natOption "--max-outputs" v, maximaSpecified := true } rest
   | "--max-signers" :: v :: rest => do
     parse { c with maxSigners := ← natOption "--max-signers" v, maximaSpecified := true } rest
+  | "--max-earlier-spending-redeemers" :: v :: rest => do
+    let count ← natOption "--max-earlier-spending-redeemers" v
+    parse { c with maxEarlierSpendingRedeemers := count, maximaSpecified := true } rest
   | "--emit-assurance" :: v :: rest => parse { c with emitAssurance := some v } rest
   | "--emit-lean" :: v :: rest => parse { c with emitLean := some v } rest
   | "--seed" :: v :: rest => do parse { c with solverSeed := some (← natOption "--seed" v) } rest
@@ -327,6 +331,8 @@ private def emitSource (env : Environment) (c : Config) (header : String)
     let datumText ← c.datum.mapM renderData
     let redeemerText ← c.redeemer.mapM renderData
     let counts := s!"{c.maxInputs} {c.maxOutputs} {c.maxSigners}"
+    let counts := if c.maxEarlierSpendingRedeemers == 0 then counts
+      else counts ++ s!" earlier_redeemers {c.maxEarlierSpendingRedeemers}"
     let proposition := match datumText, redeemerText with
       | some datum, some redeemer =>
         s!"valid_context_fixed% {counts} ({datum}) ({redeemer}) ({rendered.pretty})"
@@ -355,7 +361,8 @@ private def assuranceSettings (c : Config) : Json :=
     ("budget", c.budget.map (fun (cpu, memory) =>
       Json.mkObj [("cpu", toJson cpu), ("memory", toJson memory)]) |>.getD Json.null),
     ("max_inputs", toJson c.maxInputs), ("max_outputs", toJson c.maxOutputs),
-    ("max_signers", toJson c.maxSigners), ("timeout", toJson c.timeout),
+    ("max_signers", toJson c.maxSigners),
+    ("max_earlier_spending_redeemers", toJson c.maxEarlierSpendingRedeemers), ("timeout", toJson c.timeout),
     ("wall_timeout", toJson c.wallTimeout), ("skip_old_rejected", toJson c.skipOldRejected),
     ("split_dispatch", toJson c.splitDispatch), ("dispatch_cases", toJson c.dispatchCaseLimit),
     ("dispatch_timeout", toJson c.dispatchTimeout)])

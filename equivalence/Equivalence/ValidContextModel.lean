@@ -81,6 +81,10 @@ def modelContexts (limits : Limits) (model : List String) : List Data := Id.run 
     datum := limits.datum.getD (raw "datum" d.datum), redeemer := limits.redeemer.getD (raw "redeemer" d.redeemer)
     validRange := raw "validRange" d.validRange, unused := unusedFromModel data d.unused }
   let sanitized := sanitize f
+  let earlierEntries := (List.range limits.maxEarlierSpendingRedeemers).map fun i =>
+    let stem := earlierRedeemerStem i
+    earlierRedeemerEntry (key (stem ++ "TxId") ⟨String.mk (List.replicate 32 'a')⟩)
+      (number (stem ++ "Index") (Int.ofNat i)) (raw (stem ++ "Value") (.I 0))
   let input := fun (i : Nat) =>
     let stem := s!"input{i}"
     let d : Input := {
@@ -134,10 +138,12 @@ def modelContexts (limits : Limits) (model : List String) : List Data := Id.run 
       let balancedCases := (if inputCount ≤ 1 then [0] else [0, inputCount - 1]).map
         (balance sanitized inputsAligned outputsSafe)
       for signers in signerCases do
-        candidates := context f inputs outputs signers :: candidates
-        candidates := context sanitized inputs outputsSafe signers :: candidates
-        for (f, balanced) in balancedCases do
-          candidates := context f balanced outputsSafe signers :: candidates
+        for n in List.range (limits.maxEarlierSpendingRedeemers + 1) do
+          let earlierRedeemers := earlierEntries.take n
+          candidates := context f inputs outputs signers earlierRedeemers :: candidates
+          candidates := context sanitized inputs outputsSafe signers earlierRedeemers :: candidates
+          for (f, balanced) in balancedCases do
+            candidates := context f balanced outputsSafe signers earlierRedeemers :: candidates
   return candidates.reverse
 
 end Equivalence.ValidContext

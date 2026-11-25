@@ -67,6 +67,7 @@ def Config.validate (c : Config) : Except String Unit := do
   if c.mode == "validator" && !c.bounded && c.budget.isNone then
     throw "validator checking requires --budget CPU MEMORY or --bounded --steps N"
   if c.mode == "function" then
+    if c.maxEarlierSpendingRedeemers != 0 then throw "earlier spending redeemer limit is a validator option"
     if c.splitDispatch then throw "--split-dispatch is a validator option"
     if c.datum.isSome then throw "--datum is a validator option"
     if c.redeemer.isSome then throw "--redeemer is a validator option"
@@ -174,7 +175,7 @@ def queryEvidence (c : Config) (query : Query) (results : Array Blaster.Smt.Resu
 
 def inputDomain (c : Config) : String :=
   if c.mode == "validator" then
-    s!"Structured V3 spending contexts with 0..{c.maxInputs} independently symbolic inputs, 0..{c.maxOutputs} outputs and 0..{c.maxSigners} signer byte strings; present script datum; typed independent input and spending references; input pubkey/script credentials without staking and absent/hash/inline datums; outputs have arbitrary addresses and inline datums; no reference scripts; each value has an ADA entry and one independent policy/token entry; arbitrary Data validity range, datum, redeemer and unused fields; unbounded integers and byte strings; symbolic queries require CardanoLedgerApi.V3.validSpendingContext; concrete witnesses and counterexamples are independently ledger-validated and natively replayed; model validity does not establish on-chain reachability" ++
+    s!"Structured V3 spending contexts with 0..{c.maxInputs} independently symbolic inputs, 0..{c.maxOutputs} outputs and 0..{c.maxSigners} signer byte strings; present script datum; typed independent input and spending references; input pubkey/script credentials without staking and absent/hash/inline datums; outputs have arbitrary addresses and inline datums; no reference scripts; each value has an ADA entry and one independent policy/token entry; arbitrary Data validity range, datum and redeemer; 0..{c.maxEarlierSpendingRedeemers} spending redeemers before the current map entry and a symbolic tail; other auxiliary fields are arbitrary Data; unbounded integers and byte strings; symbolic queries require CardanoLedgerApi.V3.validSpendingContext; concrete witnesses and counterexamples are independently ledger-validated and natively replayed; model validity does not establish on-chain reachability" ++
     (c.datum.map (fun datum => s!"; restricted to spending datum {datum}")).getD "" ++
     (c.redeemer.map (fun redeemer => s!"; restricted to spending redeemer {redeemer}")).getD ""
   else if c.inputs == "integer" then "all integers, encoded as raw UPLC integer constants"
@@ -723,7 +724,8 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
     [("context_limits", Json.mkObj [
       ("inputs_min", toJson (0 : Nat)), ("inputs_max", toJson c.maxInputs),
       ("outputs_min", toJson (0 : Nat)), ("outputs_max", toJson c.maxOutputs),
-      ("signers_max", toJson c.maxSigners), ("integer_bits", Json.null),
+      ("signers_max", toJson c.maxSigners),
+      ("earlier_spending_redeemers_max", toJson c.maxEarlierSpendingRedeemers), ("integer_bits", Json.null),
       ("inspected_byte_string_bytes", Json.null),
       ("value_policy_entries", toJson (2 : Nat)), ("tokens_per_policy", toJson (1 : Nat)),
       ("script_purpose", toJson "spending"), ("validity_range", toJson "arbitrary Data")])] ++

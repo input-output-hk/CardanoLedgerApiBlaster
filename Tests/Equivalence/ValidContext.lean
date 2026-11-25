@@ -84,6 +84,46 @@ def settings : Support.Config := { acceptanceConfig with
 def branch (condition yes no : String) : String :=
   s!"(force [[[(force (builtin ifThenElse)) {condition}] (delay {yes})] (delay {no})])"
 
+#eval show IO Unit from do
+  let input : ValidContext.Input := {}
+  let inputs := (List.range 3).map fun i => { input with index := Int.ofNat i }
+  let output : ValidContext.Output := { ada := 29999999, quantity := 3 }
+  let entries := (List.range 3).map fun i =>
+    ValidContext.earlierRedeemerEntry input.txId (Int.ofNat i) (.I (Int.ofNat i))
+  for count in [0, 1, 2] do
+    let fields : ValidContext.Fields := {
+      scriptIndex := Int.ofNat count, redeemer := .I (Int.ofNat count)
+      unused := { fee := .I 1, redeemers := .Map (entries.drop (count + 1)) } }
+    let raw := ValidContext.context fields inputs [output] [] (entries.take count)
+    unless Ledger.validContext raw do
+      throw <| IO.userError s!"Unexpected invalid redeemer map: {(Ledger.audit raw).pretty}"
+    for limit in [0, 1, 2] do
+      let options : ValidContext.Limits := { maxInputs := 3, maxEarlierSpendingRedeemers := limit }
+      unless ValidContext.contains options raw == (count ≤ limit) do
+        throw <| IO.userError s!"Expected prefix length {count} to respect limit {limit}"
+    let some ((decoded, inputs, outputs, signers), earlier) := ValidContext.unpackWithEarlierRedeemers
+        { maxInputs := 3, maxEarlierSpendingRedeemers := 2 } raw
+      | throw <| IO.userError "Could not unpack the sorted redeemer map"
+    unless ValidContext.context decoded inputs outputs signers earlier == raw do
+      throw <| IO.userError "Redeemer map failed round-trip"
+
+#eval show IO Unit from do
+  let first := s!"[(force (builtin headList)) [(builtin unMapData) {contextFieldTerm [0, 9]}]]"
+  let value := s!"[(force (force (builtin sndPair))) {first}]"
+  let reject := rejectIf s!"[[(builtin equalsData) {value}] (con data (I 1))]"
+  let decode := fun term => IO.ofExcept (PlutusCore.UPLC.TextEncoding.programFromString
+    s!"(program 1.1.0 {term})")
+  let old ← decode "(lam c (con unit ()))"
+  let new ← decode reject
+  let model := ["scriptIndex: 1", "input1IsScript: true", "input1HasDatum: true",
+    "earlierRedeemer0Value: (Data.I 1)"]
+  let options := { settings.toConfig with maxInputs := 2, maxSigners := 0 }
+  expect (Checker.replayCounterexample options old new model) ["replayed"] false
+  let extended := { options with maxEarlierSpendingRedeemers := 1 }
+  let replay := Checker.replayCounterexample extended old new model
+  expect replay ["replayed"] true
+  expect replay ["ledger_validity", "valid"] true
+
 def exactly (count : Nat) (list : String) : String :=
   let empty := s!"[(force (builtin nullList)) {list}]"
   match count with

@@ -51,6 +51,18 @@ def spendingContext (txInfo redeemer reference datum : Data) : Data :=
   .Constr 0 [withSpendingRedeemer reference redeemer txInfo, redeemer,
     .Constr 1 [reference, .Constr 0 [datum]]]
 
+def spendingRedeemerEntry (reference redeemer : Data) : Data × Data :=
+  (.Constr 1 [reference], redeemer)
+
+/-- Add entries before the current spending entry in an encoded context. -/
+def prependEarlierRedeemers (raw : Data) (earlier : List (Data × Data)) : Data :=
+  match raw with
+  | .Constr tag (.Constr txTag fields :: rest) =>
+    .Constr tag (.Constr txTag (fields.modify 9 fun
+      | .Map entries => .Map (earlier ++ entries)
+      | other => other) :: rest)
+  | other => other
+
 /-- Ledger-shaped finite, inclusive lower and exclusive upper interval bounds. -/
 def range (lower upper : Int) : Data := .Constr 0 [
   .Constr 0 [.Constr 1 [.I lower], .Constr 1 []],
@@ -89,22 +101,24 @@ structure SpendingFrame where
   datum : Data
   redeemer : Data
   unused : RawUnusedTxInfo
+  earlierRedeemers : List (Data × Data)
 
-/-- Decode the shared outer encoding and undo the current spending redeemer
-    prefix. Preserve malformed non-map fields, as spendingContext does. -/
+/-- Split the redeemer map at the current entry, preserving both sides.
+    Preserve malformed non-map fields, as spendingContext does. -/
 def unpackSpendingContext : Data → Option SpendingFrame
   | .Constr 0 [.Constr 0 [.List inputs, referenceInputs, .List outputs, fee, mint,
       certificates, withdrawals, validRange, .List signers, redeemers, datums,
       txId, votes, proposals, treasury, donation], redeemer,
       .Constr 1 [reference, .Constr 0 [datum]]] => do
-    let redeemers ← match redeemers with
-      | .Map ((purpose, value) :: rest) =>
-        if purpose == .Constr 1 [reference] && value == redeemer then some (.Map rest) else none
-      | .Map [] => none
-      | raw => some raw
+    let (earlierRedeemers, redeemers) ← match redeemers with
+      | .Map entries => do
+        let (earlier, currentAndLater) := entries.span (fun (purpose, _) => purpose != .Constr 1 [reference])
+        let (_, value) :: later := currentAndLater | none
+        if value == redeemer then some (earlier, .Map later) else none
+      | raw => some ([], raw)
     return {
       inputs := inputs, outputs := outputs, signers := signers, validRange := validRange
-      reference := reference, datum := datum, redeemer := redeemer
+      reference := reference, datum := datum, redeemer := redeemer, earlierRedeemers := earlierRedeemers
       unused := {
         referenceInputs := referenceInputs, fee := fee, mint := mint
         certificates := certificates, withdrawals := withdrawals, redeemers := redeemers

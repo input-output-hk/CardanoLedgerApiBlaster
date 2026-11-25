@@ -70,4 +70,8 @@ run_elab do
           (1,0,0), (1,0,1), (1,1,0), (1,1,1)] do
         throwError "Count cases or their order changed: {repr counts}"
 
+example : valid_context_fixed% 0 0 0 earlier_redeemers 2 (.I 0) (.I 0) (fun _ => True) := by
+  intros
+  exact ⟨trivial, trivial, trivial⟩
+
 end Tests.Equivalence.ContextSyntax

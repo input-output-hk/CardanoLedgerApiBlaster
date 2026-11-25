@@ -89,6 +89,7 @@ Plutus Data argument), and `data3` (three unrestricted Plutus Data arguments).
 | `--max-inputs N` | `2` | Include 0..N transaction inputs. |
 | `--max-outputs N` | `2` | Include 0..N transaction outputs. |
 | `--max-signers N` | `2` | Include 0..N signer keys. |
+| `--max-earlier-spending-redeemers N` | `0` | Include 0..N spending redeemers before the current entry in the transaction redeemer map. |
 | `--datum DATA` | Symbolic | Fix the spending datum. |
 | `--redeemer DATA` | Symbolic | Fix the spending redeemer. |
 
@@ -109,6 +110,11 @@ formal ledger-validity predicate. The profile has these additional restrictions:
 - Transaction outputs have arbitrary addresses and inline datums. Reference
   scripts are absent.
 - Each input/output value has an ADA entry and one independent policy/token entry.
+- The transaction redeemer map includes the current spending entry. By default
+  it comes first. With `--max-earlier-spending-redeemers N`, the checker covers
+  every prefix length from 0 through N. Each earlier entry has a symbolic
+  spending reference and redeemer. The tail after the current entry stays
+  symbolic and ledger validity still checks the map ordering.
 - The validity range and remaining auxiliary fields are arbitrary Data. Integers
   and byte strings have no size bounds.
 

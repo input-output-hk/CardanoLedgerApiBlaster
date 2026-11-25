@@ -57,19 +57,21 @@ open _root_.Equivalence.Cli (parse)
   let settings : Cli.Config := { scripts := #["old", "new"], bounded := true }
   let parsed ← IO.ofExcept (Cli.parse settings [])
   unless parsed.inputs == "valid-context" && parsed.maxInputs == 2 &&
-      parsed.maxOutputs == 2 && parsed.maxSigners == 2 do
+      parsed.maxOutputs == 2 && parsed.maxSigners == 2 && parsed.maxEarlierSpendingRedeemers == 0 do
     throw <| IO.userError "Unexpected validator defaults"
   for flag in ["--inputs", "--input"] do
     let c ← IO.ofExcept (Cli.parse settings [flag, "valid-context", "--max-inputs", "3",
-      "--max-outputs", "0", "--max-signers", "4"])
-    unless c.maxInputs == 3 && c.maxOutputs == 0 && c.maxSigners == 4 do
+      "--max-outputs", "0", "--max-signers", "4", "--max-earlier-spending-redeemers", "1"])
+    unless c.maxInputs == 3 && c.maxOutputs == 0 && c.maxSigners == 4 && c.maxEarlierSpendingRedeemers == 1 do
       throw <| IO.userError "Explicit maxima lost"
   for mode in ["integer", "data", "data3", "spending", "small-context", "medium-context"] do
     unless (Cli.parse settings ["--inputs", mode]).toOption.isNone do
       throw <| IO.userError s!"Removed validator mode accepted: {mode}"
   for args in [["--max-inputs", "-1"], ["--max-outputs"], ["--max-signers", "oops"],
+      ["--max-earlier-spending-redeemers", "-1"],
       ["--language", "PlutusV2"], ["--raw-context"],
       ["--mode", "function", "--max-inputs", "2"],
+      ["--mode", "function", "--max-earlier-spending-redeemers", "0"],
       ["--max-inputs", "2", "--mode", "function"]] do
     unless (Cli.parse settings args).toOption.isNone do
       throw <| IO.userError s!"Invalid profile options accepted: {args}"
