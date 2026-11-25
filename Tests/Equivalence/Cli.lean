@@ -109,4 +109,21 @@ open _root_.Equivalence.Cli (parse)
     unless Cli.exitCode (Checker.report name "") == code do
       throw <| IO.userError s!"Unexpected exit code for {name}"
 
+-- A counterexample discovered by native dispatch replay carries that evidence method.
+#eval IO.FS.withTempDir fun dir => do
+  let input : AssuranceExport.Input := {
+    path := dir / "plutus.json", format := "blueprint", bytes := "{}".toUTF8
+    blueprint := some { reference := "spend", hash := String.mk (List.replicate 56 '0'), code := "" } }
+  let result := Checker.report "bounded_regression" "" [
+    ("dispatch", Json.mkObj [("winning_case", Json.mkObj [("native_probe", toJson true)])])]
+  let output := dir / "evidence"
+  AssuranceExport.write output input input "Preservation" .null result
+  let doc ← IO.ofExcept (Json.parse (← IO.FS.readFile (output / "assurance.json")))
+  let #[property] ← IO.ofExcept ((← field doc ["properties"]).getArr?)
+    | throw <| IO.userError "Expected one assurance property"
+  let #[evidence] ← IO.ofExcept ((← field property ["evidence"]).getArr?)
+    | throw <| IO.userError "Expected one comparison evidence record"
+  expect evidence ["method"] "native-replay"
+  expect evidence ["outcome"] "falsified"
+
 end Tests.Equivalence.Cli

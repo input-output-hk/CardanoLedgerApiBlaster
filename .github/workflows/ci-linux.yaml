@@ -113,5 +113,5 @@ jobs:
           name: tests-build
           path: build.log
 
-      - name: Build equivalence CLI and run integration tests
-        run: make check_equivalence
+      - name: Build equivalence CLI and run process tests
+        run: make check_equivalence_cli

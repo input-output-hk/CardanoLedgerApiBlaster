@@ -286,7 +286,8 @@ private def emitIdenticalSource (c : Config) (header : String) : IO Unit := do
     s!"\n-- Identical decoded programs establish equivalence without evaluating them.\nexample : {query.declaration} left.script right.script {cpu} {memory} {c.language == "PlutusV3"} {c.budget.isSome} {c.steps} := by\n  intro {binders}\n  exact Or.inl rfl\n")
 
 private def emitSource (env : Environment) (c : Config) (header : String)
-    (checkedResults : Array (Option Blaster.Smt.Result) := #[]) : IO Unit := do
+    (checkedResults : Array (Option Blaster.Smt.Result) := #[])
+    (diagnostics : Json := .null) : IO Unit := do
   let some file := c.emitLean | return
   -- A subset countermodel falsifies the original property, but the original
   -- unspecialized solver need not reproduce that result within the same timeout.
@@ -297,11 +298,15 @@ private def emitSource (env : Environment) (c : Config) (header : String)
     -- Skip queries derived logically or short-circuited by a native witness.
     let expected := if checkedResults.isEmpty then some "" else do
       let some result ← checkedResults[i]? | none
-      let code := match result with
-        | .Valid => 0
-        | .Falsified _ => 1
-        | .Undetermined => 2
-      some s!" (solve-result: {code})"
+      -- A single solver need not repeat an inconclusive portfolio search.
+      if c.solverJobs > 1 && (result matches .Undetermined) then
+        some ""
+      else
+        let code := match result with
+          | .Valid => 0
+          | .Falsified _ => 1
+          | .Undetermined => 2
+        some s!" (solve-result: {code})"
     let some expected := expected | return none
     let action : MetaM Format := do
       let scriptType := mkConst ``PlutusCore.UPLC.PlutusScript.PlutusScript
@@ -329,7 +334,11 @@ private def emitSource (env : Environment) (c : Config) (header : String)
       | none, some redeemer => s!"valid_context_redeemer% {counts} ({redeemer}) ({rendered.pretty})"
       | none, none => if c.mode == "validator" then
           s!"valid_context% {counts} ({rendered.pretty})" else rendered.pretty
-    let seed := c.solverSeed.map (fun seed => s!" (random-seed: {seed})") |>.getD ""
+    let seed := if c.solverJobs > 1 && !checkedResults.isEmpty then
+      ((diagnostics.getObjVal? query.name).toOption.map fun entry =>
+        (entry.getObjValAs? Nat "winner_seed").toOption).getD c.solverSeed
+      else c.solverSeed
+    let seed := seed.map (fun seed => s!" (random-seed: {seed})") |>.getD ""
     return some s!"\n-- {query.name}\n#blaster (timeout: {c.timeout}){seed}{expected} (reconstruct-proofs: 0) (gen-cex: {if query.wantsCounterexample then 1 else 0}) [{proposition}]\n"
   let scope := if checksLedger c then
     "\n-- These queries require Ledger.validArguments for each structured context.\n-- The checker separately checks a native ledger-model-valid domain witness\n-- and validates counterexample replays; those checks are not reproduced here.\n"
@@ -377,13 +386,20 @@ def run (c : Config) : IO Json := do
   let header ← if c.emitLean.isSome then
     sourceHeader c (oldInput.blueprint.map (·.code)) (newInput.blueprint.map (·.code))
     else pure ""
+  let checkedExport ← IO.mkRef (none : Option (Environment × Array (Option Blaster.Smt.Result)))
   let inspectQueries := fun env results => do
     if c.emitLean.isSome then
-      progress (if results.isEmpty then "Starting: exporting initial Lean queries"
-        else "Starting: exporting checked Lean queries")
-      reportPhase "exporting"
-      emitSource env c header results
+      if results.isEmpty then
+        progress "Starting: exporting initial Lean queries"
+        reportPhase "exporting"
+        emitSource env c header
+      else
+        checkedExport.set (some (env, results))
   let result ← Checker.check c.toConfig left right observer inspectQueries
+  if let some (env, results) ← checkedExport.get then
+    progress "Starting: exporting checked Lean queries"
+    reportPhase "exporting"
+    emitSource env c header results ((result.getObjVal? "query_diagnostics").toOption.getD .null)
   if c.emitLean.isSome && c.mode == "function" && decide (left = right) then
     progress "Starting: exporting program-identity proof"
     reportPhase "exporting"

@@ -28,6 +28,16 @@ private def Input.report (input : Input) : Json :=
     (input.blueprint.map fun script =>
       [("validator", toJson script.reference), ("scriptHash", toJson script.hash)]).getD [])
 
+private def evidenceMethod (result : Json) : String := Id.run do
+  if (result.getObjVal? "queries").toOption.any
+      (fun queries => (queries.getObjValAs? String "program_identity").toOption == some "valid") then
+    return "program-identity"
+  let nativeProbe := do
+    let dispatch ← (result.getObjVal? "dispatch").toOption
+    let winner ← (dispatch.getObjVal? "winning_case").toOption
+    (winner.getObjValAs? Bool "native_probe").toOption
+  return if nativeProbe == some true then "native-replay" else "smt-check"
+
 def write (dir : FilePath) (old new : Input) (claim : String) (settings result : Json) : IO Unit := do
   let some target := new.blueprint | throw (IO.userError "Assurance export requires a NEW blueprint")
   let verdict ← IO.ofExcept (result.getObjValAs? String "verdict")
@@ -41,9 +51,7 @@ def write (dir : FilePath) (old new : Input) (claim : String) (settings result :
     ("old", old.report), ("new", new.report),
     ("settings", settings), ("result", result)]).pretty ++ "\n"
   let evidence := Json.mkObj [
-    ("method", toJson (if (result.getObjVal? "queries").toOption.any
-        (fun queries => (queries.getObjValAs? String "program_identity").toOption == some "valid")
-      then "program-identity" else "smt-check")),
+    ("method", toJson (evidenceMethod result)),
     ("verifier", toJson "uplc_equiv"), ("tool", toJson "uplc_equiv"),
     ("outcome", toJson outcome), ("date", date), ("scriptHash", toJson target.hash),
     ("artifact", Json.mkObj [

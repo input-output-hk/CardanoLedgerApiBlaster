@@ -484,12 +484,16 @@ class CheckerProcess(unittest.TestCase):
 
     def test_portfolio_starting_seed_offsets_every_worker(self):
         with portfolio_z3('unknown', 'unknown') as (env, directory):
-            result = self.portfolio_case(env, jobs=('-j4',), seed=42)
+            emitted = directory / 'checked.lean'
+            result = self.portfolio_case(env, jobs=('-j4',), seed=42,
+                                         flags=('--emit-lean', str(emitted)))
             report = json.loads(result.stdout)
             self.assertEqual((result.returncode, report['verdict']), (2, 'inconclusive'), report)
             self.assertEqual(report['solver_seed'], 42)
             self.assertEqual(sorted(int(p.read_text()) for p in directory.glob('*.seed')),
                              [42, 43, 44, 45])
+            self.assertIn('-- function_equivalent', emitted.read_text())
+            self.assertNotIn('(solve-result:', emitted.read_text())
             self.assert_portfolio_stopped(directory, 4)
 
     def test_portfolio_starting_seed_replays_the_winning_worker(self):
@@ -506,13 +510,15 @@ class CheckerProcess(unittest.TestCase):
     def test_portfolio_unknown_does_not_hide_replayed_seeded_winner(self):
         for jobs in [('-j2',), ('-j', '2')]:
             with self.subTest(jobs=jobs), portfolio_z3('unknown') as (env, directory):
-                result = self.portfolio_case(env, jobs)
+                emitted = directory / 'checked.lean'
+                result = self.portfolio_case(env, jobs, flags=('--emit-lean', str(emitted)))
                 report = json.loads(result.stdout)
                 self.assertEqual((result.returncode, report['verdict']), (1, 'inequivalent'), report)
                 self.assertTrue(report['counterexample']['replayed'])
                 self.assertEqual(report['solver_workers'], 2)
                 diagnostic = report['query_diagnostics']['function_equivalent']
                 self.assertEqual((diagnostic['status'], diagnostic['winner_seed']), ('falsified', 1))
+                self.assertIn('(random-seed: 1) (solve-result: 1)', emitted.read_text())
                 self.assertEqual(result.stderr.count('Phase: preprocessing [function_equivalent]'), 1)
                 self.assert_portfolio_stopped(directory, 2)
 

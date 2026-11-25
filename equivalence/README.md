@@ -209,9 +209,10 @@ counterexample or acceptance-witness information. Timeouts identify their phase;
 query or native witness later establishes the final verdict. Read the final
 verdict rather than treating each diagnostic as the overall outcome.
 
-Exported Lean files require the matching project dependencies to run. With
-dispatch splitting, exports contain the original full-domain queries, not a
-partition proof presented as a single solver result. Native witness validation
+Exported Lean files require the matching project dependencies. Each exported
+query uses one solver. Portfolio exports use the winning seed for conclusive
+queries and leave inconclusive queries without an expected result. Dispatch
+exports contain the original full-domain queries. Native witness validation
 remains separate. CLI verification uses Blaster's SMT result without reconstructed
 Lean proof terms.
 

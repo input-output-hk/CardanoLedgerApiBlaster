@@ -52,8 +52,14 @@ clean_equivalence:
 check_equivalence:
 	python3 scripts/check_equivalence_prerequisites.py
 	$(MAKE) clean_equivalence
-	$(MAKE) build_equivalence
 	lake build Tests.Equivalence
+	$(MAKE) check_equivalence_cli
+
+# The Tests library already includes the Lean equivalence suite.
+.PHONY: check_equivalence_cli
+check_equivalence_cli:
+	python3 scripts/check_equivalence_prerequisites.py
+	$(MAKE) build_equivalence
 	python3 -m unittest discover -s equivalence -p 'test_*.py'
 
 # Aggregate commands
@@ -65,4 +71,5 @@ build_all: build_cardano_ledger_api build_tests build_equivalence
 clean_all: clean_cardano_ledger_api clean_tests clean_equivalence
 
 .PHONY: check_all
-check_all: check_cardano_ledger_api check_tests check_equivalence
+check_all: check_cardano_ledger_api check_tests
+	$(MAKE) check_equivalence_cli
