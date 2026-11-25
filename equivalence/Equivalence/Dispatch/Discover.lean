@@ -9,7 +9,7 @@ constructors, lists, maps, byte strings and integer payloads. -/
 namespace Equivalence.Dispatch
 open PlutusCore.Data (Data)
 open PlutusCore.ByteString (ByteString)
-open PlutusCore.UPLC.Term (Term Program Const BuiltinFun)
+open PlutusCore.UPLC.Term (Term Program Const BuiltinFun BuiltinType)
 open PlutusCore.UPLC.Builtins (ExpectedBuiltinArgs ExpectedBuiltinArg expectedArgs)
 
 private structure Scan where
@@ -60,7 +60,7 @@ private inductive Value where
   | dataList (items : List Value)
   | dataMap (entries : List (Value × Value))
   | pair (a b : Value)
-  | list (items : List Value)
+  | list (elemTy : BuiltinType) (items : List Value)
   | sequence (p : Path) (s : Sequence) (offset : Nat)
   | scalar (s : Scalar)
   | closure (body : Term) (env : List Value) (delayed : Bool)
@@ -71,11 +71,14 @@ private inductive Value where
 
 private instance : Inhabited Value := ⟨.unknown⟩
 
+private def dataTy : BuiltinType := .AtomicType .TypeData
+private def dataPairTy : BuiltinType := .TypeOperator (.TypePair dataTy dataTy)
+
 private partial def ofConst : Const → Value
   | .Data (.Constr tag fields) => .node tag (fields.map (fun d => ofConst (.Data d)))
-  | .ConstDataList items => .list (items.map (fun d => ofConst (.Data d)))
-  | .ConstPairDataList items => .list (items.map fun (k,v) => .pair (ofConst (.Data k)) (ofConst (.Data v)))
-  | .ConstList items => .list (items.map ofConst)
+  | .ConstDataList items => .list dataTy (items.map (fun d => ofConst (.Data d)))
+  | .ConstPairDataList items => .list dataPairTy (items.map fun (k,v) => .pair (ofConst (.Data k)) (ofConst (.Data v)))
+  | .ConstList elemTy items => .list elemTy (items.map ofConst)
   | .Pair (a,b) => .pair (ofConst a) (ofConst b)
   | .PairData (a,b) => .pair (ofConst (.Data a)) (ofConst (.Data b))
   | c => .constant c
@@ -87,7 +90,13 @@ private partial def toConst : Value → Option Const
   | .dataMap entries => return .Data (.Map (← entries.mapM fun (k,v) => do
       return (← data k, ← data v)))
   | .pair a b => return .Pair (← toConst a, ← toConst b)
-  | .list items => return .ConstList (← items.mapM toConst)
+  | .list elemTy items => do
+    if elemTy == dataTy then return .ConstDataList (← items.mapM data)
+    if elemTy == dataPairTy then
+      return .ConstPairDataList (← items.mapM fun
+        | .pair a b => return (← data a, ← data b)
+        | _ => none)
+    return .ConstList elemTy (← items.mapM toConst)
   | _ => none
 where
   data (v : Value) : Option Data := do
@@ -181,34 +190,35 @@ mutual
     | .UnConstrData, [.data p] =>
       note (.kind p .constr)
       return .pair (.scalar (.tag p)) (.sequence p .fields 0)
-    | .UnConstrData, [.node tag fields] => return .pair (.constant (.Integer tag)) (.list fields)
-    | .UnListData, [.dataList items] => return .list items
-    | .UnMapData, [.dataMap entries] => return .list (entries.map fun (k,v) => .pair k v)
+    | .UnConstrData, [.node tag fields] => return .pair (.constant (.Integer tag)) (.list dataTy fields)
+    | .UnListData, [.dataList items] => return .list dataTy items
+    | .UnMapData, [.dataMap entries] => return .list dataPairTy (entries.map fun (k,v) => .pair k v)
     | .UnListData, [.data p] => note (.kind p .list); return .sequence p .items 0
     | .UnMapData, [.data p] => note (.kind p .map); return .sequence p .entries 0
-    | .UnListData, [.constant (.Data (.List xs))] => return .list (xs.map fun d => ofConst (.Data d))
+    | .UnListData, [.constant (.Data (.List xs))] => return .list dataTy (xs.map fun d => ofConst (.Data d))
     | .UnMapData, [.constant (.Data (.Map xs))] =>
-      return .list (xs.map fun (k,v) => .pair (ofConst (.Data k)) (ofConst (.Data v)))
+      return .list dataPairTy (xs.map fun (k,v) => .pair (ofConst (.Data k)) (ofConst (.Data v)))
     | .FstPair, [.pair a _] => return a
     | .SndPair, [.pair _ b] => return b
-    | .HeadList, [.list (x :: _)] => return x
-    | .TailList, [.list (_ :: xs)] => return .list xs
+    | .HeadList, [.list _ (x :: _)] => return x
+    | .TailList, [.list elemTy (_ :: xs)] => return .list elemTy xs
     | .HeadList, [.sequence p s offset] => sequenceHead p s offset
     | .TailList, [.sequence p s offset] =>
       note (.need p s (offset + 1))
       return .sequence p s (offset + 1)
-    | .NullList, [.list xs] => return .constant (.Bool xs.isEmpty)
+    | .NullList, [.list _ xs] => return .constant (.Bool xs.isEmpty)
     | .NullList, [.sequence p s offset] => return .test (.length p s offset)
-    | .MkCons, [head, .list tail] => return .list (head :: tail)
+    | .MkCons, [head, .list elemTy tail] => return .list elemTy (head :: tail)
     | .MkPairData, [a,b] => return .pair a b
-    | .MkNilData, _ | .MkNilPairData, _ => return .list []
+    | .MkNilData, _ => return .list dataTy []
+    | .MkNilPairData, _ => return .list dataPairTy []
     | .EqualsInteger, [a,z] | .EqualsByteString, [a,z] | .EqualsString, [a,z] | .EqualsData, [a,z] =>
       if let some fact := scalarEquality a z <|> scalarEquality z a then return .test fact
       return native b args
     | .IfThenElse, [.constant (.Bool yes), a, z] => return if yes then a else z
     | .IfThenElse, [.test fact,a,z] => return if ← assume fact then a else z
     | .IfThenElse, [_, a,z] => choose [a,z]
-    | .ChooseList, [.list xs,a,z] => return if xs.isEmpty then a else z
+    | .ChooseList, [.list _ xs,a,z] => return if xs.isEmpty then a else z
     | .ChooseList, [.sequence p s offset,a,z] => return if ← assume (.length p s offset) then a else z
     | .ChooseList, [_,a,z] => choose [a,z]
     | .ChooseData, [.node _ _,a,_,_,_,_] => return a
@@ -221,7 +231,8 @@ mutual
       return [a,m,l,i,b][index]?.getD .unknown
     | .ChooseUnit, [_,v] | .Trace, [_,v] => return v
     | .IData, [.scalar (.integer p)] | .BData, [.scalar (.bytes p)] => return .data p
-    | .ConstrData, [.constant (.Integer tag), .list fields] => return .node tag fields
+    | .ConstrData, [.constant (.Integer tag), .list elemTy fields] =>
+      return if elemTy == dataTy then .node tag fields else .unknown
     | .DecodeUtf8, [.scalar (.bytes p)] => return .scalar (.text p)
     | .EncodeUtf8, [.scalar (.text p)] => return .scalar (.bytes p)
     | _, _ => return native b args
@@ -254,8 +265,8 @@ mutual
     | .constant (.Bool b) => run (if b then 1 else 0) []
     | .constant .Unit => run 0 []
     | .pair a b => run 0 [a,b]
-    | .list [] => run 1 []
-    | .list (x :: xs) => run 0 [x,.list xs]
+    | .list _ [] => run 1 []
+    | .list elemTy (x :: xs) => run 0 [x,.list elemTy xs]
     | .scalar s =>
       let path := match s with | .integer p | .tag p | .bytes p | .text p => p
       let index ← pick handlers.length (branchPriority path)

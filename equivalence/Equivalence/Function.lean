@@ -41,12 +41,14 @@ def executeValidator (program : Program) (args : List Term) (cpu memory : Nat) (
 
 mutual
   /-- The CEK model specializes Data lists/pairs internally. Compare their UPLC
-      values rather than distinguishing those representation choices. -/
+      values including the declared element type of empty lists. -/
   def normalize : Const → Const
-    | .ConstDataList xs => .ConstList (xs.map Const.Data)
-    | .ConstPairDataList xs => .ConstList (xs.map fun (a, b) => .Pair (.Data a, .Data b))
+    | .ConstDataList xs => .ConstList (.AtomicType .TypeData) (xs.map Const.Data)
+    | .ConstPairDataList xs =>
+        .ConstList (.TypeOperator (.TypePair (.AtomicType .TypeData) (.AtomicType .TypeData)))
+          (xs.map fun (a, b) => .Pair (.Data a, .Data b))
     | .PairData (a, b) => .Pair (.Data a, .Data b)
-    | .ConstList xs => .ConstList (normalizeList xs)
+    | .ConstList elemTy xs => .ConstList elemTy (normalizeList xs)
     | .Pair (a, b) => .Pair (normalize a, normalize b)
     | other => other
 

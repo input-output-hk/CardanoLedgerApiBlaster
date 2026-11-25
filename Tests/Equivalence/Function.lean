@@ -10,13 +10,38 @@ def settings : Support.Config := {
 #eval show IO Unit from do
   let success := fun value => _root_.Equivalence.Acceptance.Result.success
     (.VCon value) ⟨⟨0⟩, ⟨0⟩⟩
+  let dataTy : PlutusCore.UPLC.Term.BuiltinType := .AtomicType .TypeData
+  let pairTy : PlutusCore.UPLC.Term.BuiltinType := .TypeOperator (.TypePair dataTy dataTy)
+  let listTy : PlutusCore.UPLC.Term.BuiltinType := .TypeOperator (.TypeList dataTy)
   for (a, b) in [
-      (.ConstDataList [.I 1], .ConstList [.Data (.I 1)]),
+      (.ConstDataList [], .ConstList dataTy []),
+      (.ConstDataList [.I 1], .ConstList dataTy [.Data (.I 1)]),
       (.PairData (.I 1, .I 2), .Pair (.Data (.I 1), .Data (.I 2))),
-      (.ConstPairDataList [(.I 1, .I 2)], .ConstList [.Pair (.Data (.I 1), .Data (.I 2))]),
-      (.ConstList [.ConstDataList [.I 1]], .ConstList [.ConstList [.Data (.I 1)]])] do
+      (.ConstPairDataList [], .ConstList pairTy []),
+      (.ConstPairDataList [(.I 1, .I 2)], .ConstList pairTy [.Pair (.Data (.I 1), .Data (.I 2))]),
+      (.ConstList listTy [.ConstDataList []], .ConstList listTy [.ConstList dataTy []])] do
     unless _root_.Equivalence.Function.same (success a) (success b) == some true do
       throw <| IO.userError "Equivalent constant representations differ"
+
+-- Element types distinguish empty lists produced by decoding and evaluation.
+#eval show IO Unit from do
+  let data := "(lam n (con (list data) []))"
+  let pairs := "(lam n (con (list (pair data data)) []))"
+  let integers := "(lam n (con (list integer) []))"
+  let booleans := "(lam n (con (list bool) []))"
+  let tail := "(lam n [(force (builtin tailList)) (con (list integer) [1])])"
+  for (c, expected) in [(settings, "inequivalent"),
+      ({ settings with bounded := true }, "bounded_regression"),
+      ({ settings with bounded := true, equivalence := true }, "bounded_inequivalent")] do
+    for (left, right) in [(data, pairs), (data, integers), (data, tail), (integers, booleans)] do
+      let report ← comparePrograms left right c
+      verdict report expected
+      discard (witness report)
+  verdict (← comparePrograms integers tail settings) "equivalent"
+  let report ← comparePrograms "(lam n (con (list (list integer)) [[]]))"
+    "(lam n (con (list (list bool)) [[]]))" settings
+  verdict report "inequivalent"
+  discard (witness report)
 
 -- Value differences matter even when both evaluations succeed under V3.
 #eval show IO Unit from do

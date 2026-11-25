@@ -8,7 +8,7 @@ package «CardanoLedgerApi» where
   -- Execution costs, the symbolic log2 workaround and shared SMT model decoding.
   -- Blaster includes constructor-value caching and early list lookups.
   -- Blaster requires Z3 with the recfun-finder simplifier.
-  require PlutusCore from git "https://github.com/input-output-hk/PlutusCoreBlaster" @ "0de84aad0446464ad46763140931de9be95b2035"
+  require PlutusCore from git "https://github.com/input-output-hk/PlutusCoreBlaster" @ "938998b1aa23a2f2514fab69e88f32db2d452fa3"
   require Blaster from git "https://github.com/input-output-hk/Lean-blaster" @ "d275fc88a70234506a60d04a6ab3d30a92d9f305"
 
 @[default_target]
