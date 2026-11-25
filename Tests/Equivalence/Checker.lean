@@ -35,4 +35,32 @@ open Lean _root_.Equivalence
   unless ({ settings with steps := 0 }.validate matches .error _) do
     throw <| IO.userError "Library accepted a zero step limit"
 
+#eval show IO Unit from do
+  let decode := fun term => IO.ofExcept
+    (PlutusCore.UPLC.TextEncoding.programFromString s!"(program 1.1.0 {term})")
+  let old ← decode (Support.rejectDataAt [2, 1, 0] "I 42")
+  let new ← decode (Support.rejectDataAt [2, 1, 0] "I 43")
+  let settings : _root_.Equivalence.Checker.Config := {
+    equivalence := true, bounded := true, steps := 1000,
+    maxInputs := 1, maxOutputs := 1, maxSigners := 0 }
+  let domain := _root_.Equivalence.Checker.nativeDomainWitness settings
+  let classify := fun (models : List (String × List String)) =>
+    let results := (_root_.Equivalence.Checker.queryNames settings).map fun name =>
+      (models.lookup name).map Blaster.Smt.Result.Falsified |>.getD .Undetermined
+    _root_.Equivalence.Checker.classify settings results old new domain
+  let forward := "no_acceptance_regression"
+  for reverse in ["reverse_no_acceptance_regression", "reverse_acceptance_preserved"] do
+    let report := classify [(forward, ["datum: (Data.I 41)"]), (reverse, ["datum: (Data.I 42)"])]
+    Support.verdict report "bounded_inequivalent"
+    Support.expect report ["counterexample", "direction"] "new_to_old"
+    Support.expect report ["counterexample", "ledger_validity", "valid"] true
+    Support.expect report ["counterexample", "replayed"] true
+  let report := classify [("acceptance_preserved", ["datum: (Data.I 43)"]),
+    ("reverse_no_acceptance_regression", ["datum: (Data.I 42)"])]
+  Support.verdict report "bounded_inequivalent"
+  Support.expect report ["counterexample", "direction"] "old_to_new"
+  let report := classify [(forward, ["datum: (Data.I 41)"]), ("reverse_no_acceptance_regression", [])]
+  Support.verdict report "inconclusive"
+  Support.expect report ["diagnostic_counterexample", "replayed"] false
+
 end Tests.Equivalence.Checker

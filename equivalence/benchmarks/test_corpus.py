@@ -5,25 +5,59 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 import corpus
 import compare_corpus
 
 
 class CorpusTests(unittest.TestCase):
-    def test_comparison_excludes_timeouts_errors_and_changed_outcomes(self):
-        def row(name, verdict="bounded_preserved", timeout=False, seconds=2):
+    def test_comparison_excludes_timeouts_errors_failed_exits_and_changed_outcomes(self):
+        def row(name, verdict="bounded_preserved", timeout=False, seconds=2, exit_code=0):
             return {"id": name, "scenario": "scenario", "request": {},
-                    "report": {"verdict": verdict}, "wall_timeout": timeout,
+                    "fixture_hashes": ("left-hash", "right-hash"),
+                    "report": {"verdict": verdict}, "wall_timeout": timeout, "exit_code": exit_code,
                     "preprocessing_seconds": seconds, "max_rss_bytes": 100}
-        before = [row("completed"), row("timed", timeout=True), row("error", "error"), row("changed")]
-        after = [row("completed", seconds=1), row("timed"), row("error", "error"), row("changed", "bounded_regression")]
-        report = compare_corpus.compare(before, after)
+        before = [row("completed"), row("timed", timeout=True), row("error", "error"), row("changed"),
+                  row("failed_baseline", exit_code=1), row("killed_candidate")]
+        after = [row("completed", seconds=1), row("timed"), row("error", "error"),
+                 row("changed", "bounded_regression"), row("failed_baseline"),
+                 row("killed_candidate", exit_code=-9)]
+        report = compare_corpus.compare({"results": before, "wall_seconds": 5},
+                                        {"results": after, "wall_seconds": 5})
         group = report["scenarios"]["scenario"]
         self.assertEqual(group["common_complete"], 1)
         self.assertEqual(group["median_preprocessing_ratio"], 0.5)
+        self.assertEqual([r["id"] for r in group["rows"] if "rss_ratio" in r], ["completed"])
         self.assertEqual(group["outcome_changes"], 1)
         self.assertEqual(len(report["transitions"]), 2)
+
+    def test_comparison_rejects_changed_fixtures_and_deadline(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+
+            def run(name, wall=5, **manifest_changes):
+                directory = root / name
+                directory.mkdir()
+                case = {"id": "case", "script": "old", "partner": "new",
+                        "binary_sha256": "left-hash", "partner_binary_sha256": "right-hash"}
+                row = {"id": "case", "scenario": "scenario", "request": {"left": "old", "right": "new"},
+                       "report": {"verdict": "bounded_preserved"}, "wall_timeout": False, "exit_code": 0,
+                       "preprocessing_seconds": 2, "max_rss_bytes": 100}
+                (directory / "corpus.json").write_text(json.dumps({"cases": [case | manifest_changes]}))
+                (directory / "provenance.json").write_text(json.dumps({"wall_seconds": wall}))
+                path = directory / "results.json"
+                path.write_text(json.dumps([row]))
+                return compare_corpus.load_run(path)
+
+            before = run("baseline")
+            for key in ["binary_sha256", "partner_binary_sha256"]:
+                with self.subTest(key=key), self.assertRaisesRegex(ValueError, "Fixture hashes changed: case"):
+                    compare_corpus.compare(before, run(key, **{key: "changed-hash"}))
+            with self.assertRaisesRegex(ValueError, "Wall deadline changed"):
+                compare_corpus.compare(before, run("longer", wall=10))
+            with self.assertRaisesRegex(ValueError, "Fixture paths differ from the manifest"):
+                run("unrelated", partner="other")
 
     def test_every_fixture_is_included_once_and_pairs_are_nonidentical(self):
         inventory = corpus.inventory()
@@ -39,7 +73,7 @@ class CorpusTests(unittest.TestCase):
 
     def fake_worker(self, root, body):
         worker = root / "worker"
-        worker.write_text(f"#!{sys.executable}\nimport sys, json\njson.load(sys.stdin)\n" + body)
+        worker.write_text(f"#!{sys.executable}\nimport sys, json\nrequest = json.load(sys.stdin)\n" + body)
         worker.chmod(0o755)
         return worker
 
@@ -59,6 +93,25 @@ class CorpusTests(unittest.TestCase):
             self.assertGreater(result["max_rss_bytes"], 0)
             self.assertTrue(any(p["phase"] == "preprocessing" for p in result["phase_intervals"]))
             self.assertEqual(json.loads((root / "result/stdout.json").read_text()), result["report"])
+
+    def test_checker_error_fails_run_and_saves_reports(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            output = root / "results"
+            cases = corpus.inventory()["cases"][:2]
+            worker = self.fake_worker(root,
+                f"verdict = 'error' if request['left'] == {cases[0]['script']!r} else 'bounded_preserved'\n"
+                "print(json.dumps({'verdict': verdict}))\n")
+            args = ["corpus.py", "--output", str(output), "--binary", str(worker)]
+            with patch.object(sys, "argv", args), patch.object(corpus, "inventory", return_value={"cases": cases}), \
+                    patch.object(corpus.subprocess, "check_output", return_value="revision\n"), \
+                    patch.object(corpus.platform, "platform", return_value="test-platform"):
+                status = corpus.main()
+            rows = json.loads((output / "results.json").read_text())
+            self.assertEqual([r["report"]["verdict"] for r in rows], ["error", "bounded_preserved"])
+            self.assertEqual(rows[0]["exit_code"], 0)
+            self.assertEqual(json.loads((output / cases[0]["id"] / "result.json").read_text()), rows[0])
+            self.assertEqual(status, 1)
 
     def test_deadline_kills_the_owned_worker_and_solver_group(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -47,6 +47,7 @@ clean_equivalence:
 	rm -rf .lake/build/lib/lean/Equivalence* .lake/build/ir/Equivalence* \
 	  .lake/build/lib/lean/Tests/Equivalence .lake/build/ir/Tests/Equivalence
 	rm -f .lake/build/lib/lean/Tests/Equivalence.* .lake/build/ir/Tests/Equivalence.*
+	rm -f .lake/build/bin/uplc_equiv .lake/build/bin/uplc_equiv.trace .lake/build/bin/uplc_equiv.hash
 
 .PHONY: check_equivalence
 check_equivalence:

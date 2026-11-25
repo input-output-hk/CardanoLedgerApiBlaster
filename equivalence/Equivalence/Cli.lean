@@ -29,6 +29,7 @@ structure Config extends Checker.Config where
   emitLean : Option String := none
   emitAssurance : Option String := none
   json : Bool := false
+  help : Bool := false
   worker : Bool := false
 
 
@@ -55,7 +56,7 @@ Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D).
   --max-earlier-spending-redeemers N                     Include 0..N spending redeemers before the current entry (validator only; default 0)
   --redeemer DATA                                       Fix the spending redeemer (textual Plutus Data)
   --datum DATA                                          Fix the spending datum (textual Plutus Data); other context fields remain symbolic
-  DATA shorthand: integers become I n; text becomes UTF-8 bytes; JSON quotes force text.
+  DATA shorthand: a bare integer n becomes I n. For bytes, use B #HEX.
   --inputs integer|data|data3                            Function input domain (default integer)
   --format FORMAT                                       textual, flat, flat_hex, single_cbor_hex (default), double_cbor_hex, blueprint
                                                         Auto: .uplc is textual; .json (including plutus.json) is blueprint
@@ -77,7 +78,7 @@ Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D).
   --emit-lean FILE                                      Save the checked Lean queries for inspection
   --emit-assurance DIR                                  Write assurance.json and comparison.json to a new directory (NEW must be a blueprint)
   --json                                                Emit a JSON report
-  --help                                                Show this help
+  -h, --help                                            Show this help
 
 Strict function comparisons require observable outcomes. Bounded functions observe absent constants as none.
 Bounded validators count step exhaustion as nonacceptance and still require an OLD-accepting witness.
@@ -116,25 +117,19 @@ def natOption (key value : String) (positive := false) : Except String Nat := do
   if positive && n == 0 then throw s!"{key} must be positive"
   return n
 
-/-- Integers and text are shorthand; JSON strings force text, and Data constructors stay explicit. -/
+private def exportPath (option value : String) : Except String String := do
+  if value.isEmpty then throw s!"{option} expects a path"
+  if value.startsWith "-" then
+    throw s!"{option} expects a path before {value}. Use ./{value} for a path with this name."
+  return value
+
+/-- Accept bare integers as shorthand for `I n`. Parse all other values as explicit Data. -/
 def parseData (option source : String) : Except String PlutusCore.Data.Data := do
-  let original := source
   let source := source.trim
   if let some value := source.toInt? then return .I value
-  if source.startsWith "\"" then
-    let json ← (Json.parse source).mapError (fun error => s!"{option}: {error}")
-    let .str text := json | throw s!"{option} expects a JSON string"
-    return .B (PlutusCore.String.encodeUtf8 text)
   if source.startsWith "--" then throw s!"{option} expects a value before {source}"
-  let keyword := String.mk (source.data.takeWhile (fun c => !c.isWhitespace))
-  if !["I", "B", "Constr", "List", "Map"].contains keyword && !source.startsWith "(" then
-    return .B (PlutusCore.String.encodeUtf8 original)
-  let program ← PlutusCore.UPLC.TextEncoding.programFromString
-    (s!"(program 1.1.0 (con data ({source})))")
-      |>.mapError (fun error => s!"{option}: {error}")
-  let .Program _ (.Const (.Data datum)) := program
-    | throw s!"{option} expects textual Plutus Data"
-  return datum
+  PlutusCore.Parser.run PlutusCore.UPLC.TextEncoding.Internal.parseData source
+    |>.mapError (fun error => s!"{option} expects textual Plutus Data at byte {error.pos.byteIdx}: {error.message}")
 
 private def inferFormat (path : String) : Option String :=
   if path.endsWith ".uplc" then some "textual"
@@ -162,6 +157,7 @@ def parse (c : Config) : List String → Except String Config
     if c.emitAssurance.isSome && c.rightFormat.getD c.format != "blueprint" then
       throw "--emit-assurance requires a blueprint NEW input"
     return c
+  | "-h" :: _ | "--help" :: _ => .ok { c with help := true }
   | "--bounded" :: rest => parse { c with bounded := true } rest
   | "--mode" :: v :: rest => parse { c with mode := v } rest
   | "--steps" :: v :: rest => do parse { c with steps := ← natOption "--steps" v true } rest
@@ -197,8 +193,10 @@ def parse (c : Config) : List String → Except String Config
   | "--max-earlier-spending-redeemers" :: v :: rest => do
     let count ← natOption "--max-earlier-spending-redeemers" v
     parse { c with maxEarlierSpendingRedeemers := count, maximaSpecified := true } rest
-  | "--emit-assurance" :: v :: rest => parse { c with emitAssurance := some v } rest
-  | "--emit-lean" :: v :: rest => parse { c with emitLean := some v } rest
+  | "--emit-assurance" :: v :: rest => do
+    parse { c with emitAssurance := some (← exportPath "--emit-assurance" v) } rest
+  | "--emit-lean" :: v :: rest => do
+    parse { c with emitLean := some (← exportPath "--emit-lean" v) } rest
   | "--seed" :: v :: rest => do parse { c with solverSeed := some (← natOption "--seed" v) } rest
   | "-j" :: v :: rest => do parse { c with solverJobs := ← natOption "-j" v true } rest
   | "--timeout" :: v :: rest => do parse { c with timeout := ← natOption "--timeout" v true } rest
@@ -266,17 +264,38 @@ private def readInput (path : FilePath) (format : String) (selector language : O
 def readProgram (path format : String) : IO PlutusCore.UPLC.Term.Program := do
   return (← readInput path format none none).1
 
-private def sourceHeader (c : Config) (leftCode rightCode : Option String) : IO String := do
-  let scriptDecl (name path format : String) (code : Option String) : IO String := do
-    if let some hex := code then
+private def sourceHeader (c : Config) (oldInput newInput : AssuranceExport.Input) : IO String := do
+  let scriptDecl (name : String) (input : AssuranceExport.Input) : IO String := do
+    let embedded := if let some script := input.blueprint then
+        some ("singleCborEncodedScriptFromHexM", script.code)
+      else if input.format == "flat" then
+        some ("flatEncodedScriptFromHexM", Cryptograph.String.uint8ListToHex input.bytes.toList)
+      else none
+    if let some (decoder, hex) := embedded then
       return s!"abbrev {name} : PlutusCore.UPLC.PlutusScript.PlutusScript := " ++
-        s!"⟨.{c.language}, singleCborEncodedScriptFromHexM {toJson hex |>.compress}⟩\n"
-    let path ← IO.FS.realPath path
-    return s!"#import_uplc {name} {c.language} {format} {toJson path.toString |>.compress}\n"
-  let left ← scriptDecl "left" c.scripts[0]! (c.leftFormat.getD c.format) leftCode
-  let right ← scriptDecl "right" c.scripts[1]! (c.rightFormat.getD c.format) rightCode
+        s!"⟨.{c.language}, {decoder} {toJson hex |>.compress}⟩\n"
+    let path ← IO.FS.realPath input.path
+    return s!"#import_uplc {name} {c.language} {input.format} {toJson path.toString |>.compress}\n"
+  let left ← scriptDecl "left" oldInput
+  let right ← scriptDecl "right" newInput
   return "import Equivalence.Queries\nimport Equivalence.ValidContext\nimport Blaster\nopen Equivalence.Queries\n" ++
     left ++ right
+
+/-- Replace the directory entry so a hard link cannot redirect the write into an input script. -/
+private def writeLeanExport (path : FilePath) (source : String) : IO Unit := do
+  let suffix := Cryptograph.String.uint8ListToHex (← IO.getRandomBytes 16).toList
+  let temporary := path.parent.getD "." / s!".uplc-equiv-{suffix}.tmp"
+  let written ← do
+    let handle ← IO.FS.Handle.mk temporary .writeNew
+    (do
+      handle.putStr source
+      handle.flush).toBaseIO
+  try
+    IO.ofExcept written
+    IO.FS.rename temporary path
+  catch error =>
+    try IO.FS.removeFile temporary catch _ => pure ()
+    throw error
 
 /-- An identity check needs neither recursive evaluation nor an SMT solver.
     Export a kernel-checkable proof of the same function query. -/
@@ -286,7 +305,7 @@ private def emitIdenticalSource (c : Config) (header : String) : IO Unit := do
     | throw <| IO.userError "No function query to export"
   let (cpu, memory) := c.budget.getD (0, 0)
   let binders := if c.inputs == "data3" then "datum redeemer context" else "input"
-  IO.FS.writeFile file (header ++
+  writeLeanExport file (header ++
     s!"\n-- Identical decoded programs establish equivalence without evaluating them.\nexample : {query.declaration} left.script right.script {cpu} {memory} {c.language == "PlutusV3"} {c.budget.isSome} {c.steps} := by\n  intro {binders}\n  exact Or.inl rfl\n")
 
 private def emitSource (env : Environment) (c : Config) (header : String)
@@ -295,23 +314,17 @@ private def emitSource (env : Environment) (c : Config) (header : String)
   let some file := c.emitLean | return
   -- A subset countermodel falsifies the original property, but the original
   -- unspecialized solver need not reproduce that result within the same timeout.
-  let checkedResults := if c.splitDispatch then #[] else checkedResults
+  let exploratory := c.splitDispatch || checkedResults.isEmpty
   let header := header ++ if c.splitDispatch then
-    "\n-- Dispatch uses an exhaustive partition, including its catch-all. This export\n-- contains the original full-domain queries without per-result annotations.\n-- Per-case results and partition proofs are reported in the JSON dispatch field.\n" else ""
+    "\n-- Dispatch uses an exhaustive partition, including its catch-all. The original\n-- full-domain queries below are exploratory. See the JSON dispatch field for\n-- per-case results and partition proofs.\n" else ""
   let chunks ← (queries c).toList.zipIdx.filterMapM fun (query, i) => do
     -- Skip queries derived logically or short-circuited by a native witness.
-    let expected := if checkedResults.isEmpty then some "" else do
-      let some result ← checkedResults[i]? | none
-      -- A single solver need not repeat an inconclusive portfolio search.
-      if c.solverJobs > 1 && (result matches .Undetermined) then
-        some ""
-      else
-        let code := match result with
-          | .Valid => 0
-          | .Falsified _ => 1
-          | .Undetermined => 2
-        some s!" (solve-result: {code})"
-    let some expected := expected | return none
+    let selected := if exploratory then some none else (checkedResults[i]?.getD none).map some
+    let some result := selected | return none
+    let expected := match result with
+      | some .Valid => " (solve-result: 0)"
+      | some (.Falsified _) => " (solve-result: 1)"
+      | _ => ""
     let action : MetaM Format := do
       let scriptType := mkConst ``PlutusCore.UPLC.PlutusScript.PlutusScript
       Meta.withLocalDeclD `left scriptType fun left =>
@@ -340,16 +353,22 @@ private def emitSource (env : Environment) (c : Config) (header : String)
       | none, some redeemer => s!"valid_context_redeemer% {counts} ({redeemer}) ({rendered.pretty})"
       | none, none => if c.mode == "validator" then
           s!"valid_context% {counts} ({rendered.pretty})" else rendered.pretty
-    let seed := if c.solverJobs > 1 && !checkedResults.isEmpty then
+    let seed := if c.solverJobs > 1 && !exploratory then
       ((diagnostics.getObjVal? query.name).toOption.map fun entry =>
         (entry.getObjValAs? Nat "winner_seed").toOption).getD c.solverSeed
       else c.solverSeed
     let seed := seed.map (fun seed => s!" (random-seed: {seed})") |>.getD ""
-    return some s!"\n-- {query.name}\n#blaster (timeout: {c.timeout}){seed}{expected} (reconstruct-proofs: 0) (gen-cex: {if query.wantsCounterexample then 1 else 0}) [{proposition}]\n"
+    let command := s!"#blaster (timeout: {c.timeout}){seed}{expected} (reconstruct-proofs: 0) (gen-cex: {if query.wantsCounterexample then 1 else 0}) [{proposition}]"
+    if expected.isEmpty then
+      let note := if exploratory then "Exploratory query. Uncomment to run."
+        else "Inconclusive result. Uncomment to retry."
+      let commented := String.intercalate "\n" ((command.splitOn "\n").map ("-- " ++ ·))
+      return some s!"\n-- {query.name}\n-- {note}\n{commented}\n"
+    return some s!"\n-- {query.name}\n{command}\n"
   let scope := if checksLedger c then
     "\n-- These queries require Ledger.validArguments for each structured context.\n-- The checker separately checks a native ledger-model-valid domain witness\n-- and validates counterexample replays; those checks are not reproduced here.\n"
     else ""
-  IO.FS.writeFile file (header ++
+  writeLeanExport file (header ++
     (if c.mode == "function" then "\n-- Function countermodels are separately replayed by the checker.\n" else
       "\n-- The checker separately replays an OLD-accepting input before reporting\n-- nonvacuous preservation. These queries alone do not reproduce that replay.\n") ++
     scope ++ String.join chunks)
@@ -390,8 +409,12 @@ def run (c : Config) : IO Json := do
   progress "Starting: loading NEW script"
   let (right, newInput) ← readInput (← inputPath c.scripts[1]!) (c.rightFormat.getD c.format)
     c.rightValidator (some c.language) c.emitAssurance.isSome
-  let header ← if c.emitLean.isSome then
-    sourceHeader c (oldInput.blueprint.map (·.code)) (newInput.blueprint.map (·.code))
+  let header ← if let some output := c.emitLean then do
+    if let .ok outputPath ← (IO.FS.realPath output).toBaseIO then
+      for script in c.scripts do
+        if outputPath == (← IO.FS.realPath script) then
+          throw (IO.userError s!"--emit-lean would overwrite an input script: {script}")
+    sourceHeader c oldInput newInput
     else pure ""
   let checkedExport ← IO.mkRef (none : Option (Environment × Array (Option Blaster.Smt.Result)))
   let inspectQueries := fun env results => do
@@ -418,12 +441,24 @@ def run (c : Config) : IO Json := do
       AssuranceExport.write dir oldInput newInput (assuranceClaim c) (assuranceSettings c) result
   return result
 
-partial def waitUntil (child : IO.Process.Child cfg) (deadline : Nat) : IO Bool := do
-  if (← child.tryWait).isSome then return true
-  if (← IO.monoMsNow) ≥ deadline then
+@[extern "uplc_equiv_install_interrupt_handler"]
+private opaque installInterruptHandler : IO Unit
+
+@[extern "uplc_equiv_received_signal"]
+private opaque receivedSignal : BaseIO UInt32
+
+private inductive WorkerEnd where
+  | finished
+  | timedOut
+  | interrupted (signal : UInt32)
+
+private partial def waitUntil (child : IO.Process.Child cfg) (deadline : Nat) : IO WorkerEnd := do
+  if (← child.tryWait).isSome then return .finished
+  let signal ← receivedSignal
+  if signal != 0 || (← IO.monoMsNow) ≥ deadline then
     child.kill
     discard child.wait
-    return false
+    return if signal != 0 then .interrupted signal else .timedOut
   IO.sleep 50
   waitUntil child deadline
 
@@ -454,7 +489,8 @@ def forwardDiagnostics (source : IO.FS.Handle) (phase : IO.Ref Solver.Phase)
 
 /-- A second instance of this native executable isolates the checker so the parent
     can stop preprocessing and its Z3 children at the wall-clock deadline. -/
-def supervise (args : List String) (c : Config) : IO Json := do
+def supervise (args : List String) (c : Config) : IO (Except UInt32 Json) := do
+  installInterruptHandler
   let started ← IO.monoMsNow
   let child ← IO.Process.spawn {
     cmd := (← IO.appPath).toString
@@ -466,17 +502,18 @@ def supervise (args : List String) (c : Config) : IO Json := do
   let phase ← IO.mkRef ({} : Solver.Phase)
   let output ← IO.asTask child.stdout.readToEnd
   let errors ← IO.asTask (forwardDiagnostics child.stderr phase started)
-  let finished ← waitUntil child (started + c.wallTimeout * 1000)
+  let ended ← waitUntil child (started + c.wallTimeout * 1000)
+  if let .interrupted signal := ended then return .error (128 + signal)
   let stdout ← IO.ofExcept output.get
   let stderr ← IO.ofExcept errors.get
-  unless finished do
+  if ended matches .timedOut then
     let phase ← phase.get
-    return report "inconclusive" s!"Wall-clock limit of {c.wallTimeout}s reached during {Solver.describe phase}."
+    return .ok (report "inconclusive" s!"Wall-clock limit of {c.wallTimeout}s reached during {Solver.describe phase}."
       [("timeout", Json.mkObj [("kind", toJson "wall_clock"), ("limit_seconds", toJson c.wallTimeout),
-        ("phase", toJson phase.phase), ("query", toJson phase.query)])]
+        ("phase", toJson phase.phase), ("query", toJson phase.query)])])
   match Json.parse stdout with
-  | .ok value => return value
-  | .error error => return report "error" s!"Checker worker failed: {error}\n{stdout}\n{stderr}"
+  | .ok value => return .ok value
+  | .error error => return .ok (report "error" s!"Checker worker failed: {error}\n{stdout}\n{stderr}")
 
 def exitCode (r : Json) : UInt32 :=
   match (r.getObjValAs? String "verdict").toOption with
@@ -546,16 +583,19 @@ end Equivalence.Cli
 open Equivalence.Cli
 
 def main (args : List String) : IO UInt32 := do
-  if args.contains "--help" || args.contains "-h" then
+  let parsed := parse {} args
+  if args.isEmpty || parsed.toOption.any (·.help) then
     IO.println usage
     return 0
   else
-    let parsed := parse {} args
     let config := parsed.toOption.getD { json := args.contains "--json" }
     let result ← try
       match parsed with
-      | .error error => pure (Equivalence.Checker.report "error" error)
-      | .ok c => if c.worker then run c else supervise args c
-    catch error => pure (Equivalence.Checker.report "error" error.toString)
-    printReport config.json result
-    return exitCode result
+      | .error error => pure (.ok (Equivalence.Checker.report "error" error))
+      | .ok c => if c.worker then Except.ok <$> run c else supervise args c
+    catch error => pure (.ok (Equivalence.Checker.report "error" error.toString))
+    match result with
+    | .error code => return code
+    | .ok report =>
+      printReport config.json report
+      return exitCode report

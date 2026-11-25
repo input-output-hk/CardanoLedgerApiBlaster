@@ -234,14 +234,16 @@ private partial def withVariables (specs : List (Name × Expr))
     (k : Array Expr → MetaM Expr) (vars : Array Expr := #[]) : MetaM Expr :=
   match specs with
   | [] => do mkForallFVars vars (← k vars)
-  | (name, type) :: rest =>
+  | (name, type) :: rest => do
+    Core.checkInterrupted
     withLocalDeclD name type fun var => withVariables rest k (vars.push var)
 
 private partial def withRecords (specs : List (Name × Expr × Expr))
     (k : Array Expr → MetaM Expr) (vars : Array Expr := #[]) : MetaM Expr :=
   match specs with
   | [] => do mkLetFVars vars (← k vars)
-  | (name, type, value) :: rest =>
+  | (name, type, value) :: rest => do
+    Core.checkInterrupted
     withLetDecl name type value fun var => withRecords rest k (vars.push var)
 
 private def rawExpr (f : Context.RawUnusedTxInfo) (fee mint : Expr) : Expr :=
@@ -265,10 +267,12 @@ def proposition (limits : Limits) (predicate : Expr)
   let mut inputs := #[]
   let mut outputs := #[]
   for i in [:limits.maxInputs] do
+    Core.checkInterrupted
     let fields ← schema ``Input s!"input{i}"
     inputs := inputs.push fields
     specs := specs ++ fields
   for i in [:limits.maxOutputs] do
+    Core.checkInterrupted
     let fields ← schema ``Output s!"output{i}"
     outputs := outputs.push fields
     specs := specs ++ fields
@@ -277,8 +281,10 @@ def proposition (limits : Limits) (predicate : Expr)
   let rawFields ← schema ``Context.RawUnusedTxInfo
   specs := specs ++ rawFields.filter (fun (name, _) => name != `outputs)
   for i in [:limits.maxSigners] do
+    Core.checkInterrupted
     specs := specs.push (Name.mkSimple s!"signer{i}", mkConst ``ByteString)
   for i in [:limits.maxEarlierSpendingRedeemers] do
+    Core.checkInterrupted
     let stem := earlierRedeemerStem i
     specs := specs ++ #[(Name.mkSimple (stem ++ "TxId"), mkConst ``ByteString),
       (Name.mkSimple (stem ++ "Index"), mkConst ``Int),
@@ -303,7 +309,8 @@ def proposition (limits : Limits) (predicate : Expr)
       records := records.push (Name.mkSimple s!"o{i}", mkConst ``Output,
         recordExpr ``Output (fields.map fun (name, _) => find name))
     let entryType := mkApp2 (mkConst ``Prod [.zero, .zero]) (mkConst ``Data) (mkConst ``Data)
-    let prefixes ← (List.range' 1 limits.maxEarlierSpendingRedeemers).mapM fun n =>
+    let prefixes ← (List.range' 1 limits.maxEarlierSpendingRedeemers).mapM fun n => do
+      Core.checkInterrupted
       mkListLit entryType (earlierEntries.extract 0 n).toList
     records := records.push (`f, mkConst ``Fields, frame)
     let body ← withRecords records.toList fun records => do
@@ -316,12 +323,14 @@ def proposition (limits : Limits) (predicate : Expr)
       for i in [:limits.maxInputs + 1] do
         for o in [:limits.maxOutputs + 1] do
           for s in [:limits.maxSigners + 1] do
+            Core.checkInterrupted
             let args := mkAppN (mkConst ``args) #[f,
               (← mkListLit (mkConst ``Input) (inputVars.extract 0 i).toList),
               (← mkListLit (mkConst ``Output) (outputVars.extract 0 o).toList),
               (← mkListLit (mkConst ``Data) (keys.extract 0 s).toList)]
             cases := mkApp predicate args :: cases
             for earlier in prefixes do
+              Core.checkInterrupted
               let extended := mkApp2 (mkConst ``argsWithEarlierRedeemers) args earlier
               cases := mkApp predicate extended :: cases
       return mkAndN cases.reverse

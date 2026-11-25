@@ -255,7 +255,8 @@ that input.
 
 ### Build the checker
 
-On Linux or macOS, install [elan](https://github.com/leanprover/elan), Git and
+On Linux or macOS, install [elan](https://github.com/leanprover/elan), Git, a C
+compiler available as `cc`, and
 [Z3 5.4.0](https://github.com/Z3Prover/z3/releases/tag/z3-5.4.0). Put Z3's `bin`
 directory on `PATH`. Elan selects the Lean version in `lean-toolchain`; Lake fetches
 the pinned library dependencies.
@@ -351,8 +352,8 @@ see the [full input-domain description](equivalence/README.md#structured-context
 Start with small count limits and expand them as needed. These settings change
 the domain of the claim; they are not merely performance hints. Fixing datum or
 redeemer similarly restricts the claim to those values. Data accepts explicit
-syntax such as `--datum 'Constr 0 [Constr 0 [], I 1000000]'`, integer shorthand
-such as `--redeemer 1`, and UTF-8 text such as `--datum "hello"`.
+syntax such as `--datum 'Constr 0 [Constr 0 [], I 1000000]'` or `--datum 'B #68656c6c6f'`
+for bytes. Bare integers are shorthand, so `--redeemer 1` means `--redeemer 'I 1'`.
 
 For slow solver searches, `-j4` races four Z3 workers with different seeds;
 `--seed 42 -j4` uses 42 through 45. This uses more CPU and memory and does not

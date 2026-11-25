@@ -169,7 +169,7 @@ def main():
     parser.add_argument("--solver-timeout", type=int, default=1)
     parser.add_argument("--case", action="append")
     args = parser.parse_args()
-    if min(args.wall_timeout, args.steps, args.solver_timeout) <= 0:
+    if not (args.wall_timeout > 0 and args.steps > 0 and args.solver_timeout > 0):
         parser.error("Limits must be positive")
     corpus = json.loads(args.manifest.read_text()) if args.manifest else inventory()
     cases = corpus["cases"]
@@ -190,7 +190,9 @@ def main():
                "git_revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
                "dependencies": {name: {"revision": subprocess.check_output(["git", "-C", str(ROOT / '.lake/packages' / name), "rev-parse", "HEAD"], text=True).strip(),
                                         "diff": subprocess.check_output(["git", "-C", str(ROOT / '.lake/packages' / name), "diff"], text=True)} for name in ["Blaster", "PlutusCore"]},
-               "platform": platform.platform(), "wall_seconds": args.wall_timeout, "steps": args.steps,
+               "platform": platform.platform(),
+               "wall_seconds": "inf" if args.wall_timeout == float("inf") else args.wall_timeout,
+               "steps": args.steps,
                "solver_seconds": args.solver_timeout, "selected_cases": [c["id"] for c in cases],
                "memory_scope": "wait4 ru_maxrss for native worker (and OS-accounted waited descendants), not peak aggregate process-tree RSS"}
     (args.output / "provenance.json").write_text(json.dumps(receipt, indent=2) + "\n")
@@ -202,7 +204,7 @@ def main():
         (args.output / "groups.json").write_text(json.dumps(grouped(results), indent=2) + "\n")
         print(f"{i+1}/{len(cases)} {case['id']}: {result['report']['verdict']}; "
               f"{result['elapsed_seconds']:.2f}s; {result['max_rss_bytes']/1024**2:.0f} MiB", flush=True)
-    return int(any(r["report"]["verdict"] == "runner_error" or
+    return int(any(r["report"]["verdict"] in {"error", "runner_error"} or
                    (not r["wall_timeout"] and r["exit_code"] != 0) for r in results))
 
 

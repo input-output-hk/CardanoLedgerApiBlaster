@@ -137,21 +137,15 @@ Use textual Plutus Data: `I`, `B`, `Constr`, `List` and `Map`. For example:
 --datum 'B #deadbeef'
 ```
 
-Primitive shorthand is also supported:
+Bare integers are shorthand for `I n`.
 
 ```sh
 --redeemer 1           # I 1
 --redeemer -42         # I -42
---datum hello         # UTF-8 bytes B #68656c6c6f
---datum "hello world" # UTF-8 text containing a space
---datum '"42"'        # Bytes B #3432, rather than I 42
 ```
 
-Shell quotes group an argument but do not change its type: both `42` and `"42"`
-become integer 42. JSON string quotes force text and support escapes; outer shell
-quotes preserve those JSON quotes. Whitespace in text is preserved. Data
-constructor syntax is parsed explicitly, including errors for malformed Data;
-use a JSON string for literal text resembling that syntax.
+Use `--datum 'B #68656c6c6f'` for the UTF-8 bytes of `hello`. Explicit Data can
+also be parenthesized, as in `--datum '(I 42)'`.
 
 Fixing a value restricts the claim to that value. Other context fields remain
 symbolic. Reports include `fixed_datum` and/or `fixed_redeemer`; native replay and
@@ -168,14 +162,16 @@ exported Lean queries use the same restrictions.
 | `--split-dispatch` | Off | Discover datum/redeemer cases and check them separately before full-domain fallback. |
 | `--dispatch-cases N` | `16` | Maximum discovered cases, plus a catch-all; enables dispatch splitting. |
 | `--dispatch-timeout SECONDS` | `10` | Deadline per dispatch-case query, including preprocessing; enables dispatch splitting. |
-| `--skip-old-rejected` | Off | Skip the deferred universal OLD-rejection query. An accepted OLD witness is still required for a positive validator verdict. |
+| `--skip-old-rejected` | Off | Skip the deferred universal OLD-rejection query. After preservation is proved, the checker can still search for the OLD-acceptance witness required for a positive verdict. |
 
 ### Solver workers
 
 `--seed 42 -j4` uses seeds 42, 43, 44 and 45. Seeds, including the final worker's
-seed, must fit in an unsigned 32-bit integer. The first conclusive result wins;
-an early `unknown` leaves the other workers running. Counterexamples still need
-native replay. Workers stop when a result or their shared deadline is reached.
+seed, must fit in an unsigned 32-bit integer. The first conclusive result wins.
+An early `unknown` leaves the other workers running. Workers can retrieve models
+in parallel, and a `sat` result is eligible after its model arrives.
+Counterexamples still need native replay. The other workers stop when a result
+wins or their shared deadline is reached.
 
 Preprocessing and SMT translation run once. Extra workers use more CPU and memory
 and can help Z3 search, but do not accelerate preprocessing.
@@ -202,7 +198,9 @@ object.
 | `--json` | Off | Print the final report as JSON instead of readable text. |
 | `--emit-assurance DIR` | None | Export assurance evidence for a NEW blueprint to a fresh directory. |
 | `--emit-lean FILE` | None | Export the checked Lean queries with the same domain and bounds. |
-| `--help` | — | Print usage and options. |
+| `-h`, `--help` | — | Print usage and options. Running without arguments also prints help. |
+
+Prefix a dash-prefixed export name with `./`, as in `--emit-lean ./--json`.
 
 Progress is printed on stderr with elapsed time and the current phase. The final
 report is printed on stdout. Text counterexamples show both outcomes and a named
@@ -216,11 +214,12 @@ query or native witness later establishes the final verdict. Read the final
 verdict rather than treating each diagnostic as the overall outcome.
 
 Exported Lean files require the matching project dependencies. Each exported
-query uses one solver. Portfolio exports use the winning seed for conclusive
-queries and leave inconclusive queries without an expected result. Dispatch
-exports contain the original full-domain queries. Native witness validation
-remains separate. CLI verification uses Blaster's SMT result without reconstructed
-Lean proof terms.
+query uses one solver. Active queries record their conclusive results and use
+the winning seed for portfolio runs. Inconclusive queries appear as comments
+that can be uncommented to retry them. The initial export and the original
+full-domain queries in dispatch exports also appear as comments. Native witness
+validation remains separate. CLI verification uses Blaster's SMT result without
+reconstructed Lean proof terms.
 
 ### Export assurance evidence
 
@@ -265,6 +264,9 @@ usual meanings.
 | `inconclusive` | 2 | A timeout, unknown result, exhausted analysis or missing validated evidence prevents a conclusion. |
 | `error` | 3 | Invalid arguments, unsupported input or a tool failure. |
 | `vacuously_preserved`, `vacuously_equivalent`, `vacuously_bounded_preserved`, `vacuously_bounded_equivalent` | 4 | Validator OLD rejects every input in the domain. |
+
+On Linux and macOS, Ctrl-C and SIGTERM stop the checker and its solver workers. The CLI exits
+with status 130 for Ctrl-C and 143 for SIGTERM.
 
 Positive validator verdicts require an OLD-accepting witness in addition to valid
 preservation queries. A `valid` query by itself need not establish the final

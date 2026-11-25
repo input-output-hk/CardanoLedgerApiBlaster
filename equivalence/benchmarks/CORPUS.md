@@ -50,6 +50,8 @@ python3 equivalence/benchmarks/corpus.py \
 ```
 
 `--case` is repeatable. `--binary PATH` selects a saved native benchmark worker.
+Use `--wall-timeout inf` to disable the per-case wall deadline. The solver
+timeout still applies, and provenance records the wall deadline as `"inf"`.
 The files in `equivalence/examples` are the input corpus; no external UPLC-CAPE
 checkout or historical benchmark scripts are required.
 
@@ -68,8 +70,10 @@ python3 equivalence/benchmarks/compare_corpus.py \
   --output equivalence/benchmarks/local-runs/comparison.json
 ```
 
-Keep step, solver and wall limits the same when comparing builds. Receipts record
-native worker and helper hashes, dependency revisions/diffs and selected cases.
+The comparison reads each run's `corpus.json` and `provenance.json` alongside
+`results.json`. It requires matching fixture hashes, step and solver settings,
+and wall deadlines. Receipts record native worker and helper hashes, dependency
+revisions/diffs and selected cases.
 The output also contains per-case raw reports and phase logs, `results.json` and
 scenario aggregates in `groups.json`.
 

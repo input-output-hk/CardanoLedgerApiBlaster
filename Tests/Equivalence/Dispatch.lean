@@ -266,4 +266,28 @@ run_elab do
       check closed
       unless !closed.hasFVar && !closed.hasMVar do throwError "Pattern query is not closed"
 
+run_elab do
+  let diagnostics ← IO.mkRef (#[] : Array (String × Json))
+  let started ← IO.mkRef false
+  let slowGoal : MetaM Expr := do
+    started.set true
+    repeat
+      IO.sleep 10
+      Core.checkInterrupted
+    return mkConst ``True
+  let env ← getEnv
+  let result ← Solver.runQueryTimed env slowGoal "slow_goal" 5 1 (some diagnostics) {} 1 none
+  unless result.isNone && (← started.get) do
+    throwError "Dispatch goal construction did not time out"
+  let entries ← diagnostics.get
+  unless entries.any (fun (name, details) => name == "slow_goal" &&
+      (details.getObjValAs? String "phase").toOption == some "preprocessing" &&
+      (details.getObjValAs? String "status").toOption == some "case_timeout") do
+    throwError "Dispatch goal timeout was not reported during preprocessing"
+  let failed ← (Solver.runQueryTimed env (throwError "dispatch goal failed") "failed_goal"
+    5 1 none {} 1 none).toBaseIO
+  unless failed matches .error _ do throwError "Dispatch goal construction error was lost"
+  let recovered ← Solver.runQueryTimed env (pure (mkConst ``True)) "next_goal" 5 1 none {} 1 none
+  unless recovered matches some .Valid do throwError "Dispatch goal failure affected the next case"
+
 end Tests.Equivalence.Dispatch

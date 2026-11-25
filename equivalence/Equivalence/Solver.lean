@@ -10,8 +10,6 @@ open Lean
 
 namespace Equivalence.Solver
 
-abbrev Process := IO.Process.Child ⟨.piped, .piped, .piped⟩
-
 /-- The active stage of a check and, when applicable, its query. -/
 structure Phase where
   phase : String := "startup"
@@ -49,8 +47,8 @@ private def unknownReason (reply : String) : String :=
     does not depend on parsing Blaster's verbose diagnostic text. -/
 def runQuery (proposition : Expr) (query : String) (timeout : Nat) (generateCex : Bool)
     (diagnostics : Option (IO.Ref (Array (String × Json))) := none)
-    (observer : Observer := {}) (jobs : Nat := 1) (seed : Option Nat := none)
-    (activeProcess : Option (IO.Ref (Option Process)) := none) : MetaM Blaster.Smt.Result := do
+    (observer : Observer := {}) (jobs : Nat := 1) (seed : Option Nat := none) :
+    MetaM Blaster.Smt.Result := do
   let env := { (default : Blaster.Optimize.TranslateEnv) with
     optEnv.options.solverOptions.timeout := some timeout
     optEnv.options.solverOptions.randomSeed := if jobs == 1 then seed else none
@@ -64,56 +62,36 @@ def runQuery (proposition : Expr) (query : String) (timeout : Nat) (generateCex 
     if !(optimizedResult matches .Undetermined) then
       observer.reportPhase "validation" (some query)
       return optimizedResult
+    -- Collect commands first so the solver deadline covers all pipe I/O.
     modify fun env => { env with
       optEnv.options.solverOptions.onlyOptimize := false
-      optEnv.options.solverOptions.onlySmtLib := jobs > 1
-      optEnv.options.solverOptions.dumpSmtLib := jobs > 1 }
+      optEnv.options.solverOptions.onlySmtLib := true
+      optEnv.options.solverOptions.dumpSmtLib := true }
     observer.reportPhase "translation" (some query)
-    let result ← try
-      Blaster.Smt.setBlasterProcess
-      if let some ref := activeProcess then ref.set (← get).smtEnv.smtProc
-      let term ← Blaster.Smt.translateExpr optimized
-      Blaster.Smt.assertTerm (Blaster.Smt.notSmt term)
-      observer.reportPhase "z3" (some query)
-      let outcome ← if jobs > 1 then
-        Portfolio.solve (← get) jobs timeout seed
-      else do
-        let result ← Blaster.Smt.checkSat
-        let reason ← if result matches .Undetermined then do
-          let some process := (← get).smtEnv.smtProc | pure ""
-          -- Ask before closing the process: unknown is not necessarily timeout.
-          process.stdin.putStrLn "(get-info :reason-unknown)"
-          process.stdin.flush
-          Blaster.Smt.getOutputEval process.stdout
-        else pure ""
-        pure { result, seed, reason : Portfolio.Outcome }
-      let result := outcome.result
-      let reason := unknownReason outcome.reason
-      let timedOut := reason == "timeout"
-      if jobs > 1 || (result matches .Undetermined) then
-        let status := match result with
-          | .Valid => "valid"
-          | .Falsified _ => "falsified"
-          | .Undetermined => if timedOut then "timeout" else "unknown"
-        let fields := [
-          ("phase", toJson "z3"), ("status", toJson status),
-          ("reason", toJson reason), ("limit_seconds", toJson timeout)] ++
-          if jobs > 1 then [("workers", toJson jobs), ("winner_seed", toJson outcome.seed)] else []
-        if let some ref := diagnostics then ref.modify (·.push (query, Json.mkObj fields))
-        observer.message (if jobs > 1 then
-          match result with
-          | .Undetermined => s!"Z3 portfolio returned unknown [{query}]: {reason}"
-          | _ => s!"Z3 portfolio finished [{query}] with seed {outcome.seed.map toString |>.getD "default"}"
-        else if timedOut then s!"Z3 timed out after {timeout}s [{query}]"
-        else s!"Z3 returned unknown [{query}]: {reason}")
-      pure result
-    catch error =>
-      -- Cleanup must not replace the original setup/solver error with a broken pipe.
-      try discard Blaster.Smt.exitSmt catch _ => pure ()
-      -- Retain the handle for the timed caller's finalizer if cleanup failed.
-      throw error
-    discard Blaster.Smt.exitSmt
-    if let some ref := activeProcess then ref.set none
+    Blaster.Smt.setBlasterProcess
+    let term ← Blaster.Smt.translateExpr optimized
+    Blaster.Smt.assertTerm (Blaster.Smt.notSmt term)
+    observer.reportPhase "z3" (some query)
+    let outcome ← Portfolio.solve (← get) jobs timeout seed
+    let result := outcome.result
+    let reason := unknownReason outcome.reason
+    let timedOut := reason == "timeout"
+    if jobs > 1 || (result matches .Undetermined) then
+      let status := match result with
+        | .Valid => "valid"
+        | .Falsified _ => "falsified"
+        | .Undetermined => if timedOut then "timeout" else "unknown"
+      let fields := [
+        ("phase", toJson "z3"), ("status", toJson status),
+        ("reason", toJson reason), ("limit_seconds", toJson timeout)] ++
+        if jobs > 1 then [("workers", toJson jobs), ("winner_seed", toJson outcome.seed)] else []
+      if let some ref := diagnostics then ref.modify (·.push (query, Json.mkObj fields))
+      observer.message (if jobs > 1 then
+        match result with
+        | .Undetermined => s!"Z3 portfolio returned unknown [{query}]: {reason}"
+        | _ => s!"Z3 portfolio finished [{query}] with seed {outcome.seed.map toString |>.getD "default"}"
+      else if timedOut then s!"Z3 timed out after {timeout}s [{query}]"
+      else s!"Z3 returned unknown [{query}]: {reason}")
     observer.reportPhase "validation" (some query)
     return result
   let (result, _) ← action.run env
@@ -121,12 +99,11 @@ def runQuery (proposition : Expr) (query : String) (timeout : Nat) (generateCex 
 
 /-- A fresh Meta/Core state confines cancellation to one speculative case.
 The ordinary checker retains its outer process watchdog as a hard deadline. -/
-def runQueryTimed (environment : Environment) (proposition : Expr) (query : String)
+def runQueryTimed (environment : Environment) (goal : MetaM Expr) (query : String)
     (timeout wall : Nat) (diagnostics : Option (IO.Ref (Array (String × Json))))
     (observer : Observer) (jobs : Nat) (seed : Option Nat) : IO (Option Blaster.Smt.Result) := do
   let token ← IO.CancelToken.new
   let done ← IO.mkRef false
-  let active ← IO.mkRef (none : Option Process)
   let phase ← IO.mkRef ({} : Phase)
   let deadline := (← IO.monoMsNow) + wall * 1000
   let timer ← IO.asTask (prio := .dedicated) do
@@ -134,16 +111,18 @@ def runQueryTimed (environment : Environment) (proposition : Expr) (query : Stri
       if ← done.get then break
       if (← IO.monoMsNow) ≥ deadline then
         token.set
-        -- A blocked solver read does not poll Lean's cancellation token.
-        if let some process ← active.get then
-          try process.kill catch _ => pure ()
         break
       IO.sleep 25
   let observer := { observer with phase := fun state => do
     phase.set state
     observer.phase state }
   try
-    let action := runQuery proposition query (min timeout wall) true diagnostics observer jobs seed (some active)
+    let action : MetaM Blaster.Smt.Result := do
+      observer.reportPhase "preprocessing" (some query)
+      Core.checkInterrupted
+      let proposition ← goal
+      Core.checkInterrupted
+      runQuery proposition query (min timeout wall) true diagnostics observer jobs seed
     let (result, _) ← action.run' |>.toIO
       { fileName := "<uplc_equiv dispatch>", fileMap := default,
         maxRecDepth := 0, maxHeartbeats := 0, cancelTk? := some token } { env := environment }
@@ -159,11 +138,5 @@ def runQueryTimed (environment : Environment) (proposition : Expr) (query : Stri
   finally
     done.set true
     discard (IO.ofExcept timer.get)
-    -- Interrupts can bypass MetaM's ordinary exception handlers.
-    if let some process ← active.get then
-      try
-        if (← process.tryWait).isNone then process.kill
-        discard process.wait
-      catch _ => pure ()
 
 end Equivalence.Solver

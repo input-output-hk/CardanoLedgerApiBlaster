@@ -8,8 +8,8 @@ package «CardanoLedgerApi» where
   -- Execution costs, the symbolic log2 workaround and shared SMT model decoding.
   -- Blaster includes constructor-value caching and early list lookups.
   -- Blaster requires Z3 with the recfun-finder simplifier.
-  require PlutusCore from git "https://github.com/input-output-hk/PlutusCoreBlaster" @ "938998b1aa23a2f2514fab69e88f32db2d452fa3"
-  require Blaster from git "https://github.com/input-output-hk/Lean-blaster" @ "d275fc88a70234506a60d04a6ab3d30a92d9f305"
+  require PlutusCore from git "https://github.com/input-output-hk/PlutusCoreBlaster" @ "6aa4ad745990a504ec28d9da87ff62ba7c9f7f90"
+  require Blaster from git "https://github.com/input-output-hk/Lean-blaster" @ "e3813921d1a16872fe16b4a5f3a68430a7105e54"
 
 @[default_target]
 lean_lib «CardanoLedgerApi» where
@@ -21,10 +21,16 @@ lean_lib «Tests» where
   -- Semantic tests use an isolated worker that calls the checker library.
   needs := #[`@/equivalence_test_worker]
 
+target uplcInterrupt.o pkg : System.FilePath := do
+  let source ← inputTextFile (pkg.dir / "equivalence" / "interrupt.c")
+  let includes := #["-I", (← getLeanIncludeDir).toString]
+  buildO (pkg.buildDir / "ir" / "uplcInterrupt.o") source includes #["-fPIC"] "cc" getLeanTrace
+
 lean_lib «UplcEquivalence» where
   srcDir := "equivalence"
   roots := #[`Equivalence]
   globs := #[.one `Equivalence, .submodules `Equivalence]
+  moreLinkObjs := #[uplcInterrupt.o]
 
 lean_exe uplc_equiv where
   srcDir := "equivalence"

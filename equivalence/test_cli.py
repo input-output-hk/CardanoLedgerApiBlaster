@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 import selectors
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -240,14 +241,14 @@ class CheckerProcess(unittest.TestCase):
                 self.assertTrue(times, result.stderr)
                 self.assertEqual(times, sorted(times))
 
-    def solver_case(self, env, *, wall_timeout=10, json_output=True):
+    def solver_case(self, env, *, timeout=5, wall_timeout=10, json_output=True):
         with tempfile.TemporaryDirectory() as directory:
             paths = [Path(directory) / 'old.uplc', Path(directory) / 'new.uplc']
             for path, value in zip(paths, [42, 43]):
                 term = reject_data_at([2, 1, 0], f"I {value}")
                 path.write_text(f"(program 1.1.0 {term})")
             return subprocess.run([str(CLI), *(str(p) for p in paths),
-                '--inputs', 'valid-context', '--bounded', '--steps', '1000', '--timeout', '5',
+                '--inputs', 'valid-context', '--bounded', '--steps', '1000', '--timeout', str(timeout),
                 '--max-inputs', '1', '--max-outputs', '1', '--max-signers', '1',
                 '--wall-timeout', str(wall_timeout), *(['--json'] if json_output else [])],
                 cwd=ROOT, env=env, capture_output=True, text=True, timeout=wall_timeout+8)
@@ -279,7 +280,7 @@ class CheckerProcess(unittest.TestCase):
 
     def test_wall_timeout_identifies_z3(self):
         with fake_z3('block') as env:
-            result = self.solver_case(env, wall_timeout=15)
+            result = self.solver_case(env, timeout=15, wall_timeout=5)
         report = json.loads(result.stdout)
         self.assertEqual(result.returncode, 2, report)
         self.assertEqual(report['timeout']['phase'], 'z3')
@@ -299,6 +300,64 @@ class CheckerProcess(unittest.TestCase):
         self.assertEqual(report['timeout']['phase'], 'preprocessing')
         self.assertEqual(report['timeout']['query'], 'acceptance_preserved')
         self.assertIn('during preprocessing', report['explanation'])
+
+    def test_lean_export_embeds_binary_flat_input(self):
+        cbor_path = ROOT / "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex"
+        cbor = bytes.fromhex(cbor_path.read_text())
+        self.assertEqual(cbor[:2], bytes([0x58, len(cbor) - 2]))
+        flat = cbor[2:]
+        with self.assertRaises(UnicodeDecodeError):
+            flat.decode("utf-8")
+        with tempfile.TemporaryDirectory() as directory:
+            raw = Path(directory) / "fibonacci.flat"
+            emitted = Path(directory) / "check.lean"
+            raw.write_bytes(flat)
+            result = subprocess.run(
+                [str(CLI), str(raw), str(cbor_path), "--mode", "function",
+                 "--format-left", "flat", "--emit-lean", str(emitted), "--json"],
+                cwd=ROOT, capture_output=True, text=True, timeout=15)
+            report = json.loads(result.stdout)
+            self.assertEqual((result.returncode, report["verdict"]), (0, "equivalent"), report)
+            raw.unlink()
+            checked = subprocess.run(["lake", "env", "lean", str(emitted)], cwd=ROOT,
+                                     capture_output=True, text=True, timeout=30)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
+    def test_lean_export_rejects_input_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            old, new = (Path(directory) / name for name in ["old.uplc", "new.uplc"])
+            source = "(program 1.1.0 (lam c (con unit ())))"
+            for script in [old, new]:
+                script.write_text(source)
+            for output in [str(old), os.path.join(directory, ".", new.name)]:
+                with self.subTest(output=output):
+                    result = subprocess.run(
+                        [str(CLI), str(old), str(new), "--mode", "function",
+                         "--emit-lean", output, "--json"],
+                        cwd=ROOT, capture_output=True, text=True, timeout=10)
+                    report = json.loads(result.stdout)
+                    self.assertEqual((result.returncode, report["verdict"]), (3, "error"), report)
+                    self.assertIn("--emit-lean would overwrite an input script", report["explanation"])
+                    self.assertEqual(old.read_text(), source)
+                    self.assertEqual(new.read_text(), source)
+
+    def test_lean_export_replaces_hard_link_without_changing_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            old, new, emitted = (Path(directory) / name for name in ["old.uplc", "new.uplc", "check.lean"])
+            source = "(program 1.1.0 (lam c (con unit ())))"
+            old.write_text(source)
+            new.write_text(source)
+            os.link(old, emitted)
+            result = subprocess.run(
+                [str(CLI), str(old), str(new), "--mode", "function", "--emit-lean", str(emitted), "--json"],
+                cwd=ROOT, capture_output=True, text=True, timeout=10)
+            report = json.loads(result.stdout)
+            self.assertEqual((result.returncode, report["verdict"]), (0, "equivalent"), report)
+            self.assertEqual(old.read_text(), source)
+            self.assertFalse(old.samefile(emitted))
+            checked = subprocess.run(["lake", "env", "lean", str(emitted)], cwd=ROOT,
+                                     capture_output=True, text=True, timeout=30)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
 
     def test_deferred_rejection_export(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -493,6 +552,7 @@ class CheckerProcess(unittest.TestCase):
             self.assertEqual(sorted(int(p.read_text()) for p in directory.glob('*.seed')),
                              [42, 43, 44, 45])
             self.assertIn('-- function_equivalent', emitted.read_text())
+            self.assertIn('-- #blaster', emitted.read_text())
             self.assertNotIn('(solve-result:', emitted.read_text())
             self.assert_portfolio_stopped(directory, 4)
 
@@ -531,14 +591,23 @@ class CheckerProcess(unittest.TestCase):
             self.assertEqual(report['query_diagnostics']['function_equivalent']['winner_seed'], 1)
             self.assert_portfolio_stopped(directory, 2)
 
-    def test_portfolio_reads_only_one_model(self):
+    def test_portfolio_reaps_workers_after_model_replay(self):
         with portfolio_z3('real', 'real') as (env, directory):
             result = self.portfolio_case(env, jobs=('-j4',))
             report = json.loads(result.stdout)
             self.assertEqual(result.returncode, 1, report)
             self.assertTrue(report['counterexample']['replayed'])
-            self.assertEqual(len(list(directory.glob('*.model'))), 1)
             self.assert_portfolio_stopped(directory, 4)
+
+    def test_portfolio_stalled_model_does_not_mask_healthy_worker(self):
+        with portfolio_z3('block-model', 'real-after-model-request') as (env, directory):
+            result = self.portfolio_case(env, timeout=2)
+            report = json.loads(result.stdout)
+            self.assertEqual((result.returncode, report["verdict"]), (1, "inequivalent"), report)
+            self.assertTrue(report["counterexample"]["replayed"])
+            self.assertEqual(report["query_diagnostics"]["function_equivalent"]["winner_seed"], 1)
+            self.assertEqual(len(list(directory.glob('*.model'))), 2)
+            self.assert_portfolio_stopped(directory, 2)
 
     def test_portfolio_has_one_deadline_and_reaps_all_workers(self):
         with portfolio_z3('block', 'block') as (env, directory):
@@ -551,6 +620,62 @@ class CheckerProcess(unittest.TestCase):
             self.assertEqual((diagnostic['status'], diagnostic['limit_seconds']), ('timeout', 1))
             self.assert_portfolio_stopped(directory, 4)
 
+    def test_solver_replays_quoted_parenthesis_in_data_model(self):
+        with tempfile.TemporaryDirectory() as directory:
+            old, new = (Path(directory) / name for name in ("old.uplc", "new.uplc"))
+            old.write_text("(program 1.1.0 (lam c (con unit ())))")
+            reject = reject_if("[[(builtin equalsData) c] (con data (B #28))]")
+            new.write_text(f"(program 1.1.0 {reject})")
+            for jobs in (1, 2):
+                with self.subTest(jobs=jobs):
+                    result = subprocess.run(
+                        [str(CLI), str(old), str(new), "--mode", "function", "--inputs", "data",
+                         f"-j{jobs}", "--timeout", "5", "--wall-timeout", "15", "--json"],
+                        cwd=ROOT, capture_output=True, text=True, timeout=20)
+                    report = json.loads(result.stdout)
+                    self.assertEqual((result.returncode, report["verdict"]), (1, "inequivalent"), report)
+                    self.assertTrue(report["counterexample"]["replayed"])
+                    self.assertEqual(report["counterexample"]["input"], {"bytes": "28"})
+
+    def test_solver_startup_uses_protocol_without_version_probe(self):
+        with portfolio_z3('block-version', 'real') as (env, directory):
+            result = self.portfolio_case(env)
+            report = json.loads(result.stdout)
+            self.assertEqual((result.returncode, report["verdict"]), (1, "inequivalent"), report)
+            self.assertTrue(report["counterexample"]["replayed"])
+            self.assert_portfolio_stopped(directory, 2)
+
+    def test_lean_export_comments_out_timed_out_query(self):
+        with portfolio_z3('block-options', 'block-options') as (env, directory):
+            emitted = directory / 'timed-out.lean'
+            result = self.portfolio_case(env, jobs=('-j1',), timeout=1,
+                                         flags=('--emit-lean', str(emitted)))
+            report = json.loads(result.stdout)
+            self.assertEqual((result.returncode, report["verdict"]), (2, "inconclusive"), report)
+            self.assertEqual(report["query_diagnostics"]["function_equivalent"]["status"], "timeout")
+            source = emitted.read_text()
+            self.assertIn("-- #blaster (timeout: 1)", source)
+            self.assertNotIn("(solve-result:", source)
+            checked = subprocess.run(["lake", "env", "lean", str(emitted)], cwd=ROOT,
+                                     capture_output=True, text=True, timeout=15)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
+    def test_solver_deadline_includes_submission_and_model_retrieval(self):
+        for jobs, mode, receipt in [(1, 'block-options', '*.options'),
+                                    (1, 'block-model', '*.model'), (2, 'block-model', '*.model')]:
+            with self.subTest(jobs=jobs, mode=mode), portfolio_z3(mode, mode) as (env, directory):
+                started = time.monotonic()
+                result = self.portfolio_case(env, jobs=(f'-j{jobs}',), timeout=1)
+                self.assertLess(time.monotonic() - started, 6)
+                report = json.loads(result.stdout)
+                self.assertEqual((result.returncode, report['verdict']), (2, 'inconclusive'), report)
+                diagnostic = report['query_diagnostics']['function_equivalent']
+                self.assertEqual((diagnostic['status'], diagnostic['limit_seconds']), ('timeout', 1))
+                requests = len(list(directory.glob(receipt)))
+                self.assertGreaterEqual(requests, 1)
+                self.assertLessEqual(requests, jobs)
+                self.assert_portfolio_stopped(directory, jobs)
+
     def test_portfolio_all_unknown_preserves_reason(self):
         with portfolio_z3('unknown', 'unknown') as (env, directory):
             result = self.portfolio_case(env)
@@ -558,6 +683,24 @@ class CheckerProcess(unittest.TestCase):
             self.assertEqual((result.returncode, report['verdict']), (2, 'inconclusive'), report)
             diagnostic = report['query_diagnostics']['function_equivalent']
             self.assertEqual((diagnostic['status'], diagnostic['reason']), ('unknown', 'incomplete'))
+            self.assert_portfolio_stopped(directory, 2)
+
+    def test_portfolio_worker_error_does_not_mask_winner(self):
+        with portfolio_z3('error', 'real') as (env, directory):
+            result = self.portfolio_case(env)
+            report = json.loads(result.stdout)
+            self.assertEqual((result.returncode, report["verdict"]), (1, "inequivalent"), report)
+            self.assertTrue(report["counterexample"]["replayed"])
+            self.assertEqual(report["query_diagnostics"]["function_equivalent"]["winner_seed"], 1)
+            self.assert_portfolio_stopped(directory, 2)
+
+    def test_portfolio_retries_model_read_on_worker_error(self):
+        with portfolio_z3('error-model', 'error-model') as (env, directory):
+            result = self.portfolio_case(env)
+            report = json.loads(result.stdout)
+            self.assertEqual((result.returncode, report["verdict"]), (3, "error"), report)
+            self.assertIn("Unexpected EOF while reading SMT response", report["explanation"])
+            self.assertEqual(len(list(directory.glob('*.model'))), 2)
             self.assert_portfolio_stopped(directory, 2)
 
     def test_portfolio_protocol_errors_remain_tool_errors(self):
@@ -650,13 +793,13 @@ class CheckerProcess(unittest.TestCase):
                                         capture_output=True, text=True, timeout=10)
                 self.assertEqual(result.returncode, 3, result.stdout)
 
-    def test_data_text_shorthand_reaches_report(self):
+    def test_data_arguments_reach_report(self):
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory) / "unit.uplc"
             script.write_text("(program 1.1.0 (lam c (con unit ())))")
-            cases = [("hello world", "é🚀", {"bytes": "68656c6c6f20776f726c64"},
-                      {"bytes": "c3a9f09f9a80"}),
-                     ("42", '\"42\"', {"int": 42}, {"bytes": "3432"})]
+            cases = [("B#AB", "(I 42)", {"bytes": "ab"}, {"int": 42}),
+                     ("List[I 0]", "Map[]", {"list": [{"int": 0}]}, {"map": []}),
+                     ("42", "-7", {"int": 42}, {"int": -7})]
             for datum, redeemer, expected_datum, expected_redeemer in cases:
                 result = subprocess.run(
                     [str(CLI), str(script), str(script), "--bounded", "--steps", "100",
@@ -703,13 +846,18 @@ class CheckerProcess(unittest.TestCase):
             return result, json.loads(result.stdout)
 
     def test_dispatch_case_deadline_reaps_solver_and_recovers(self):
-        with portfolio_z3('block', 'real') as (env, directory):
-            result = subprocess.run(
-                ["lake", "env", "lean", "equivalence/test_fixtures/dispatch_deadline.lean"],
-                cwd=ROOT, env=env, capture_output=True, text=True, timeout=20)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("dispatch deadline recovered", result.stdout)
-            self.assert_portfolio_stopped(directory, 2)
+        for jobs, mode, seeded in [(1, 'block', 'real'), (1, 'block-model', 'block-model'),
+                                    (2, 'block-model', 'block-model')]:
+            with self.subTest(jobs=jobs, mode=mode), portfolio_z3(mode, seeded) as (env, directory):
+                result = subprocess.run(
+                    ["lake", "env", "lean", "equivalence/test_fixtures/dispatch_deadline.lean"],
+                    cwd=ROOT, env={**env, 'UPLC_TEST_SOLVER_JOBS': str(jobs)},
+                    capture_output=True, text=True, timeout=20)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("dispatch deadline recovered", result.stdout)
+                if mode == 'block-model':
+                    self.assertGreaterEqual(len(list(directory.glob('*.model'))), 1)
+                self.assert_portfolio_stopped(directory, jobs + 1)
 
     def test_dispatch_catch_all_keeps_unlisted_values(self):
         redeemer = f"[(builtin unIData) {data_at([1])}]"
@@ -777,13 +925,18 @@ class CheckerProcess(unittest.TestCase):
                "(delay (con unit ()))] (delay (error))]))")
         body = old[len("(lam c "):-1]
         new = f"(lam c [(lam value value) {body}])"
-        result, report = self.dispatch_case(old, new, "--equivalence")
-        self.assertEqual(result.returncode, 0, report)
-        self.assertEqual(report["verdict"], "bounded_equivalent", report)
-        self.assertEqual(report["old_acceptance_status"], "accepted")
-        self.assertEqual(report["old_acceptance_witness"]["input"]["fields"][1], {"int": 1})
-        self.assertIn("Using dispatch evidence [old_rejected]", result.stderr)
-        self.assertEqual(report["dispatch"]["proof_fallback"], "not needed")
+        for flags in [(), ("--skip-old-rejected",)]:
+            with self.subTest(flags=flags):
+                result, report = self.dispatch_case(old, new, "--equivalence", *flags)
+                self.assertEqual(result.returncode, 0, report)
+                self.assertEqual(report["verdict"], "bounded_equivalent", report)
+                self.assertEqual(report["old_acceptance_status"], "accepted")
+                self.assertEqual(report["old_acceptance_witness"]["input"]["fields"][1], {"int": 1})
+                self.assertEqual(report["dispatch"]["proof_fallback"], "not needed")
+                if flags:
+                    self.assertNotIn("old_rejected", report["queries"])
+                else:
+                    self.assertIn("Using dispatch evidence [old_rejected]", result.stderr)
 
     def test_dispatch_unknown_does_not_establish_equivalence(self):
         integer = f"[(builtin unIData) {data_at([1])}]"
@@ -907,6 +1060,40 @@ class CheckerProcess(unittest.TestCase):
         self.assertEqual(tx[2]["list"][0]["fields"][1]["map"][0]["v"]["map"][0]["v"],
                          {"int": 75000000})
 
+    def test_help(self):
+        for args in ([], ["-h"], ["--help"], ["old", "new", "--json", "--help"]):
+            with self.subTest(args=args):
+                result = subprocess.run([str(CLI), *args], cwd=ROOT,
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(result.stdout.startswith("Usage: "), result.stdout)
+
+    def test_export_paths_require_explicit_dash_prefixed_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / "identity.uplc"
+            script.write_text("(program 1.1.0 (lam n n))")
+            existing = Path(directory) / "--json"
+            existing.write_text("existing content")
+            args = [str(CLI), str(script), str(script), "--mode", "function"]
+            for option in ("--emit-lean", "--emit-assurance"):
+                for token in ("--json", "-h", "--help", ""):
+                    with self.subTest(option=option, token=token):
+                        flags = [option, token] if token == "--json" else [option, token, "--json"]
+                        result = subprocess.run(
+                            [*args, *flags], cwd=directory, capture_output=True,
+                            text=True, timeout=10)
+                        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+                        report = json.loads(result.stdout)
+                        self.assertEqual(report["verdict"], "error")
+                        self.assertIn(f"{option} expects a path", report["explanation"])
+            self.assertEqual(existing.read_text(), "existing content")
+            result = subprocess.run(
+                [*args, "--emit-lean", "./--json", "--json"],
+                cwd=directory, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(json.loads(result.stdout)["verdict"], "equivalent")
+            self.assertIn("import Equivalence", existing.read_text())
+
     def test_invalid_arguments_are_tool_errors(self):
         with tempfile.TemporaryDirectory() as directory:
             old_path, new_path = Path(directory) / "old.uplc", Path(directory) / "new.uplc"
@@ -933,6 +1120,8 @@ class CheckerProcess(unittest.TestCase):
                         "small-context", "medium-context", "integer", "data", "data3", "spending"]],
                     ["left", "right", "--inputs", "data", "--variation", "baseline"],
                     ["left", "right", "--raw-context"],
+                    ["old", "new", "--datum", "-h"],
+                    ["old", "new", "--redeemer", "--help"],
                     ["left", "right", "--bounded", "--max-inputs", "-1"],
                     ["left", "right", "--bounded", "--max-outputs"],
                     ["left", "right", "--bounded", "--max-signers", "not-a-number"],
@@ -951,6 +1140,43 @@ class CheckerProcess(unittest.TestCase):
     def test_malformed_script_is_tool_error(self):
         code, report = self.invoke("not uplc", "(lam n n)")
         self.assertEqual(code, 3, report)
+
+    @unittest.skipUnless(os.name == "posix", "requires POSIX signals")
+    def test_interrupt_stops_worker_and_solver(self):
+        fixtures = ROOT / "equivalence/examples/uplc-optimize"
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signum=signum), portfolio_z3("block-options", "real") as (env, directory):
+                process = subprocess.Popen(
+                    [str(CLI), str(fixtures / "choose-list-empty.uplc"),
+                     str(fixtures / "choose-list-empty-opt.uplc"), "--mode", "function",
+                     "--timeout", "20", "--wall-timeout", "30", "--json"],
+                    cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                worker = None
+                try:
+                    deadline = time.monotonic() + 8
+                    while time.monotonic() < deadline and process.poll() is None:
+                        if list(directory.glob("*.options")):
+                            break
+                        time.sleep(0.01)
+                    receipts = list(directory.glob("*.json"))
+                    if receipts:
+                        solver, _ = json.loads(receipts[0].read_text())
+                        worker = os.getpgid(solver)
+                    self.assertTrue(list(directory.glob("*.options")), "Solver did not reach blocked setup")
+                    self.assertIsNotNone(worker)
+                    process.send_signal(signum)
+                    stdout, stderr = process.communicate(timeout=8)
+                    with self.assertRaises(ProcessLookupError):
+                        os.kill(worker, 0)
+                    self.assert_portfolio_stopped(directory, 1)
+                    self.assertEqual(process.returncode, 128 + signum, stdout + stderr)
+                finally:
+                    if worker is not None:
+                        with contextlib.suppress(ProcessLookupError):
+                            os.killpg(worker, signal.SIGTERM)
+                    if process.poll() is None:
+                        process.kill()
+                    process.communicate(timeout=10)
 
     @unittest.skipUnless(hasattr(os, "mkfifo"), "requires POSIX named pipes")
     def test_wall_timeout_stops_blocked_worker(self):

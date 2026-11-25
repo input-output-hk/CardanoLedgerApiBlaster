@@ -322,13 +322,13 @@ def replayOldAcceptance (c : Config) (left right : PlutusCore.UPLC.Term.Program)
 private def replayConfirmed (witness : Json) : Bool :=
   (witness.getObjValAs? Bool "replayed").toOption == some true
 
-/-- Keep speculative search and proof queries on the same deadline and error policy.
-    Goal construction stays inside the handler when supplied by the caller. -/
+/-- Keep goal construction, speculative search and proof queries on the same
+    deadline and error policy. -/
 private def runDispatchQuery (c : Config) (goal : MetaM Expr) (name : String)
     (diagnostics : Option (IO.Ref (Array (String × Json)))) (observer : Solver.Observer) :
     MetaM (Blaster.Smt.Result × String) := do
   try
-    match ← Solver.runQueryTimed (← getEnv) (← goal) name c.timeout c.dispatchTimeout
+    match ← Solver.runQueryTimed (← getEnv) goal name c.timeout c.dispatchTimeout
         diagnostics observer c.solverJobs c.solverSeed with
     | some result => pure (result, status result)
     | none => pure (.Undetermined, "case_timeout")
@@ -377,9 +377,10 @@ private def searchDispatch (c : Config) (left right : PlutusCore.UPLC.Term.Progr
         if let some ref := info then ref.set (summary tried record)
         observer.message s!"Finished: {name}: native probe confirmed a regression in the original domain"
         return some ((Array.replicate plan.size (.Undetermined : Blaster.Smt.Result)).set! queryIndex (.Falsified model))
-      let predicate ← queryPredicate c query programs
-      let goal ← candidate.proposition c.toLimits predicate
-      let (result, resultStatus) ← runDispatchQuery c (pure goal) name diagnostics observer
+      let goal := do
+        let predicate ← queryPredicate c query programs
+        candidate.proposition c.toLimits predicate
+      let (result, resultStatus) ← runDispatchQuery c goal name diagnostics observer
       outcomes := outcomes ++ [(query.name, toJson resultStatus)]
       if let .Falsified bindings := result then
         if let some model := replayModel bindings (query.sides[0]? == some 1) then
@@ -402,10 +403,11 @@ cannot omit inputs from a proof. Counterexamples still require native replay. -/
 private def proveDispatch (c : Config) (left right : PlutusCore.UPLC.Term.Program)
     (programs : Array Expr) (discovery : Dispatch.Discovery) (info : Option (IO.Ref Json))
     (diagnostics : Option (IO.Ref (Array (String × Json)))) (observer : Solver.Observer) :
-    MetaM (Array (Option Blaster.Smt.Result)) := do
+    MetaM (Array (Option Blaster.Smt.Result) × Option (List String)) := do
   let plan := queries c
   let comparisons := plan.zipIdx.filter (fun (query, _) => query.name.endsWith "acceptance_preserved")
   let mut cached : Array (Option Blaster.Smt.Result) := Array.replicate plan.size none
+  let mut oldAcceptanceModel : Option (List String) := none
   let mut allValid := Array.replicate plan.size true
   let mut tried : Array Json := #[]
   let previous ← match info with | some ref => ref.get | none => pure Json.null
@@ -432,17 +434,17 @@ private def proveDispatch (c : Config) (left right : PlutusCore.UPLC.Term.Progra
       ("queries", Json.mkObj outcomes)] ++ extra)
     -- An accepting discovered input also settles nonvacuity, independently of
     -- whether that case is useful for proving preservation.
-    if let some oldIndex := plan.findIdx? (·.name == "old_rejected") then
-      if cached[oldIndex]!.isNone then
-        if let some model := candidate.bind (·.model []) then
-          if replayConfirmed (replayOldAcceptance c left right model) then
-            cached := cached.set! oldIndex (some (.Falsified model))
+    if oldAcceptanceModel.isNone then
+      if let some model := candidate.bind (·.model []) then
+        if replayConfirmed (replayOldAcceptance c left right model) then
+          oldAcceptanceModel := some model
     observer.message s!"Starting: {label}: {(candidate.map Dispatch.Case.describe).getD "all inputs not covered by earlier cases"}"
     for (query, queryIndex) in comparisons do
       let name := label ++ "_" ++ query.name
-      let predicate ← queryPredicate c query programs
-      let (result, resultStatus) ← runDispatchQuery c
-        (Dispatch.partitionProposition discovery.cases index c.toLimits predicate) name diagnostics observer
+      let goal := do
+        let predicate ← queryPredicate c query programs
+        Dispatch.partitionProposition discovery.cases index c.toLimits predicate
+      let (result, resultStatus) ← runDispatchQuery c goal name diagnostics observer
       outcomes := outcomes ++ [(query.name, toJson resultStatus)]
       unless result matches .Valid do allValid := allValid.set! queryIndex false
       if let .Falsified model := result then
@@ -451,7 +453,8 @@ private def proveDispatch (c : Config) (left right : PlutusCore.UPLC.Term.Progra
           tried := tried.push record
           if let some ref := info then ref.set (summary tried record #[] false)
           observer.message s!"Finished: {name}: regression confirmed by native replay in the original domain"
-          return (Array.replicate plan.size none).set! queryIndex (some (.Falsified model))
+          return ((Array.replicate plan.size none).set! queryIndex (some (.Falsified model)),
+            oldAcceptanceModel)
         observer.message s!"Finished: {name}: countermodel did not pass strict decoding and native replay"
     tried := tried.push (caseReport outcomes [])
     if let some ref := info then ref.set (summary tried Json.null #[] true)
@@ -464,7 +467,51 @@ private def proveDispatch (c : Config) (left right : PlutusCore.UPLC.Term.Progra
   if let some ref := info then ref.set (summary tried Json.null proved (!complete))
   if complete then observer.message "Dispatch partition proved every preservation direction over the original full domain"
   else observer.message "Dispatch partition proof incomplete; checking remaining queries over the original full domain"
-  return cached
+  if let some oldIndex := plan.findIdx? (·.name == "old_rejected") then
+    cached := cached.set! oldIndex (oldAcceptanceModel.map Blaster.Smt.Result.Falsified)
+  return (cached, oldAcceptanceModel)
+
+private def synthesizeOldAcceptance (c : Config)
+    (left right : PlutusCore.UPLC.Term.Program) (programs : Array Expr)
+    (diagnostics : Option (IO.Ref (Array (String × Json)))) (observer : Solver.Observer) :
+    MetaM (Option (List String)) := do
+  let progress := observer.message
+  let query : Query := ⟨"old_rejected", ``Queries.rejected, #[0]⟩
+  progress "Starting: synthesizing an OLD-accepting structured spending witness"
+  let predicate ← queryPredicate c query programs
+  let fast := c.datum.isNone && c.redeemer.isNone && c.maxInputs > 0 && c.maxOutputs > 0 && c.maxSigners > 0
+  let (cpu, memory) := c.budget.getD (0, 0)
+  let fastGoal := mkAppN (mkConst ``ValidContext.fastWitnessRejected)
+    (query.sides.map (programs[·]!) ++ #[mkRawNatLit cpu, mkRawNatLit memory,
+      toExpr true, toExpr c.bounded, toExpr c.budget.isSome, mkRawNatLit c.steps])
+  for useFast in (if fast then [true, false] else [false]) do
+    observer.reportPhase "preprocessing" (some "old_acceptance_witness_search")
+    let goal ← if useFast then pure fastGoal else
+      ValidContext.witnessProposition c.toLimits predicate
+    let candidate ← Solver.runQuery goal
+      "old_acceptance_witness_search" c.timeout true diagnostics observer c.solverJobs c.solverSeed
+    if let .Falsified bindings := candidate then
+      -- The search subset shares its output datum with the input.
+      -- All other omitted fields use the same structured defaults.
+      let sharedDatum := bindings.filterMap fun binding =>
+        if binding.startsWith "datum: " then
+          some (": ".intercalate (binding.splitOn ": ").tail)
+        else none
+      let names := "input0Datum" :: (List.range c.maxOutputs).map (fun i => s!"output{i}Datum")
+      let aliases := if useFast then
+        bindings.filterMap (fun b => if b.startsWith "first: " then
+          some ("signer0: " ++ (": ".intercalate (b.splitOn ": ").tail)) else none) ++
+          ["input0Quantity: 1"] else []
+      let bindings := bindings ++ aliases ++ sharedDatum.flatMap (fun value =>
+        names.map fun name => name ++ ": " ++ value)
+      if replayConfirmed (replayOldAcceptance c left right bindings) then
+        progress "Finished: ledger-valid OLD acceptance confirmed by native replay"
+        return some bindings
+      else progress "Finished: structured witness model failed validated replay"
+    else
+      -- Rejection on this search subset is not rejection on the domain.
+      progress s!"Finished: structured witness search: {status candidate}"
+  return none
 
 /-- Call Blaster in-process on propositions constructed from decoded programs.
     Results are consumed as an inductive type, without parsing diagnostic text. -/
@@ -472,7 +519,7 @@ def solve (env : Environment) (c : Config) (left right : PlutusCore.UPLC.Term.Pr
     (checkedResults : Option (IO.Ref (Array (Option Blaster.Smt.Result))) := none)
     (diagnostics : Option (IO.Ref (Array (String × Json))) := none)
     (observer : Solver.Observer := {})
-    (dispatchInfo : Option (IO.Ref Json) := none) : IO (Array Blaster.Smt.Result) := do
+    (dispatchInfo : Option (IO.Ref Json) := none) : IO (Array Blaster.Smt.Result × Option (List String)) := do
   let progress := observer.message
   let programs := #[toExpr left, toExpr right]
   let plan := queries c
@@ -480,18 +527,18 @@ def solve (env : Environment) (c : Config) (left right : PlutusCore.UPLC.Term.Pr
   let skipRemaining := fun (checked : Nat) (reason : String) => do
     for pending in plan.toList.drop checked do
       progress s!"Skipping: {pending.name} ({reason})"
-  let action : MetaM (Array Blaster.Smt.Result) := do
-    let dispatchResults ← if c.splitDispatch && c.mode == "validator" then
+  let action : MetaM (Array Blaster.Smt.Result × Option (List String)) := do
+    let (dispatchResults, oldAcceptanceModel) ← if c.splitDispatch && c.mode == "validator" then
         do
           let discovery := Dispatch.discover c.toLimits left right c.dispatchCaseLimit
           if let some found ← searchDispatch c left right programs discovery dispatchInfo diagnostics observer then
-            pure (found.map some)
+            pure (found.map some, none)
           else proveDispatch c left right programs discovery dispatchInfo diagnostics observer
-      else pure #[]
+      else pure (#[], none)
     if plan.zipIdx.any (fun (query, index) => query.sides.size == 2 &&
         ((dispatchResults[index]?).getD none matches some (.Falsified _))) then
       if let some ref := checkedResults then ref.set dispatchResults
-      return dispatchResults.map (·.getD .Undetermined)
+      return (dispatchResults.map (·.getD .Undetermined), oldAcceptanceModel)
     let mut results := #[]
     let comparisonsProved := fun (checked : Array Blaster.Smt.Result) =>
       let result := fun name => checked[names.idxOf name]?.getD .Undetermined
@@ -528,68 +575,39 @@ def solve (env : Environment) (c : Config) (left right : PlutusCore.UPLC.Term.Pr
             let proposition ← queryProposition c query programs
             Solver.runQuery proposition query.name c.timeout query.wantsCounterexample
               diagnostics observer c.solverJobs c.solverSeed
-      let mut combined := primary
-      if checksLedger c && query.name == "old_rejected" &&
-          comparisonsProved results && !(combined matches .Valid) then
-        let model := match combined with
-          | .Falsified model => model
-          | _ => []
-        unless replayConfirmed (replayOldAcceptance c left right model) do
-          progress "Starting: synthesizing an OLD-accepting structured spending witness"
-          let predicate ← queryPredicate c query programs
-          let fast := c.datum.isNone && c.redeemer.isNone && c.maxInputs > 0 && c.maxOutputs > 0 && c.maxSigners > 0
-          let (cpu, memory) := c.budget.getD (0, 0)
-          let fastGoal := mkAppN (mkConst ``ValidContext.fastWitnessRejected)
-            (query.sides.map (programs[·]!) ++ #[mkRawNatLit cpu, mkRawNatLit memory,
-              toExpr true, toExpr c.bounded, toExpr c.budget.isSome, mkRawNatLit c.steps])
-          for useFast in (if fast then [true, false] else [false]) do
-            observer.reportPhase "preprocessing" (some "old_acceptance_witness_search")
-            let goal ← if useFast then pure fastGoal else
-              ValidContext.witnessProposition c.toLimits predicate
-            let candidate ← Solver.runQuery goal
-              "old_acceptance_witness_search" c.timeout true diagnostics observer c.solverJobs c.solverSeed
-            if let .Falsified bindings := candidate then
-              -- The search subset shares its output datum with the input.
-              -- All other omitted fields use the same structured defaults.
-              let sharedDatum := bindings.filterMap fun binding =>
-                if binding.startsWith "datum: " then
-                  some (": ".intercalate (binding.splitOn ": ").tail)
-                else none
-              let names := "input0Datum" :: (List.range c.maxOutputs).map (fun i => s!"output{i}Datum")
-              let aliases := if useFast then
-                bindings.filterMap (fun b => if b.startsWith "first: " then
-                  some ("signer0: " ++ (": ".intercalate (b.splitOn ": ").tail)) else none) ++
-                  ["input0Quantity: 1"] else []
-              let bindings := bindings ++ aliases ++ sharedDatum.flatMap (fun value =>
-                names.map fun name => name ++ ": " ++ value)
-              if replayConfirmed (replayOldAcceptance c left right bindings) then
-                combined := .Falsified bindings
-                progress "Finished: ledger-valid OLD acceptance confirmed by native replay"
-                break
-              else progress "Finished: structured witness model failed validated replay"
-            else
-              -- Rejection on this search subset is not rejection on the domain.
-              progress s!"Finished: structured witness search: {status candidate}"
       if let some ref := checkedResults then ref.modify (·.push (some primary))
-      results := results.push combined
-      progress s!"Finished: {query.name}: {status combined}"
+      results := results.push primary
+      progress s!"Finished: {query.name}: {status primary}"
       if c.mode == "validator" && query.sides.size == 2 then
-        if let .Falsified model := combined then
+        if let .Falsified model := primary then
           let witness := replayCounterexample c left right model (query.sides[0]? == some 1)
           if replayConfirmed witness then
             skipRemaining results.size "regression confirmed by native replay"
             break
-      if (query.name == "old_rejected" || query.name == "new_rejected") && (combined matches .Valid) then
+      if (query.name == "old_rejected" || query.name == "new_rejected") && (primary matches .Valid) then
         for (previous, i) in (plan.toList.take results.size).zipIdx do
           if let some evidence := queryEvidence c previous results then
             results := results.set! i .Valid
             if let some ref := checkedResults then ref.modify (fun rows => rows.set! i none)
             progress s!"Derived: {previous.name} (from {evidence})"
-    return results
-  let (results, _) ← action.run' |>.toIO
+    if checksLedger c && comparisonsProved results && oldAcceptanceModel.isNone then
+      let oldIndex := names.idxOf "old_rejected"
+      let rejection := results[oldIndex]?.getD .Undetermined
+      unless rejection matches .Valid do
+        let bindings := match rejection with
+          | .Falsified model => model
+          | _ => []
+        unless replayConfirmed (replayOldAcceptance c left right bindings) do
+          if let some model ← synthesizeOldAcceptance c left right programs diagnostics observer then
+            -- A replayed witness refutes universal rejection when that query was enabled.
+            if oldIndex < results.size then
+              results := results.set! oldIndex (.Falsified model)
+            return (results, some model)
+    return (results, oldAcceptanceModel)
+  let (result, _) ← action.run' |>.toIO
     { fileName := "<uplc_equiv>", fileMap := default, maxRecDepth := 0, maxHeartbeats := 0 }
     { env }
-  return results
+  return result
 
 def classifyFunction (c : Config) (results : Array Blaster.Smt.Result)
     (left right : PlutusCore.UPLC.Term.Program) : Json := Id.run do
@@ -633,7 +651,8 @@ def classifyFunction (c : Config) (results : Array Blaster.Smt.Result)
 
 def classify (c : Config) (results : Array Blaster.Smt.Result)
     (left right : PlutusCore.UPLC.Term.Program)
-    (domainWitness : Option PlutusCore.Data.Data := none) : Json := Id.run do
+    (domainWitness : Option PlutusCore.Data.Data := none)
+    (oldAcceptanceModel : Option (List String) := none) : Json := Id.run do
   if c.mode == "function" then return classifyFunction c results left right
   let names := queryNames c
   let result := fun name => results[names.idxOf name]?.getD .Undetermined
@@ -648,21 +667,20 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
           ("proof_domain", toJson "ledger-valid structured spending contexts"),
           ("domain_witness", PlutusCore.Data.toDetailedJson raw), ("ledger_validity", auditLedgerContext c raw)]
       | _ => return domainIssue "unestablished" "Could not construct a ledger-valid context witnessing the selected domain; no preservation claim is made."
-  let mismatch := result "no_acceptance_regression"
   let preserved := result "acceptance_preserved"
-  let reverseMismatch := result "reverse_no_acceptance_regression"
   let reversePreserved := result "reverse_acceptance_preserved"
-  -- Prefer a forward witness when both directions expose a regression.
-  let replayedDifference := fun (result : Blaster.Smt.Result) (reverse : Bool) => match result with
-    | .Falsified model =>
+  let candidates := [(false, result "no_acceptance_regression"), (false, preserved)] ++
+    (if c.equivalence then [(true, result "reverse_no_acceptance_regression"), (true, reversePreserved)]
+     else [])
+  let mut regression : Option Json := none
+  let mut diagnostic : Option Json := none
+  for (reverse, candidate) in candidates do
+    if let .Falsified model := candidate then
       let witness := replayCounterexample c left right model reverse
-      if replayConfirmed witness then some (reverse, model) else none
-    | _ => none
-  let regression := match mismatch, reverseMismatch with
-    | .Falsified model, _ => some (false, model)
-    | _, .Falsified model => if c.equivalence then some (true, model) else none
-    | _, _ => (replayedDifference preserved false).orElse fun _ =>
-        if c.equivalence then replayedDifference reversePreserved true else none
+      if replayConfirmed witness then
+        regression := some witness
+        break
+      if diagnostic.isNone then diagnostic := some witness
   let complete := (preserved matches .Valid) && (!c.equivalence || (reversePreserved matches .Valid))
   let boundedPrefix := if c.bounded then "bounded_" else ""
   let successVerdict := boundedPrefix ++ if c.equivalence then "equivalent" else "preserved"
@@ -672,6 +690,8 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
     if regression.isSome then
       if c.equivalence then (failureVerdict, s!"One script accepts an input not accepted by the other {scope}.")
       else (failureVerdict, s!"An input accepted by OLD is not accepted by NEW {scope}.")
+    else if diagnostic.isSome then
+      ("inconclusive", "The symbolic countermodel could not be replayed as a ledger-valid acceptance regression.")
     else if complete then
       if c.equivalence then (successVerdict, s!"Both scripts accept the same inputs in the declared domain {scope}.")
       else (successVerdict, s!"NEW accepts every input accepted by OLD in the declared domain {scope}.")
@@ -680,7 +700,7 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
   let mut explanation := initialExplanation
   let mut acceptanceFields := []
   let (cpu, memory) := c.budget.getD (0, 0)
-  if complete && regression.isNone then
+  if complete && regression.isNone && diagnostic.isNone then
     match result "old_rejected" with
     | .Valid =>
       verdict := "vacuously_" ++ successVerdict
@@ -705,7 +725,7 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
     | rejectionResult =>
       let model := match rejectionResult with
         | .Falsified model => model
-        | _ => []
+        | _ => oldAcceptanceModel.getD []
       let witness := replayOldAcceptance c left right model
       if replayConfirmed witness then
         acceptanceFields := [("old_acceptance_status", toJson "accepted"),
@@ -731,13 +751,9 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
       ("script_purpose", toJson "spending"), ("validity_range", toJson "arbitrary Data")])] ++
     (if c.budget.isSome then [("cost_model", toJson (if c.language == "PlutusV3" then "bundled post-Conway E" else "bundled post-Conway D"))]
      else [("execution", toJson "uncosted")])
-  let counterexample := regression.toList.map fun (reverse, model) =>
-    ("counterexample", replayCounterexample c left right model reverse)
-  if checksLedger c then
-    for (_, witness) in counterexample do
-      unless replayConfirmed witness do
-        return report "inconclusive" "The symbolic countermodel could not be replayed as a ledger-valid acceptance regression."
-          (ledgerFields ++ [("input_domain", toJson (inputDomain c)), ("diagnostic_counterexample", witness)])
+  let counterexample := match regression with
+    | some witness => [("counterexample", witness)]
+    | none => diagnostic.toList.map fun witness => ("diagnostic_counterexample", witness)
   let derivations := (queries c).toList.filterMap fun query =>
     (queryEvidence c query results).map fun evidence => (query.name, toJson evidence)
   let provenance := if derivations.isEmpty then [] else [("derived_queries", Json.mkObj derivations)]
@@ -774,11 +790,12 @@ def check (c : Config) (left right : PlutusCore.UPLC.Term.Program)
   let diagnostics ← IO.mkRef #[]
   if c.skipOldRejected then progress "Skipping: old_rejected (--skip-old-rejected)"
   let dispatchInfo ← IO.mkRef Json.null
-  let results ← solve env c left right (some checkedResults) (some diagnostics) observer (some dispatchInfo)
+  let (results, oldAcceptanceModel) ←
+    solve env c left right (some checkedResults) (some diagnostics) observer (some dispatchInfo)
   inspectQueries env (← checkedResults.get)
   progress "Starting: validating replay witnesses and classifying results"
   observer.reportPhase "validation"
-  let result := classify c results left right domainWitness
+  let result := classify c results left right domainWitness oldAcceptanceModel
   let dispatch ← dispatchInfo.get
   let result := if c.splitDispatch then result.setObjVal! "dispatch" dispatch else result
   let nativeProbe := ((dispatch.getObjVal? "winning_case").toOption.bind fun winner =>

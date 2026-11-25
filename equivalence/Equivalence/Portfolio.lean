@@ -11,7 +11,6 @@ namespace Equivalence.Portfolio
 structure Outcome where
   result : Blaster.Smt.Result
   seed : Option Nat := none
-  worker : Nat := 0
   reason : String := ""
 
 private def runWorker (env : TranslateEnv) (seed : Option Nat) : MetaM Outcome := do
@@ -20,7 +19,8 @@ private def runWorker (env : TranslateEnv) (seed : Option Nat) : MetaM Outcome :
       Blaster.Smt.trySubmitCommand! command (!(command matches .setSimplifier _))
       -- Set the seed as soon as acknowledgements are enabled, before any
       -- declarations or assertions can initialize solver search state.
-      if command matches .setOption ":print-success" "true" then
+      if env.optEnv.options.solverOptions.randomSeed.isNone &&
+          (command matches .setOption ":print-success" "true") then
         Blaster.Smt.setRandomSeed seed
     -- This worker already has a dedicated thread. Read directly rather than
     -- queuing Blaster's additional reader task on Lean's bounded task pool.
@@ -29,7 +29,7 @@ private def runWorker (env : TranslateEnv) (seed : Option Nat) : MetaM Outcome :
       | throwError "portfolio worker has no solver process"
     let reply := (← process.stdout.getLine).replace "\r" ""
     let result : Blaster.Smt.Result ← match reply with
-      | "sat\n" => pure (.Falsified [])
+      | "sat\n" => pure (.Falsified (← Blaster.Smt.getModel))
       | "unsat\n" => pure .Valid
       | "unknown\n" => pure .Undetermined
       | error => throwError "Unexpected SMT result: {error}"
@@ -47,8 +47,8 @@ private def stop (processes : Array (IO.Process.Child ⟨.piped, .piped, .piped�
   for process in processes do
     try discard process.wait catch _ => pure ()
 
-/-- Race independent SMT searches under a single deadline. An unknown result
-    does not cancel other workers. Models are read from the winning worker. -/
+/-- Race independent SMT searches under a single deadline, including model
+    retrieval. Unknown results and failed workers leave the race open. -/
 def solve (env : TranslateEnv) (jobs timeout : Nat) (startSeed : Option Nat := none) : MetaM Outcome := do
   let coreContext ← readThe Core.Context
   let coreState ← getThe Core.State
@@ -59,9 +59,20 @@ def solve (env : TranslateEnv) (jobs timeout : Nat) (startSeed : Option Nat := n
   let processes ← IO.mkRef (#[] : Array (IO.Process.Child ⟨.piped, .piped, .piped⟩))
   let tasks ← IO.mkRef (#[] : Array (Task (Except IO.Error Outcome)))
   let deadline := (← IO.monoMsNow) + timeout * 1000
+  let expired : MetaM Bool := do
+    if let some token := coreContext.cancelTk? then
+      if ← token.isSet then throwInterruptException
+    return (← IO.monoMsNow) ≥ deadline
+  -- The deadline loop owns cancellation and process cleanup for all its tasks.
+  let workerContext := { coreContext with cancelTk? := none }
+  let timeoutOutcome : Outcome := { result := .Undetermined, reason := "(:reason-unknown \"timeout\")" }
   try
     for i in [:jobs] do
-      let process ← Blaster.Smt.createBlasterProcess
+      if ← expired then return timeoutOutcome
+      -- The worker checks startup through the solver protocol under the deadline.
+      let process ← IO.Process.spawn {
+        cmd := "z3", args := #["-in", "-smt2"]
+        stdin := .piped, stdout := .piped, stderr := .piped }
       processes.modify (·.push process)
       let workerEnv := { env with
         smtEnv.smtProc := some process
@@ -70,44 +81,31 @@ def solve (env : TranslateEnv) (jobs timeout : Nat) (startSeed : Option Nat := n
         | some base => some (base + i)
         | none => if i == 0 then none else some i
       let task ← IO.asTask (do
-        let (outcome, _, _) ← (runWorker workerEnv seed).toIO coreContext coreState metaContext metaState
-        return { outcome with worker := i }) Task.Priority.dedicated
+        let (outcome, _, _) ← (runWorker workerEnv seed).toIO workerContext coreState metaContext metaState
+        return outcome) Task.Priority.dedicated
       tasks.modify (·.push task)
     let mut pending ← tasks.get
     let mut reasons : Array String := #[]
-    let mut winner : Option Outcome := none
-    while !pending.isEmpty && winner.isNone do
-      if let some token := coreContext.cancelTk? then
-        if ← token.isSet then throwInterruptException
+    let mut firstError : Option IO.Error := none
+    let mut hitDeadline := false
+    while !pending.isEmpty do
+      if ← expired then
+        hitDeadline := true
+        break
       let mut unfinished := #[]
       for task in pending do
         if ← IO.hasFinished task then
-          let outcome ← IO.ofExcept task.get
-          if outcome.result matches .Undetermined then
-            reasons := reasons.push outcome.reason
-          else if winner.isNone then
-            winner := some outcome
+          match task.get with
+          | .error error => if firstError.isNone then firstError := some error
+          | .ok outcome =>
+            match outcome.result with
+            | .Undetermined => reasons := reasons.push outcome.reason
+            | .Valid | .Falsified _ => return outcome
         else unfinished := unfinished.push task
       pending := unfinished
-      if winner.isSome || pending.isEmpty then break
-      if (← IO.monoMsNow) ≥ deadline then break
-      IO.sleep 5
-    if let some outcome := winner then
-      let index := outcome.worker
-      let workers ← processes.get
-      let some process := workers[index]?
-        | throwError "portfolio winner has no solver process"
-      stop (workers.zipIdx.filterMap fun (p, i) => if i == index then none else some p)
-      processes.set #[process]
-      -- Only the selected solver reads a model. Killing a loser while Blaster
-      -- is parsing its model could leave a reader waiting for truncated output.
-      let result ← if outcome.result matches .Falsified _ then do
-        let modelEnv := { env with smtEnv.smtProc := some process }
-        let (model, _) ← Blaster.Smt.getModel.run modelEnv
-        pure (.Falsified model)
-      else pure outcome.result
-      return { outcome with result }
-    let timedOut := !pending.isEmpty || reasons.all (· == "(:reason-unknown \"timeout\")")
+      if !pending.isEmpty then IO.sleep 5
+    if let some error := firstError then return ← IO.ofExcept (.error error)
+    let timedOut := hitDeadline || reasons.all (· == timeoutOutcome.reason)
     return {
       result := .Undetermined
       reason := if timedOut then "(:reason-unknown \"timeout\")" else

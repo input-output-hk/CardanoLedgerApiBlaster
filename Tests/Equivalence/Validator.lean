@@ -110,7 +110,8 @@ example : _root_.Equivalence.Acceptance.accepts true
   expect report ["queries", "acceptance_preserved"] "valid"
   expect report ["old_acceptance_witness", "replayed"] true
   expect report ["old_acceptance_witness", "old", "accepts"] true
-  let report ← comparePrograms "(lam c (error))" "(lam c (error))" settings
+  let report ← comparePrograms "(lam c (error))" "(lam c (error))"
+    { settings with maxInputs := 1, maxOutputs := 1, maxSigners := 1 }
   verdict report "inconclusive"
   expect report ["inconclusive_reason"] "old_acceptance_unestablished"
 
@@ -166,5 +167,17 @@ example : _root_.Equivalence.Acceptance.accepts true
   verdict modeled "bounded_preserved"
   expect modeled ["queries", "old_rejected"] "falsified"
   expect (← dataField (← field modeled ["old_acceptance_witness", "input"]) [2, 1, 0]) ["int"] (42 : Int)
+
+#eval show IO Unit from do
+  let only7 := acceptIf s!"[[(builtin equalsData) {datumTerm}] (con data (I 7))]"
+  let settings := { acceptanceConfig with
+    bounded := true, budget := none, steps := 1000, skipOldRejected := true }
+  let report ← comparePrograms only7 only7 settings
+  verdict report "bounded_preserved"
+  expect report ["old_acceptance_witness", "replayed"] true
+  expect (← dataField (← field report ["old_acceptance_witness", "input"]) [2, 1, 0]) ["int"] (7 : Int)
+  let queries ← field report ["queries"]
+  check report (queries.getObjVal? "old_rejected").toOption.isNone
+    "Witness synthesis ran the disabled universal rejection query"
 
 end Tests.Equivalence.Validator

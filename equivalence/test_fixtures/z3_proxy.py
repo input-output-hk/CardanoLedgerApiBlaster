@@ -4,7 +4,8 @@ The test harness copies this file to a temporary executable named ``z3`` and
 provides the real solver and worker modes through UPLC_TEST_Z3_* variables.
 Receipt files beside that executable record PIDs, seeds and model requests.
 The default mode applies until an explicit smt.random-seed option is received;
-the seeded mode applies afterwards. Modes are real, unknown, block and error.
+the seeded mode applies afterwards. Modes are real, unknown, block, block-model,
+block-options, block-version, error, error-model and real-after-model-request.
 """
 import json
 import os
@@ -21,6 +22,8 @@ def main():
     default_mode = os.environ['UPLC_TEST_Z3_DEFAULT_MODE']
     seeded_mode = os.environ['UPLC_TEST_Z3_SEEDED_MODE']
     if '-in' not in sys.argv:
+        if default_mode == 'block-version':
+            time.sleep(30)
         os.execv(real, [real, *sys.argv[1:]])
 
     child = subprocess.Popen([real, *sys.argv[1:]], stdin=subprocess.PIPE,
@@ -48,9 +51,23 @@ def main():
             seed = int(line.strip().removesuffix(')').split()[-1])
             receipt.with_suffix('.seed').write_text(str(seed))
         mode = seeded_mode if seeded else default_mode
+        if mode == 'block-options' and line.startswith('(set-option :print-success '):
+            receipt.with_suffix('.options').touch()
+            time.sleep(30)
         if line.startswith('(eval ') or line.startswith('(get-model'):
             receipt.with_suffix('.model').touch()
-        if line.startswith('(check-sat)') and mode != 'real':
+            if mode == 'block-model':
+                print('(partial', flush=True)
+                time.sleep(30)
+            if mode == 'error-model':
+                print('(partial', flush=True)
+                continue
+        if mode == 'error-model' and line.startswith('(echo '):
+            break
+        if mode == 'real-after-model-request' and line.startswith('(check-sat)'):
+            while not any(receipt.parent.glob('*.model')):
+                time.sleep(0.01)
+        if line.startswith('(check-sat)') and mode in ('block', 'error', 'unknown'):
             if mode == 'block':
                 time.sleep(30)
             if mode == 'error':
