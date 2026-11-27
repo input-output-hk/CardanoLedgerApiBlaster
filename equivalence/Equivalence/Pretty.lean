@@ -155,13 +155,16 @@ def context (value : Json) : Option (List String) := do
   let (0, #[tx, redeemer, info]) ← constructor value | none
   let (0, fields) ← constructor tx | none
   unless fields.size == 16 do none
-  let (1, #[ref, datum]) ← constructor info | none
-  let own := reference ref
+  let (own, purpose) ← match constructor info with
+    | some (1, #[ref, datum]) =>
+      let own := reference ref
+      some (own, ["  Spending input: " ++ own.getD (raw ref), "  Datum: " ++ optionalData datum])
+    | some (0, #[symbol]) => some (none, ["  Minting policy: " ++ raw symbol])
+    | _ => none
   let hash := (bytes fields[11]!).map ("#" ++ ·) |>.getD (raw fields[11]!)
   let fee := (integer fields[3]!).map lovelace |>.getD (raw fields[3]!)
-  let mut lines := ["  Context:", "  Transaction id: " ++ hash,
-    "  Spending input: " ++ own.getD (raw ref),
-    "  Datum: " ++ optionalData datum, "  Redeemer: " ++ raw redeemer,
+  let mut lines := ["  Context:", "  Transaction id: " ++ hash] ++ purpose ++ [
+    "  Redeemer: " ++ raw redeemer,
     "  Fee: " ++ fee, "  Validity range (POSIX ms): " ++ interval fields[7]!]
   lines := lines ++ collection "Inputs" fields[0]! (fun input => inputLines input "      " own)
   lines := lines ++ collection "Reference inputs" fields[1]! (fun input => inputLines input "      " none)

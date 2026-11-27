@@ -19,12 +19,13 @@ explicitly rather than rely on CLI defaults.
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--mode validator\|function` | `validator` | Compare validator acceptance or function outcomes. |
+| `--purpose spend\|mint` | `spend` | Select the ledger purpose for both validators. |
 | `--equivalence` | Off | Check both directions for validators and bounded functions. Strict function mode already checks equality. |
 | `--bounded` | Off | Make the execution-step limit part of the comparison scope. |
 | `--steps N` | `100000` | Execution-step bound with `--bounded`; otherwise an analysis guard. |
 | `--budget CPU MEMORY` | None | Apply the same execution-unit limits independently to each script. Required for validators without `--bounded`; optional otherwise. |
 | `--language VERSION` | `PlutusV3` | Set both script languages. Functions support V1, V2 and V3. Same-language spending comparisons use V3. |
-| `--language-old VERSION`, `--language-new VERSION` | Shared language | Override the language for one side. Mixed spending comparisons support V2 and V3. |
+| `--language-old VERSION`, `--language-new VERSION` | Shared language | Override the language for one side. Mixed validator comparisons support V2 and V3. |
 
 **Validators:** by default, every input accepted by OLD must be accepted by NEW.
 Use `--equivalence` to require identical acceptance. V3 acceptance requires a unit
@@ -70,6 +71,8 @@ For [CIP-57](https://cips.cardano.org/cip/CIP-0057) blueprints, the usual filena
 is `plutus.json`. Each file must contain a selected validator with `compiledCode`.
 The CLI checks a declared script hash and requires the blueprint’s
 `preamble.plutusVersion` to match the language selected for that input (default V3).
+For validator checks it also checks the selected purpose against any declared
+invocations or redeemer purposes.
 Apply any template parameters before comparing deployed validators. The checker
 uses the same input domain as for raw UPLC and does not derive restrictions from
 blueprint schemas.
@@ -92,7 +95,7 @@ Plutus Data argument), and `data3` (three unrestricted Plutus Data arguments).
 | `--max-signers N` | `2` | Include 0..N signer keys. |
 | `--max-earlier-spending-redeemers N` | `0` | Include 0..N spending redeemers before the current entry in the transaction redeemer map. |
 | `--datum DATA` | Symbolic | Fix the spending datum. |
-| `--redeemer DATA` | Symbolic | Fix the spending redeemer. |
+| `--redeemer DATA` | Symbolic | Fix the redeemer. |
 
 These options are validator-only. Count limits change the domain being checked;
 they are not just performance settings. Larger maxima can substantially increase
@@ -153,6 +156,29 @@ is available for V3-to-V3 checks.
 
 In mixed-language JSON witnesses, `arguments.old` and `arguments.new` record
 the exact argument lists passed during native replay.
+
+### Minting policy comparisons
+
+```sh
+lake exe uplc_equiv old.uplc new.uplc --purpose mint \
+  --language-old PlutusV2 --language-new PlutusV3 \
+  --bounded --max-inputs 1 --max-outputs 1 --max-signers 1
+```
+
+Minting comparisons support V2 and V3 on either side. V2 receives the redeemer
+and a V2 context. V3 receives a single V3 context. Both observe the same
+transaction and policy currency symbol. The domain includes one symbolic token
+under that symbol in the mint field. Positive and negative quantities cover
+minting and burning respectively. The selected ledger models check balance,
+including the minted or burned amount, and the current policy’s redeemer.
+
+Inputs and outputs use the same address and value shapes as the spending
+profile. The minting profile includes just the current minting redeemer in
+the redeemer map. Reference inputs, certificates, withdrawals, and governance
+fields are empty or absent. `--datum`, earlier spending redeemers, and
+dispatch splitting apply to spending checks. You can still fix a minting
+redeemer with `--redeemer`. The JSON report records the purpose and includes
+the actual arguments for each replayed policy.
 
 ### Datum and redeemer syntax
 

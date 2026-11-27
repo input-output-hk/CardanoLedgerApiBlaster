@@ -54,6 +54,16 @@ def spendingContext (txInfo redeemer reference datum : Data) : Data :=
 def spendingRedeemerEntry (reference redeemer : Data) : Data × Data :=
   (.Constr 1 [reference], redeemer)
 
+def mintingContext (txInfo redeemer : Data) (currencySymbol : ByteString) : Data :=
+  let purpose := Data.Constr 0 [.B currencySymbol]
+  let tx := match txInfo with
+    | .Constr tag fields => .Constr tag (fields.set 9 (.Map [(purpose, redeemer)]))
+    | other => other
+  .Constr 0 [tx, redeemer, purpose]
+
+def mintValue (currencySymbol token : ByteString) (quantity : Int) : Data :=
+  .Map [(.B currencySymbol, .Map [(.B token, .I quantity)])]
+
 /-- Add entries before the current spending entry in an encoded context. -/
 def prependEarlierRedeemers (raw : Data) (earlier : List (Data × Data)) : Data :=
   match raw with
@@ -144,6 +154,17 @@ private def v2Redeemer : Data × Data → Option (Data × Data)
     return (.Constr 1 [← v2Reference reference], value)
   | _ => none
 
+private def v2TxInfo (inputs outputs signers : List Data) (range : Data) (u : RawUnusedTxInfo)
+    (redeemers : List (Data × Data)) : Option Data := do
+  let .I fee := u.fee | none
+  let .Map mint := u.mint | none
+  let .B txId := u.txId | none
+  let inputs ← inputs.mapM v2Input
+  return .Constr 0 [
+    .List inputs, u.referenceInputs, .List outputs, lovelace fee,
+    .Map ((.B "", .Map [(.B "", .I 0)]) :: mint), u.certificates,
+    u.withdrawals, range, .List signers, .Map redeemers, u.datums, .Constr 0 [.B txId]]
+
 /-- Encode the same structured spend for V2. Outputs, signers, validity range,
     datum witnesses and payloads retain their common encodings. -/
 def SpendingFrame.v2Arguments (frame : SpendingFrame) : Option (List Term) := do
@@ -182,6 +203,29 @@ def validSharedArguments (args : List Term) : Bool :=
 
 def spendingArguments (v3 : Bool) (args : List Term) : List Term :=
   if v3 then args else (v2Arguments args).getD []
+
+private def v2MintingArguments : List Term → Option (List Term)
+  | [.Const (.Data (.Constr 0 [.Constr 0 [.List inputs, .List [], .List outputs, fee, mint,
+      .List [], .Map [], range, .List signers, .Map [(purpose, value)], datums, txId,
+      .Map [], .List [], .Constr 1 [], .Constr 1 []], redeemer, .Constr 0 [.B symbol]]))] => do
+    let key := Data.Constr 0 [.B symbol]
+    unless purpose == key && value == redeemer do none
+    let tx ← v2TxInfo inputs outputs signers range { fee, mint, datums, txId } [(key, redeemer)]
+    return [.Const (.Data redeemer), .Const (.Data (.Constr 0 [tx, key]))]
+  | _ => none
+
+def validMintingArguments (useV2 useV3 : Bool) (args : List Term) : Bool :=
+  (!useV3 || (match args with
+    | [.Const (.Data raw)] => (Ledger.decode raw).any CardanoLedgerApi.V3.Contexts.validMintingContext
+    | _ => false)) &&
+  (!useV2 || (match v2MintingArguments args with
+    | some [.Const (.Data redeemer), .Const (.Data raw)] =>
+      (CardanoLedgerApi.IsData.Class.IsData.fromData raw).any
+        (fun ctx => CardanoLedgerApi.V2.Contexts.validMintingContext ⟨redeemer, ctx⟩)
+    | _ => false))
+
+def mintingArguments (v3 : Bool) (args : List Term) : List Term :=
+  if v3 then args else (v2MintingArguments args).getD []
 
 /-- One concrete member of the generic valid-context domain. These choices
     witness nonemptiness; they impose no restrictions on the symbolic domain. -/

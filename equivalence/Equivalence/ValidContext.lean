@@ -113,6 +113,17 @@ def args (f : Fields) (inputs : List Input) (outputs : List Output) (signers : L
   Queries.contextArgs (Context.spendingContext tx f.redeemer
     (Context.outputReference f.scriptTxId f.scriptIndex) f.datum)
 
+def mintContext (f : Fields) (inputs : List Input) (outputs : List Output) (signers : List Data)
+    (currencySymbol token : ByteString) (quantity : Int) : Data :=
+  let unused := { f.unused with mint := Context.mintValue currencySymbol token quantity }
+  let tx := context_tx_info% unused (inputs.map Input.toData)
+    (.List (outputs.map Output.toData)) signers f.validRange
+  Context.mintingContext tx f.redeemer currencySymbol
+
+def mintArgs (f : Fields) (inputs : List Input) (outputs : List Output) (signers : List Data)
+    (currencySymbol token : ByteString) (quantity : Int) : List Term :=
+  Queries.contextArgs (mintContext f inputs outputs signers currencySymbol token quantity)
+
 private def argsWithEarlierRedeemers (base : List Term) (earlier : List (Data × Data)) : List Term :=
   match base with
   | [.Const (.Data raw)] => Queries.contextArgs (Context.prependEarlierRedeemers raw earlier)
@@ -153,6 +164,26 @@ def unpack (limits : Limits) (raw : Data) : Option (Fields × List Input × List
   (unpackWithEarlierRedeemers limits raw).map Prod.fst
 
 def contains (limits : Limits) (raw : Data) : Bool := (unpack limits raw).isSome
+
+def containsMinting (limits : Limits) : Data → Bool
+  | .Constr 0 [.Constr 0 [.List inputs, .List [], .List outputs, _, .Map [(.B policy, .Map [(.B _, .I _)])],
+      .List [], .Map [], _, .List signers, .Map [(purpose, value)], _, _,
+      .Map [], .List [], .Constr 1 [], .Constr 1 []], redeemer, .Constr 0 [.B symbol]] =>
+    symbol == policy && purpose == .Constr 0 [.B symbol] && value == redeemer &&
+    (limits.redeemer.all (· == redeemer)) &&
+    inputs.length ≤ limits.maxInputs && outputs.length ≤ limits.maxOutputs && signers.length ≤ limits.maxSigners &&
+    inputs.all (Input.fromData · |>.isSome) && outputs.all (Output.fromData · |>.isSome) &&
+    signers.all (fun d => match d with | .B _ => true | _ => false)
+  | _ => false
+
+def validMintingContext (limits : Limits) : Option Data := do
+  guard (limits.maxInputs > 0)
+  let input : Input := { isScript := false, hasDatum := false }
+  let f : Fields := { redeemer := limits.redeemer.getD (.Constr 0 []) }
+  if limits.maxOutputs == 0 then
+    return mintContext { f with unused := { fee := .I input.ada } } [input] [] []
+      input.policy input.token (-input.quantity)
+  return mintContext f [input] [{ quantity := input.quantity + 1 }] [] input.policy input.token 1
 
 /-- A ledger-model-valid zero-output member burns the input's token and pays
     its ADA as the fee. This is a model witness, not an on-chain reachability claim. -/
@@ -258,11 +289,13 @@ private def rawExpr (f : Context.RawUnusedTxInfo) (fee mint : Expr) : Expr :=
     list-length conditions inside the proposition. -/
 def proposition (limits : Limits) (predicate : Expr)
     (fixedDatum : Option Expr := none) (fixedRedeemer : Option Expr := none)
-    (restriction : Option Expr := none) (shared := false) : MetaM Expr := do
+    (restriction : Option Expr := none) (shared := false) (minting := false) : MetaM Expr := do
   let fixedDatum := fixedDatum.orElse fun _ => limits.datum.map toExpr
   let fixedRedeemer := fixedRedeemer.orElse fun _ => limits.redeemer.map toExpr
   let fixed := (fixedDatum.map (fun value => (`datum, value))).toList ++
     (fixedRedeemer.map (fun value => (`redeemer, value))).toList
+  let fixed := if minting then fixed ++ [(`scriptTxId, toExpr ("" : ByteString)),
+    (`scriptIndex, toExpr (0 : Int)), (`datum, toExpr (Data.I 0))] else fixed
   let mut specs := #[]
   let mut inputs := #[]
   let mut outputs := #[]
@@ -280,8 +313,12 @@ def proposition (limits : Limits) (predicate : Expr)
   specs := specs ++ frameFields.filter (fun (name, _) => (fixed.lookup name).isNone)
   let rawFields ← schema ``Context.RawUnusedTxInfo
   let symbolicRaw := fun name =>
-    name != `outputs && (!shared || [`fee, `mint, `datums, `txId].contains name)
+    name != `outputs && (if minting then [`fee, `datums, `txId].contains name
+      else !shared || [`fee, `mint, `datums, `txId].contains name)
   specs := specs ++ rawFields.filter (fun (name, _) => symbolicRaw name)
+  if minting then
+    specs := specs ++ #[(`currencySymbol, mkConst ``ByteString), (`mintToken, mkConst ``ByteString),
+      (`mintQuantity, mkConst ``Int)]
   for i in [:limits.maxSigners] do
     Core.checkInterrupted
     specs := specs.push (Name.mkSimple s!"signer{i}", mkConst ``ByteString)
@@ -327,10 +364,13 @@ def proposition (limits : Limits) (predicate : Expr)
         for o in [:limits.maxOutputs + 1] do
           for s in [:limits.maxSigners + 1] do
             Core.checkInterrupted
-            let args := mkAppN (mkConst ``args) #[f,
+            let fields := #[f,
               (← mkListLit (mkConst ``Input) (inputVars.extract 0 i).toList),
               (← mkListLit (mkConst ``Output) (outputVars.extract 0 o).toList),
               (← mkListLit (mkConst ``Data) (keys.extract 0 s).toList)]
+            let args := if minting then mkAppN (mkConst ``mintArgs)
+                (fields ++ #[find `currencySymbol, find `mintToken, find `mintQuantity])
+              else mkAppN (mkConst ``args) fields
             cases := mkApp predicate args :: cases
             for earlier in prefixes do
               Core.checkInterrupted
@@ -433,7 +473,7 @@ elab_rules : term
 
 private def elabFixedContext (inputs outputs signers : TSyntax `num)
     (earlier : Option (TSyntax `num)) (datum redeemer : Option (TSyntax `term))
-    (predicate : TSyntax `term) (shared := false) : Elab.Term.TermElabM Expr := do
+    (predicate : TSyntax `term) (shared := false) (minting := false) : Elab.Term.TermElabM Expr := do
   let elaborate := fun value => do
     let result ← Elab.Term.elabTerm value (some (mkConst ``Data))
     Elab.Term.synthesizeSyntheticMVarsNoPostponing
@@ -447,7 +487,7 @@ private def elabFixedContext (inputs outputs signers : TSyntax `num)
     maxInputs := inputs.getNat, maxOutputs := outputs.getNat,
     maxSigners := signers.getNat,
     maxEarlierSpendingRedeemers := (earlier.map (·.getNat)).getD 0 } (← instantiateMVars predicate)
-    (fixedDatum := datum) (fixedRedeemer := redeemer) (shared := shared)
+    (fixedDatum := datum) (fixedRedeemer := redeemer) (shared := shared) (minting := minting)
 
 /-- Standalone exports preserve optional fixed spending arguments. -/
 syntax "valid_context_datum% " num num num (" earlier_redeemers " num)? term:max term:max : term
@@ -455,6 +495,7 @@ syntax "valid_context_redeemer% " num num num (" earlier_redeemers " num)? term:
 syntax "valid_context_fixed% " num num num (" earlier_redeemers " num)? term:max term:max term:max : term
 syntax "shared_context% " num num num (" earlier_redeemers " num)?
   (" fixed_datum " term:max)? (" fixed_redeemer " term:max)? term:max : term
+syntax "minting_context% " num num num (" fixed_redeemer " term:max)? term:max : term
 elab_rules : term
   | `(valid_context_datum% $inputs:num $outputs:num $signers:num $[earlier_redeemers $earlier:num]? $datum $predicate) =>
     elabFixedContext inputs outputs signers earlier (some datum) none predicate
@@ -465,4 +506,6 @@ elab_rules : term
   | `(shared_context% $inputs:num $outputs:num $signers:num $[earlier_redeemers $earlier:num]?
       $[fixed_datum $datum]? $[fixed_redeemer $redeemer]? $predicate) =>
     elabFixedContext inputs outputs signers earlier datum redeemer predicate (shared := true)
+  | `(minting_context% $inputs:num $outputs:num $signers:num $[fixed_redeemer $redeemer]? $predicate) =>
+    elabFixedContext inputs outputs signers none none redeemer predicate (minting := true)
 end Equivalence.ValidContext

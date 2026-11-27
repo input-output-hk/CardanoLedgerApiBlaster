@@ -48,7 +48,7 @@ private def sanitize (f : Fields) : Fields := Id.run do
       treasury := raw 14 u.treasury d.unused.treasury, donation := raw 15 u.donation d.unused.donation } }
 
 private def balance (f : Fields) (inputs : List Input) (outputs : List Output)
-    (anchor : Nat) : Fields × List Input := Id.run do
+    (anchor : Nat) (minted : Int := 0) : Fields × List Input := Id.run do
   if inputs.isEmpty then return (f, inputs)
   let totalAda := (inputs.map (·.ada)).sum
   let totalQty := (inputs.map (·.quantity)).sum
@@ -60,13 +60,13 @@ private def balance (f : Fields) (inputs : List Input) (outputs : List Output)
   let fee := match f.unused.fee with | .I n => n | _ => 1
   let old := inputs[anchor]?.getD ({} : Input)
   let ada := (outputs.map (·.ada)).sum + fee - (totalAda - old.ada)
-  let quantity := (outputs.map (·.quantity)).sum - (totalQty - old.quantity)
+  let quantity := (outputs.map (·.quantity)).sum - (totalQty - old.quantity) - minted
   return (f, inputs.modify anchor fun input => { input with ada := ada, quantity := quantity })
 
 /-- Models expose individual primitive fields. Enumerate the same count cases
     as the symbolic generator. Invalid or repaired models are never accepted
     without independently validating the full context and reproducing behavior. -/
-def modelContexts (limits : Limits) (model : List String) : List Data := Id.run do
+def modelContexts (limits : Limits) (model : List String) (minting := false) : List Data := Id.run do
   let data := model.filterMap PlutusCore.Smt.Model.dataBinding
   let integers := model.filterMap Blaster.Smt.Model.integerBinding
   let bytes := model.filterMap PlutusCore.Smt.Model.byteStringBinding
@@ -75,6 +75,9 @@ def modelContexts (limits : Limits) (model : List String) : List Data := Id.run 
   let number := fun name value => (integers.lookup name).getD value
   let key := fun name value => (bytes.lookup name).getD value
   let flag := fun name value => (flags.lookup name).getD value
+  let asset : Input := {}
+  let currencySymbol := key "currencySymbol" asset.policy
+  let mintToken := key "mintToken" asset.token
   let d : Fields := {}
   let f : Fields := {
     scriptTxId := key "scriptTxId" d.scriptTxId, scriptIndex := number "scriptIndex" d.scriptIndex
@@ -88,14 +91,16 @@ def modelContexts (limits : Limits) (model : List String) : List Data := Id.run 
   let input := fun (i : Nat) =>
     let stem := s!"input{i}"
     let d : Input := {
-      index := Int.ofNat i, isScript := i == 0, hasDatum := i == 0,
+      index := Int.ofNat i, isScript := !minting && i == 0, hasDatum := !minting && i == 0,
       quantity := if i == 0 then Int.ofNat (max limits.maxOutputs 1) else 1 }
     ({
       txId := key (stem ++ "TxId") d.txId, index := number (stem ++ "Index") d.index
       isScript := flag (stem ++ "IsScript") d.isScript
       addressHash := key (stem ++ "AddressHash") d.addressHash
-      ada := number (stem ++ "Ada") d.ada, policy := key (stem ++ "Policy") d.policy
-      token := key (stem ++ "Token") d.token, quantity := number (stem ++ "Quantity") d.quantity
+      ada := number (stem ++ "Ada") d.ada
+      policy := key (stem ++ "Policy") (if minting then currencySymbol else d.policy)
+      token := key (stem ++ "Token") (if minting then mintToken else d.token)
+      quantity := number (stem ++ "Quantity") d.quantity
       hasDatum := flag (stem ++ "HasDatum") d.hasDatum
       inlineDatum := flag (stem ++ "InlineDatum") d.inlineDatum
       datumHash := key (stem ++ "DatumHash") d.datumHash
@@ -115,10 +120,11 @@ def modelContexts (limits : Limits) (model : List String) : List Data := Id.run 
     let totalAda := (inputs.map (·.ada)).sum
     let totalQty := (inputs.map (·.quantity)).sum
     let asset := inputs[0]?.getD ({} : Input)
-    let inputsAligned := inputs.modify 0 fun input => { input with
+    let inputsAligned := if minting then inputs else inputs.modify 0 fun input => { input with
       txId := f.scriptTxId, index := f.scriptIndex, isScript := true
       hasDatum := true, inlineDatum := true, datum := f.datum }
     for outputCount in List.range (limits.maxOutputs + 1) do
+      let minted := number "mintQuantity" (if outputCount == 0 then -totalQty else 1)
       let outputs := (List.range outputCount).map fun i =>
         let stem := s!"output{i}"
         let d : Output := {}
@@ -127,7 +133,8 @@ def modelContexts (limits : Limits) (model : List String) : List Data := Id.run 
             Context.pubKeyAddress |>.getD d.address)
           ada := number (stem ++ "Ada") (if i == 0 then totalAda - fee - Int.ofNat (outputCount - 1) else 1)
           policy := key (stem ++ "Policy") asset.policy, token := key (stem ++ "Token") asset.token
-          quantity := number (stem ++ "Quantity") (if i == 0 then totalQty - Int.ofNat (outputCount - 1) else 1)
+          quantity := number (stem ++ "Quantity")
+            (if i == 0 then totalQty - Int.ofNat (outputCount - 1) + (if minting then minted else 0) else 1)
           datum := raw (stem ++ "Datum") f.datum } : Output)
       let outputsSafe := outputs.map fun output =>
         if (Ledger.decode (context {} [{}] [output])).isSome then output
@@ -136,14 +143,17 @@ def modelContexts (limits : Limits) (model : List String) : List Data := Id.run 
           | .Constr _ (.Constr 1 [.B hash] :: _) => Context.scriptAddress hash
           | _ => ({} : Output).address }
       let balancedCases := (if inputCount ≤ 1 then [0] else [0, inputCount - 1]).map
-        (balance sanitized inputsAligned outputsSafe)
+        (fun anchor => balance sanitized inputsAligned outputsSafe anchor (if minting then minted else 0))
       for signers in signerCases do
         for n in List.range (limits.maxEarlierSpendingRedeemers + 1) do
           let earlierRedeemers := earlierEntries.take n
-          candidates := context f inputs outputs signers earlierRedeemers :: candidates
-          candidates := context sanitized inputs outputsSafe signers earlierRedeemers :: candidates
+          let encode := fun f inputs outputs => if minting then
+              mintContext f inputs outputs signers currencySymbol mintToken minted
+            else context f inputs outputs signers earlierRedeemers
+          candidates := encode f inputs outputs :: candidates
+          candidates := encode sanitized inputs outputsSafe :: candidates
           for (f, balanced) in balancedCases do
-            candidates := context f balanced outputsSafe signers earlierRedeemers :: candidates
+            candidates := encode f balanced outputsSafe :: candidates
   return candidates.reverse
 
 end Equivalence.ValidContext

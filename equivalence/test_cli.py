@@ -832,6 +832,66 @@ class CheckerProcess(unittest.TestCase):
                                      capture_output=True, text=True, timeout=30)
             self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
 
+    def test_minting_export_and_blueprint_purpose(self):
+        with tempfile.TemporaryDirectory() as directory:
+            old = Path(directory) / "v2.uplc"
+            new = Path(directory) / "v3.uplc"
+            emitted = Path(directory) / "comparison.lean"
+            old.write_text("(program 1.0.0 (lam redeemer (lam ctx (con unit ()))))")
+            new.write_text("(program 1.1.0 (lam ctx (con unit ())))")
+            args = [str(CLI), str(old), "--purpose", "mint", "--language-old", "PlutusV2", "--bounded",
+                    "--max-inputs", "1", "--max-outputs", "0", "--max-signers", "0", "--redeemer", "1", "--json"]
+            result = subprocess.run([*args, str(new), "--emit-lean", str(emitted)], cwd=ROOT,
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("minting_context% 1 0 0 fixed_redeemer", emitted.read_text())
+            checked = subprocess.run(["lake", "env", "lean", str(emitted)], cwd=ROOT,
+                                     capture_output=True, text=True, timeout=30)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
+            blueprint = Path(directory) / "plutus.json"
+            script = ROOT / "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex"
+            blueprint.write_text(json.dumps({
+                "preamble": {"title": "Example", "version": "1.0.0", "plutusVersion": "v3"},
+                "validators": [{
+                    "title": "spending-example", "compiledCode": script.read_text().strip(),
+                    "redeemer": {"purpose": "spend", "schema": {"dataType": "integer"}},
+                }],
+            }))
+            result = subprocess.run([*args, str(blueprint)], cwd=ROOT,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+            self.assertIn("does not declare purpose 'mint'", json.loads(result.stdout)["explanation"])
+
+    def test_blueprint_purpose_uses_selected_compiled_entry(self):
+        fixture = ROOT / "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex"
+        with tempfile.TemporaryDirectory() as directory:
+            blueprint = Path(directory) / "plutus.json"
+            for documented, compiled in (("spend", "mint"), ("mint", "spend")):
+                with self.subTest(documented=documented, compiled=compiled):
+                    entry = {"title": "shared-title", "redeemer": {
+                        "purpose": documented, "schema": {"dataType": "integer"},
+                    }}
+                    blueprint.write_text(json.dumps({
+                        "preamble": {"title": "Example", "version": "1.0.0", "plutusVersion": "v3"},
+                        "validators": [entry, {
+                            **entry,
+                            "compiledCode": fixture.read_text().strip(),
+                            "redeemer": {**entry["redeemer"], "purpose": compiled},
+                        }],
+                    }))
+                    result = subprocess.run(
+                        [str(CLI), str(blueprint), str(blueprint), "--purpose", "mint",
+                         "--bounded", "--max-inputs", "0", "--json"],
+                        cwd=ROOT, capture_output=True, text=True, timeout=10)
+                    report = json.loads(result.stdout)
+                    if compiled == "mint":
+                        self.assertEqual(result.returncode, 2, report)
+                        self.assertEqual(report["domain_status"], "unestablished")
+                    else:
+                        self.assertEqual(result.returncode, 3, report)
+                        self.assertIn("does not declare purpose 'mint'", report["explanation"])
+
     def test_fixed_datum_and_redeemer_find_escrow_price(self):
         examples = ROOT / "equivalence/examples/two_party_escrow_old"
         result = subprocess.run(

@@ -46,15 +46,16 @@ def usage : String := "Usage: lake exe uplc_equiv OLD NEW [options]
 Validator mode checks that NEW accepts every input accepted by OLD within the supplied limits.
 Function mode compares returned constants and success/error outcomes, ignoring execution costs.
   --mode validator|function                             Default validator; function defaults to integer inputs, no budget
+  --purpose spend|mint                                  Validator purpose for OLD and NEW (default spend)
   --steps N                                             Execution step limit; analysis guard unless --bounded (default 100000)
   --bounded                                             Compare observations within step/budget limits; OLD results/acceptance preserved
 Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D).
-  --inputs valid-context                                Validator default: structured V3 spending contexts, ledger-constrained queries and checked replays
+  --inputs valid-context                                Structured validator contexts with ledger-constrained queries and checked replays
   --max-inputs N                                        Include 0..N transaction inputs (validator only; default 2)
   --max-outputs N                                       Include 0..N transaction outputs (validator only; default 2)
   --max-signers N                                       Include 0..N signer keys (validator only; default 2)
   --max-earlier-spending-redeemers N                     Include 0..N spending redeemers before the current entry (validator only; default 0)
-  --redeemer DATA                                       Fix the spending redeemer (textual Plutus Data)
+  --redeemer DATA                                       Fix the redeemer (textual Plutus Data)
   --datum DATA                                          Fix the spending datum (textual Plutus Data); other context fields remain symbolic
   DATA shorthand: a bare integer n becomes I n. For bytes, use B #HEX.
   --inputs integer|data|data3                            Function input domain (default integer)
@@ -65,7 +66,7 @@ Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D).
   --validator-old ID_OR_TITLE                          Select a validator in the OLD blueprint
   --validator-new ID_OR_TITLE                         Select a validator in the NEW blueprint
   --language VERSION                                    Set both languages (default PlutusV3); function mode also supports PlutusV1/PlutusV2
-  --language-old VERSION, --language-new VERSION         Override either side for mixed PlutusV2/PlutusV3 spending checks
+  --language-old VERSION, --language-new VERSION         Override either side for PlutusV2/PlutusV3 validator comparisons
   --budget CPU MEMORY                                   Shared execution-unit limits (required for strict validators; optional with --bounded or function mode)
   --equivalence                                         Check both directions (validators or --bounded functions)
   --dispatch-timeout SECONDS                            Deadline per case query, including preprocessing (default 10); implies --split-dispatch
@@ -161,6 +162,7 @@ def parse (c : Config) : List String → Except String Config
   | "-h" :: _ | "--help" :: _ => .ok { c with help := true }
   | "--bounded" :: rest => parse { c with bounded := true } rest
   | "--mode" :: v :: rest => parse { c with mode := v } rest
+  | "--purpose" :: v :: rest => parse { c with purpose := v } rest
   | "--steps" :: v :: rest => do parse { c with steps := ← natOption "--steps" v true } rest
   | "--equivalence" :: rest => parse { c with equivalence := true } rest
   | "--budget" :: cpu :: memory :: rest => do
@@ -210,7 +212,15 @@ def parse (c : Config) : List String → Except String Config
     else if v.startsWith "-" then .error s!"unknown or incomplete option: {v}"
     else parse { c with scripts := c.scripts.push v } rest
 
-private def blueprintScript (source : String) (selector language : Option String)
+private def blueprintRedeemerMatches (slot : Json) (purpose : String) : Bool :=
+  let slots := (slot.getObjValAs? (Array Json) "oneOf").toOption.getD #[slot]
+  slots.any fun slot =>
+    match slot.getObjVal? "purpose" with
+    | .error _ => true
+    | .ok (.str value) => value == purpose
+    | .ok value => ((value.getObjValAs? (Array String) "oneOf").toOption.getD #[]).contains purpose
+
+private def blueprintScript (source : String) (selector language purpose : Option String)
     (requireReference : Bool) :
     Except String AssuranceExport.BlueprintScript := do
   let blueprint ← PlutusCore.UPLC.BlueprintEncoding.Internal.parseBlueprint source
@@ -218,16 +228,29 @@ private def blueprintScript (source : String) (selector language : Option String
   if let some language := language then
     unless version == language.replace "PlutusV" "v" do
       throw s!"blueprint declares '{version}', but this input uses {language}; select the matching language"
-  let validator ← match selector with
-    | some name => PlutusCore.UPLC.BlueprintEncoding.Internal.resolveValidator blueprint.validators name
+  let (validator, index) ← match selector with
+    | some name => do
+      let validator ← PlutusCore.UPLC.BlueprintEncoding.Internal.resolveValidator blueprint.validators name
+      let some index := blueprint.validators.findIdx? (fun v => v.id == validator.id && v.title == validator.title)
+        | throw "cannot locate the selected validator in the blueprint"
+      pure (validator, index)
     | none =>
-      match (blueprint.validators.filter (·.compiledCode.isSome)).toList with
-      | [validator] => pure validator
+      match (blueprint.validators.zipIdx.filter (fun (v, _) => v.compiledCode.isSome)).toList with
+      | [entry] => pure entry
       | [] => throw "no validator with compiledCode in the blueprint"
       | validators =>
-        let choices := String.intercalate ", " (validators.map fun v => v.id.getD v.title)
+        let choices := String.intercalate ", " (validators.map fun (v, _) => v.id.getD v.title)
         throw s!"multiple validators with compiledCode; use --validator-old or --validator-new ({choices})"
   let some code := validator.compiledCode | throw s!"validator '{validator.title}' has no compiledCode"
+  if let some purpose := purpose then
+    let supportsPurpose ← if validator.invocations.isEmpty then do
+        let json ← Json.parse source
+        let entries ← json.getObjValAs? (Array Json) "validators"
+        let some entry := entries[index]?
+          | throw "cannot locate the selected validator in the blueprint"
+        pure ((entry.getObjVal? "redeemer").toOption.all (blueprintRedeemerMatches · purpose))
+      else pure (validator.invocations.any (fun entry => entry.1 == purpose))
+    unless supportsPurpose do throw s!"validator '{validator.title}' does not declare purpose '{purpose}'"
   let code := code.trim
   let hash ← PlutusCore.UPLC.BlueprintEncoding.Internal.actualScriptHash version code
   if let some expected := validator.hash then
@@ -241,7 +264,7 @@ private def blueprintScript (source : String) (selector language : Option String
   return { code, hash, reference }
 
 private def readInput (path : FilePath) (format : String) (selector language : Option String)
-    (requireReference := false) :
+    (requireReference := false) (purpose : Option String := none) :
     IO (PlutusCore.UPLC.Term.Program × AssuranceExport.Input) := do
   let bytes ← IO.FS.readBinFile path
   let input : AssuranceExport.Input := { path, format, bytes }
@@ -252,7 +275,7 @@ private def readInput (path : FilePath) (format : String) (selector language : O
       return (program, input)
     let some source := String.fromUTF8? bytes | throw "expected UTF-8 input"
     if format == "blueprint" then
-      let script ← blueprintScript source selector language requireReference
+      let script ← blueprintScript source selector language purpose requireReference
       let program ← singleCborEncodedScriptFromHex? script.code
       return (program, { input with blueprint := some script })
     let program ← match format with
@@ -349,7 +372,10 @@ private def emitSource (env : Environment) (c : Config) (header : String)
     let counts := s!"{c.maxInputs} {c.maxOutputs} {c.maxSigners}"
     let counts := if c.maxEarlierSpendingRedeemers == 0 then counts
       else counts ++ s!" earlier_redeemers {c.maxEarlierSpendingRedeemers}"
-    let proposition := if c.toConfig.mixedLanguages then
+    let proposition := if c.toConfig.minting then
+        let redeemer := (redeemerText.map fun value => s!" fixed_redeemer ({value})").getD ""
+        s!"minting_context% {counts}{redeemer} ({rendered.pretty})"
+      else if c.toConfig.mixedLanguages then
         let datum := (datumText.map fun value => s!" fixed_datum ({value})").getD ""
         let redeemer := (redeemerText.map fun value => s!" fixed_redeemer ({value})").getD ""
         s!"shared_context% {counts}{datum}{redeemer} ({rendered.pretty})"
@@ -373,7 +399,8 @@ private def emitSource (env : Environment) (c : Config) (header : String)
       return some s!"\n-- {query.name}\n-- {note}\n{commented}\n"
     return some s!"\n-- {query.name}\n{command}\n"
   let scope := if checksLedger c then
-    let predicate := if c.toConfig.mixedLanguages then "Context.validSharedArguments" else "Ledger.validArguments"
+    let predicate := if c.toConfig.minting then "Context.validMintingArguments"
+      else if c.toConfig.mixedLanguages then "Context.validSharedArguments" else "Ledger.validArguments"
     s!"\n-- These queries require {predicate} for each structured context.\n-- The checker separately checks a native ledger-model-valid domain witness\n-- and validates counterexample replays; those checks are not reproduced here.\n"
     else ""
   writeLeanExport file (header ++
@@ -392,7 +419,8 @@ private def assuranceSettings (c : Config) : Json :=
     ("max_earlier_spending_redeemers", toJson c.maxEarlierSpendingRedeemers), ("timeout", toJson c.timeout),
     ("wall_timeout", toJson c.wallTimeout), ("skip_old_rejected", toJson c.skipOldRejected),
     ("split_dispatch", toJson c.splitDispatch), ("dispatch_cases", toJson c.dispatchCaseLimit),
-    ("dispatch_timeout", toJson c.dispatchTimeout)])
+    ("dispatch_timeout", toJson c.dispatchTimeout)] ++
+    (if c.mode == "validator" then [("purpose", toJson c.purpose)] else []))
 
 private def assuranceClaim (c : Config) : String :=
   let relation := if c.mode == "validator" then
@@ -410,13 +438,14 @@ def run (c : Config) : IO Json := do
       throw (IO.userError s!"Assurance output directory already exists: {dir}")
   let inputPath (path : String) : IO FilePath :=
     if c.emitAssurance.isSome then IO.FS.realPath path else pure path
+  let purpose := if c.mode == "validator" then some c.purpose else none
   progress "Starting: loading OLD script"
   reportPhase "loading"
   let (oldProgram, oldInput) ← readInput (← inputPath c.scripts[0]!) (c.oldFormat.getD c.format)
-    c.oldValidator (some (c.toConfig.languageFor 0)) c.emitAssurance.isSome
+    c.oldValidator (some (c.toConfig.languageFor 0)) c.emitAssurance.isSome purpose
   progress "Starting: loading NEW script"
   let (newProgram, newInput) ← readInput (← inputPath c.scripts[1]!) (c.newFormat.getD c.format)
-    c.newValidator (some (c.toConfig.languageFor 1)) c.emitAssurance.isSome
+    c.newValidator (some (c.toConfig.languageFor 1)) c.emitAssurance.isSome purpose
   let header ← if let some output := c.emitLean then do
     if let .ok outputPath ← (IO.FS.realPath output).toBaseIO then
       for script in c.scripts do
