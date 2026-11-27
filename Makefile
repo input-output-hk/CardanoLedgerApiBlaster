@@ -10,6 +10,9 @@ usage:
 	@echo " - build_tests: Build Tests."
 	@echo " - clean_tests: Clean compiled lean files for Tests."
 	@echo " - check_tests: Same as build_tests but also checks that each lean file"
+	@echo " - build_equivalence: Build the UPLC equivalence library and CLI."
+	@echo " - clean_equivalence: Clean the compiled equivalence library, CLI and test modules."
+	@echo " - check_equivalence: Rebuild the UPLC equivalence CLI and run Lean and process tests."
 
 .PHONY: build_cardano_ledger_api
 build_cardano_ledger_api:
@@ -35,13 +38,39 @@ clean_tests:
 check_tests: clean_tests
 	./scripts/check_lean_project_compilation.sh Tests
 
+.PHONY: build_equivalence
+build_equivalence:
+	lake build UplcEquivalence uplc_equiv
+
+.PHONY: clean_equivalence
+clean_equivalence:
+	rm -rf .lake/build/lib/lean/Equivalence* .lake/build/ir/Equivalence* \
+	  .lake/build/lib/lean/Tests/Equivalence .lake/build/ir/Tests/Equivalence
+	rm -f .lake/build/lib/lean/Tests/Equivalence.* .lake/build/ir/Tests/Equivalence.*
+	rm -f .lake/build/bin/uplc_equiv .lake/build/bin/uplc_equiv.trace .lake/build/bin/uplc_equiv.hash
+
+.PHONY: check_equivalence
+check_equivalence:
+	python3 scripts/check_equivalence_prerequisites.py
+	$(MAKE) clean_equivalence
+	lake build Tests.Equivalence
+	$(MAKE) check_equivalence_cli
+
+# The Tests library already includes the Lean equivalence suite.
+.PHONY: check_equivalence_cli
+check_equivalence_cli:
+	python3 scripts/check_equivalence_prerequisites.py
+	$(MAKE) build_equivalence
+	python3 -m unittest discover -s equivalence -p 'test_*.py'
+
 # Aggregate commands
 # To maintain when you add new components
 .PHONY: build_all
-build_all: build_cardano_ledger_api build_tests
+build_all: build_cardano_ledger_api build_tests build_equivalence
 
 .PHONY: clean_all
-clean_all: clean_cardano_ledger_api clean_tests
+clean_all: clean_cardano_ledger_api clean_tests clean_equivalence
 
 .PHONY: check_all
 check_all: check_cardano_ledger_api check_tests
+	$(MAKE) check_equivalence_cli

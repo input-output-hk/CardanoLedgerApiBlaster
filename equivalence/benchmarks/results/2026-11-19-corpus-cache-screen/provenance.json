@@ -1,0 +1,32 @@
+{
+  "baseline_raw_directory": "equivalence/benchmarks/local-runs/20261119-corpus-baseline",
+  "candidate_raw_directory": "equivalence/benchmarks/local-runs/20261119-corpus-default-cache",
+  "experiment_backup_directory": "equivalence/benchmarks/local-runs/20261119-corpus-cache-experiment",
+  "retained_source_sha256": {
+    "equivalence/benchmarks/corpus.py": "82cb66916882374bdf014bc3e8ac40a746b38ff6130c84752b7aa12871aa468e",
+    "equivalence/benchmarks/CorpusWorker.lean": "3e25e22dcad8468d666d6062b04935a707329575f818d929eee67767f4bb04a7",
+    "equivalence/benchmarks/compare_corpus.py": "f9f192c58ff0c9096f953e27c87c583b2afac6d3fa7d199ec438d6f8788a1220",
+    "equivalence/benchmarks/verify_corpus_ecd.lean": "5ba0a6bbe591f3d8c37bcf740d43198df66e529900709a73deb526aacc30b3e1",
+    "equivalence/benchmarks/results/2026-11-19-corpus-cache-screen/verify_integer_inputs.lean": "8c7f6a4979dabb2349b9e9f93eccd36439ac28a808d995d17dc46c646ae0f243"
+  },
+  "tests": "Four corpus coverage, resource/phase, watchdog process-group and comparison-censoring tests pass.",
+  "ecd_adapter_validation": "35 expected-value checks pass: every ECD fixture, five integer inputs, original two-argument and adapted unary execution both return the expected GCD.",
+  "experiment": {
+    "original_sha256": "dd665a01a301bdd55d2b5b5d49f8de3e76e7d4d3b1479e238f69efab38c34fbd",
+    "candidate_sha256": "5d15b37452e8da4cd619a625d8a51749e90bec326b6d91713a13477322b24b65",
+    "baseline_binary_sha256": "3740c37e4bbb4ec066ff9381d3332765a8c007d0868cd5ee47952f9cab42a63d",
+    "change": "Use the HashMap default initial capacity (8) for local rewrite maps, replacing explicit 256. No other optimizer changes."
+  },
+  "integer_argument_validation": {
+    "fixture_count": 65,
+    "observations": {
+      "integer": 195
+    },
+    "inputs": [
+      0,
+      1,
+      5
+    ],
+    "steps": 20000
+  }
+}

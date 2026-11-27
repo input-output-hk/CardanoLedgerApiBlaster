@@ -26,6 +26,14 @@ CardanoLedgerApi provides a formal Lean4 model of the Cardano Ledger API — the
   - [SellNFT](#sellnft)
   - [ParamFeed](#paramfeed)
   - [Functions: Fibonacci](#functions-fibonacci)
+- [UPLC equivalence checker](#uplc-equivalence-checker)
+  - [Build the checker](#build-the-checker)
+  - [Cross-compiler escrow counterexample](#cross-compiler-escrow-counterexample)
+  - [Compare your own programs](#compare-your-own-programs)
+  - [Choose the input domain and limits](#choose-the-input-domain-and-limits)
+  - [Read the result](#read-the-result)
+  - [Library API](#library-api)
+  - [Running the equivalence tests](#running-the-equivalence-tests)
 - [General Description](#general-description)
   - [API Versions and Types](#api-versions-and-types)
   - [Ledger Rules as Decidable Predicates](#ledger-rules-as-decidable-predicates)
@@ -135,7 +143,7 @@ Each predicate enforces:
 4. Valid fee (non-zero Ada only)
 5. Valid minted value (sorted currency symbols and token names)
 6. Sorted withdrawals, signatories, and datum map
-7. Transaction balance (`inputs + mint = outputs + fee`)
+7. ADA balance (`inputs + reward withdrawals = outputs + fee`) and non-ADA asset balance including minting and burning
 
 ### IsData Encoding
 
@@ -237,6 +245,167 @@ theorem fibonacci_equiv :
   ∀ (n : Integer),
     (fromFrameToInt $ compiledNaiveRecursion.prop n) = (fromFrameToInt $ compiledSeungheonOhSize.prop n) := by blaster
 ```
+
+## UPLC equivalence checker
+
+`uplc_equiv` compares UPLC programs from optimizers, compiler versions or different
+implementations. It can prove the requested relationship within a declared input
+domain and execution limits, or find a counterexample and replay both programs on
+that input.
+
+### Build the checker
+
+On Linux or macOS, install [elan](https://github.com/leanprover/elan), Git, a C
+compiler available as `cc`, and
+[Z3 5.4.0](https://github.com/Z3Prover/z3/releases/tag/z3-5.4.0). Put Z3's `bin`
+directory on `PATH`. Elan selects the Lean version in `lean-toolchain`; Lake fetches
+the pinned library dependencies.
+
+```sh
+git clone https://github.com/input-output-hk/CardanoLedgerApiBlaster.git
+cd CardanoLedgerApiBlaster
+lake build uplc_equiv
+```
+
+The checked-in examples do not require their original compilers to be installed.
+
+### Cross-compiler escrow counterexample
+
+This command finds a context accepted by the historical Scalus escrow
+implementation and rejected by the Plinth implementation:
+
+```sh
+lake exe uplc_equiv \
+  equivalence/examples/two_party_escrow_old/Scalus_0.18.2_Unisay.cbor_hex \
+  equivalence/examples/two_party_escrow_old/Plinth_1.67.0.0_Unisay.cbor_hex \
+  --bounded --max-inputs 1 --max-outputs 1
+```
+
+Expected: **`bounded_regression`**, exit status **1**. A reference run discovers
+an output of **75,000,000 lovelace (75 ADA)** without being supplied a datum,
+redeemer, amount or transaction template. The reported context passes ledger-model
+validation, and native replay confirms both outcomes.
+
+The [escrow walkthrough](equivalence/examples/two_party_escrow_old/README.md)
+explains the counterexample and historical scenario. For an actual optimizer bug,
+follow the [optimizer regression tutorial](equivalence/examples/uplc-optimize/tutorial/README.md):
+detect the faulty optimization of a V3 validator, then verify the corrected output
+using the same comparison limits.
+
+### Compare your own programs
+
+The first script is OLD and the second is NEW. **Validator mode** is the default:
+NEW must accept every input accepted by OLD. Add `--equivalence` to require the
+same acceptance in both directions, as normally needed when checking an
+optimization:
+
+```sh
+lake exe uplc_equiv old.cbor_hex new.cbor_hex \
+  --bounded --equivalence --max-inputs 1 --max-outputs 1
+```
+
+`--bounded` compares acceptance within an execution-step limit (default 100,000;
+set it with `--steps N`). Step exhaustion counts as nonacceptance in this mode.
+Without `--bounded`, validator checks require `--budget CPU MEMORY`; the step
+limit then acts as an analysis guard, whose exhaustion is inconclusive:
+
+```sh
+lake exe uplc_equiv old.cbor_hex new.cbor_hex \
+  --equivalence --budget 10000000 100000
+```
+
+The same execution-unit limits are applied independently to each script. Budget
+exhaustion counts as rejection, so changes in execution costs can affect
+acceptance under a budget. Bounded, uncosted checks omit that budget comparison.
+
+**Function mode** compares returned constants and success/error outcomes, using
+one integer input and uncosted execution by default:
+
+```sh
+lake exe uplc_equiv old.uplc new.uplc --mode function
+```
+
+The CLI recognizes textual `.uplc` files and CIP-57 JSON blueprints such as
+`plutus.json`. Other paths default to single-CBOR hex. If a blueprint contains
+several compiled validators, use `--validator-old` or `--validator-new` to select
+one by ID or title.
+Strict function mode already checks equality of outcomes. Its bounded mode instead
+preserves observed OLD constants unless `--equivalence` is requested.
+
+### Choose the input domain and limits
+
+Validator checking supports structured, ledger-model-valid spending transactions
+with a present datum. Use `--language PlutusV2` for two V2 validators or
+`--language-old PlutusV2 --language-new PlutusV3` for a V2-to-V3 port. See the
+[V2 and mixed-language domain](equivalence/README.md#plutus-v2-and-v3-spending-comparisons)
+and the [standard V3 profile](equivalence/README.md#structured-context-profile).
+Use `--purpose mint` to compare [V2 and V3 minting policies](equivalence/README.md#minting-policy-comparisons).
+Use `--purpose withdraw` to compare [V2 and V3 reward-withdrawal validators](equivalence/README.md#withdrawal-validator-comparisons).
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `--max-inputs N` | 2 | Include up to N transaction inputs. |
+| `--max-outputs N` | 2 | Include up to N transaction outputs. |
+| `--max-signers N` | 2 | Include up to N signer keys. |
+| `--max-earlier-spending-redeemers N` | 0 | Include up to N spending redeemers before the current map entry. |
+| `--datum DATA`, `--redeemer DATA` | Symbolic | Fix a value to focus the comparison. |
+| `--timeout SECONDS` | 20 | Bound each Z3 query. |
+| `--wall-timeout SECONDS` | 180 | Bound the complete check, including preprocessing. |
+
+Start with small count limits and expand them as needed. These settings change
+the domain of the claim; they are not merely performance hints. Fixing datum or
+redeemer similarly restricts the claim to those values. Data accepts explicit
+syntax such as `--datum 'Constr 0 [Constr 0 [], I 1000000]'` or `--datum 'B #68656c6c6f'`
+for bytes. Bare integers are shorthand, so `--redeemer 1` means `--redeemer 'I 1'`.
+
+For slow solver searches, `-j4` races four Z3 workers with different seeds;
+`--seed 42 -j4` uses 42 through 45. This uses more CPU and memory and does not
+accelerate preprocessing. `--split-dispatch` can discover datum/redeemer cases
+and check them separately, with full-domain fallback when needed.
+
+See the [complete CLI reference](equivalence/README.md) for every option, supported
+encoding, Data syntax, dispatch settings and detailed comparison semantics.
+
+### Read the result
+
+| Result | Exit code | Meaning |
+| --- | ---: | --- |
+| `preserved` / `equivalent`, including `bounded_` variants | 0 | The requested relationship holds in the stated scope. |
+| `regression` / `inequivalent`, including `bounded_` variants | 1 | A natively replayed counterexample distinguishes the scripts. |
+| `inconclusive` | 2 | The checker could not establish a result within its limits. |
+| `error` | 3 | Invalid arguments, unsupported input or a tool failure. |
+| `vacuously_…` | 4 | OLD rejects every input in the validator domain. |
+
+A positive validator verdict requires a concrete OLD-accepting witness as well
+as successful preservation queries. A timeout, an individual `valid` query or
+failure to find a counterexample is not by itself an equivalence result.
+
+Progress goes to stderr; the final report goes to stdout. Counterexamples show
+both outcomes and a readable context with datum, redeemer, inputs, outputs and
+ADA amounts. Add `--json` for machine-readable results or `--emit-lean FILE` to
+export the queries. Verification uses Blaster's SMT results without reconstructed
+Lean proof terms. Ledger-model validity does not establish on-chain reachability.
+
+### Library API
+
+Build the reusable library with `lake build UplcEquivalence`. Applications can call
+`Equivalence.Checker.check options old new` with decoded UPLC programs and a
+`Checker.Config`. It returns the report; optional `Solver.Observer` callbacks
+receive progress and phase changes. Library calls are silent by default.
+
+### Running the equivalence tests
+
+With the build prerequisites above and Python 3.9 or later installed, run:
+
+```sh
+make check_equivalence
+```
+
+This checks the solver prerequisites, rebuilds the CLI and library, and runs the
+Lean and Python integration tests, including the optimizer tutorial fixtures.
+For performance measurements over the collected examples, see the
+[corpus benchmarking guide](equivalence/benchmarks/CORPUS.md).
+
 
 ## General Description
 

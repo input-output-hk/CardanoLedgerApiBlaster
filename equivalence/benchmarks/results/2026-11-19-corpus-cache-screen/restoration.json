@@ -1,0 +1,8 @@
+{
+  "optimizer_source_restored": true,
+  "optimizer_git_status": "",
+  "benchmark_worker_matches_original_binary": true,
+  "original_source_sha256": "dd665a01a301bdd55d2b5b5d49f8de3e76e7d4d3b1479e238f69efab38c34fbd",
+  "normal_build": "lake build uplc_equiv equivalence_benchmark_worker passed (631 jobs)",
+  "cli_sha256": "7b5a3f835d85a867424d017a9af27ba96c16524a0d472ff0e172cebd1f6c315c"
+}

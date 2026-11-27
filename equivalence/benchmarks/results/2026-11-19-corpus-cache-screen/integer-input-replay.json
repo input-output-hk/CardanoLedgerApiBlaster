@@ -1,0 +1,374 @@
+{"fixtures":
+ [{"script": "equivalence/examples/factorial/Scalus_0.17.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script": "equivalence/examples/factorial/Scalus_0.16.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/factorial/Plutarch_1.11.0_SeungheonOh_exbudget.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script": "equivalence/examples/factorial/Scalus_0.12.1_Unisay.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script": "equivalence/examples/factorial/Scalus_1.4.0_nau.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/factorial/Plutarch_1.11.0_SeungheonOh_size.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/factorial_naive_recursion/Scalus_0.17.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/factorial_naive_recursion/Plinth_1.45.0.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/factorial_naive_recursion/Scalus_0.16.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/factorial_naive_recursion/Scalus_1.3.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/factorial_naive_recursion/OpShin_1.0.0_nielstron.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/factorial_naive_recursion/Scalus_0.18.2_Unisay.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/factorial_naive_recursion/Plutarch_1.11.0_SeungheonOh.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/factorial_naive_recursion/Scalus_0.12.1_Unisay.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/factorial_naive_recursion/Scalus_1.4.0_nau.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/factorial_naive_recursion/Plinth_1.61.0.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/factorial_naive_recursion/Pebble_0.1.2_michele-nuzzi.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/factorial_naive_recursion/Pebble_0.4.4_michele-nuzzi.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/factorial_naive_recursion/OpShin_0.26.1_nielstron.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/factorial_naive_recursion/Plinth_1.65.0.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/factorial_naive_recursion/Plinth_1.64.0.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/factorial_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/factorial_naive_recursion/Pebble_0.5.0_michele-nuzzi.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/factorial_naive_recursion/Plinth_1.71.0.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 1, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 120, "kind": "integer", "input": 5}]},
+  {"script": "equivalence/examples/fibonacci/Scalus_0.17.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script": "equivalence/examples/fibonacci/Plinth_1.45.0.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script": "equivalence/examples/fibonacci/Scalus_0.16.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci/Scalus_0.12.1_nau_prepacked.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script": "equivalence/examples/fibonacci/Scalus_1.3.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci/Aiken_1.1.19_KtorZ_prepacked.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci/Plutarch_1.11.0_SeungheonOh_prepacked.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci/Plutarch_1.11.0_SeungheonOh_exbudget.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script": "equivalence/examples/fibonacci/OpShin_1.0.0_nielstron.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script": "equivalence/examples/fibonacci/Scalus_0.18.2_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script": "equivalence/examples/fibonacci/Scalus_0.12.1_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script": "equivalence/examples/fibonacci/Scalus_1.4.0_nau.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script": "equivalence/examples/fibonacci/Plinth_1.61.0.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci/Aiken_1.1.19_KtorZ_tailrec.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci/Scalus_0.16.0_Unisay_prepacked.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script": "equivalence/examples/fibonacci/OpShin_0.26.1_nielstron.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script": "equivalence/examples/fibonacci/Plinth_1.65.0.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script": "equivalence/examples/fibonacci/Plinth_1.64.0.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script": "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci/Plutarch_1.11.0_SeungheonOh_size.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script": "equivalence/examples/fibonacci/Plinth_1.71.0.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci/Aiken_1.1.24_KtorZ_prepacked.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci/Aiken_1.1.24_KtorZ_tailrec.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci_naive_recursion/Scalus_0.17.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci_naive_recursion/Plinth_1.45.0.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci_naive_recursion/Scalus_0.16.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci_naive_recursion/Scalus_1.3.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci_naive_recursion/Scalus_0.18.2_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci_naive_recursion/Plutarch_1.11.0_SeungheonOh.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci_naive_recursion/Aiken_1.1.24_KtorZ.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci_naive_recursion/Scalus_0.12.1_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci_naive_recursion/Scalus_1.4.0_nau.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci_naive_recursion/Aiken_1.1.17_KtorZ.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci_naive_recursion/Plinth_1.61.0.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci_naive_recursion/Pebble_0.1.2_michele-nuzzi.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci_naive_recursion/Pebble_0.4.4_michele-nuzzi.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci_naive_recursion/Plinth_1.65.0.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci_naive_recursion/Plinth_1.64.0.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci_naive_recursion/Plinth_1.67.0.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci_naive_recursion/Pebble_0.5.0_michele-nuzzi.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]},
+  {"script":
+   "equivalence/examples/fibonacci_naive_recursion/Plinth_1.71.0.0_Unisay.cbor_hex",
+   "observations":
+   [{"value": 0, "kind": "integer", "input": 0},
+    {"value": 1, "kind": "integer", "input": 1},
+    {"value": 5, "kind": "integer", "input": 5}]}],
+ "fixture_count": 65}
