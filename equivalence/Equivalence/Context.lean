@@ -64,6 +64,13 @@ def mintingContext (txInfo redeemer : Data) (currencySymbol : ByteString) : Data
 def mintValue (currencySymbol token : ByteString) (quantity : Int) : Data :=
   .Map [(.B currencySymbol, .Map [(.B token, .I quantity)])]
 
+def withdrawalContext (txInfo redeemer credential : Data) : Data :=
+  let purpose := Data.Constr 2 [credential]
+  let tx := match txInfo with
+    | .Constr tag fields => .Constr tag (fields.set 9 (.Map [(purpose, redeemer)]))
+    | other => other
+  .Constr 0 [tx, redeemer, purpose]
+
 /-- Add entries before the current spending entry in an encoded context. -/
 def prependEarlierRedeemers (raw : Data) (earlier : List (Data × Data)) : Data :=
   match raw with
@@ -226,6 +233,33 @@ def validMintingArguments (useV2 useV3 : Bool) (args : List Term) : Bool :=
 
 def mintingArguments (v3 : Bool) (args : List Term) : List Term :=
   if v3 then args else (v2MintingArguments args).getD []
+
+private def v2WithdrawalArguments : List Term → Option (List Term)
+  | [.Const (.Data (.Constr 0 [.Constr 0 [.List inputs, .List [], .List outputs, fee, mint,
+      .List [], .Map [(credential, .I amount)], range, .List signers, .Map [(purpose, value)],
+      datums, txId, .Map [], .List [], .Constr 1 [], .Constr 1 []], redeemer,
+      .Constr 2 [ownCredential]]))] => do
+    unless credential == ownCredential && purpose == .Constr 2 [credential] && value == redeemer do none
+    let stakingCredential := Data.Constr 0 [credential]
+    let key := Data.Constr 2 [stakingCredential]
+    let withdrawals := Data.Map [(stakingCredential, .I amount)]
+    let tx ← v2TxInfo inputs outputs signers range { fee, mint, withdrawals, datums, txId }
+      [(key, redeemer)]
+    return [.Const (.Data redeemer), .Const (.Data (.Constr 0 [tx, key]))]
+  | _ => none
+
+def validWithdrawalArguments (useV2 useV3 : Bool) (args : List Term) : Bool :=
+  (!useV3 || (match args with
+    | [.Const (.Data raw)] => (Ledger.decode raw).any CardanoLedgerApi.V3.Contexts.validRewardingContext
+    | _ => false)) &&
+  (!useV2 || (match v2WithdrawalArguments args with
+    | some [.Const (.Data redeemer), .Const (.Data raw)] =>
+      (CardanoLedgerApi.IsData.Class.IsData.fromData raw).any
+        (fun ctx => CardanoLedgerApi.V2.Contexts.validRewardingContext ⟨redeemer, ctx⟩)
+    | _ => false))
+
+def withdrawalArguments (v3 : Bool) (args : List Term) : List Term :=
+  if v3 then args else (v2WithdrawalArguments args).getD []
 
 /-- One concrete member of the generic valid-context domain. These choices
     witness nonemptiness; they impose no restrictions on the symbolic domain. -/

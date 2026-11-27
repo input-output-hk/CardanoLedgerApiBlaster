@@ -58,7 +58,17 @@ def Config.mixedLanguages (c : Config) : Bool := c.languageFor 0 != c.languageFo
 
 def Config.minting (c : Config) : Bool := c.purpose == "mint"
 
-def Config.versionedArguments (c : Config) : Bool := c.mixedLanguages || c.minting
+def Config.withdrawal (c : Config) : Bool := c.purpose == "withdraw"
+
+def Config.spending (c : Config) : Bool := c.purpose == "spend"
+
+def Config.versionedArguments (c : Config) : Bool := c.mixedLanguages || !c.spending
+
+def Config.rejectionDeclaration (c : Config) : Name :=
+  if c.minting then ``Queries.mintingRejected
+  else if c.withdrawal then ``Queries.withdrawalRejected
+  else if c.mixedLanguages then ``Queries.spendingRejected
+  else ``Queries.rejected
 
 def Config.languageFields (c : Config) : List (String × Json) :=
   if c.mixedLanguages then
@@ -76,7 +86,7 @@ def Config.stepLimitFields (c : Config) : List (String × Json) := [
 /-- Check semantic option combinations for library callers as well as the CLI. -/
 def Config.validate (c : Config) : Except String Unit := do
   unless ["validator", "function"].contains c.mode do throw s!"unsupported mode: {c.mode}"
-  unless ["spend", "mint"].contains c.purpose do throw s!"unsupported purpose: {c.purpose}"
+  unless ["spend", "mint", "withdraw"].contains c.purpose do throw s!"unsupported purpose: {c.purpose}"
   if c.dispatchTimeout == 0 then throw "dispatch case timeout must be positive"
   if c.dispatchCaseLimit == 0 then throw "dispatch case limit must be positive"
   if c.steps == 0 then throw "step limit must be positive"
@@ -90,7 +100,7 @@ def Config.validate (c : Config) : Except String Unit := do
   if c.mode == "validator" && !c.bounded && c.budget.isNone then
     throw "validator checking requires --budget CPU MEMORY or --bounded --steps N"
   if c.mode == "function" then
-    if c.minting then throw "--purpose mint requires validator mode"
+    unless c.spending do throw s!"--purpose {c.purpose} requires validator mode"
     if c.mixedLanguages then throw "function comparison requires matching languages"
     if c.maxEarlierSpendingRedeemers != 0 then throw "earlier spending redeemer limit is a validator option"
     if c.splitDispatch then throw "--split-dispatch is a validator option"
@@ -105,9 +115,9 @@ def Config.validate (c : Config) : Except String Unit := do
   if c.mode == "validator" then
     if c.inputs != "valid-context" then
       throw s!"unsupported validator input mode: {c.inputs}; use valid-context"
-    if c.minting then
+    if !c.spending then
       unless [c.languageFor 0, c.languageFor 1].all (fun lang => ["PlutusV2", "PlutusV3"].contains lang) do
-        throw "minting checks require PlutusV2 or PlutusV3"
+        throw s!"--purpose {c.purpose} requires PlutusV2 or PlutusV3"
       if c.datum.isSome then throw "--datum requires --purpose spend"
       if c.maxEarlierSpendingRedeemers != 0 then
         throw "--max-earlier-spending-redeemers requires --purpose spend"
@@ -125,13 +135,17 @@ def validLedgerContext (c : Config) (raw : PlutusCore.Data.Data) : Bool :=
   if c.minting then
     ValidContext.containsMinting c.toLimits raw &&
       Context.validMintingArguments (!c.isV3 0 || !c.isV3 1) (c.isV3 0 || c.isV3 1) (Queries.contextArgs raw)
+  else if c.withdrawal then
+    ValidContext.containsWithdrawal c.toLimits raw &&
+      Context.validWithdrawalArguments (!c.isV3 0 || !c.isV3 1) (c.isV3 0 || c.isV3 1) (Queries.contextArgs raw)
   else (if c.mixedLanguages then Context.validSharedArguments (Queries.contextArgs raw)
     else Ledger.validContext raw) && ValidContext.contains c.toLimits raw
 
 def auditLedgerContext (c : Config) (raw : PlutusCore.Data.Data) : Json :=
-  if c.minting then Json.mkObj [
-    ("predicate", toJson s!"validMintingContext ({c.languageFor 0}, {c.languageFor 1})"),
-    ("valid", toJson (validLedgerContext c raw))]
+  if !c.spending then
+    let predicate := if c.minting then "validMintingContext" else "validRewardingContext"
+    Json.mkObj [("predicate", toJson s!"{predicate} ({c.languageFor 0}, {c.languageFor 1})"),
+      ("valid", toJson (validLedgerContext c raw))]
   else if c.mixedLanguages then Json.mkObj [
     ("predicate", toJson "V2 and V3 validSpendingContext"),
     ("valid", toJson (Context.validSharedArguments (Queries.contextArgs raw)))]
@@ -185,16 +199,16 @@ def queries (c : Config) : Array Query :=
   else
     let (noRegression, preserved) := if c.minting then
         (``Queries.mintingNoAcceptanceRegression, ``Queries.mintingAcceptancePreserved)
+      else if c.withdrawal then
+        (``Queries.withdrawalNoAcceptanceRegression, ``Queries.withdrawalAcceptancePreserved)
       else if c.mixedLanguages then
         (``Queries.spendingNoAcceptanceRegression, ``Queries.spendingAcceptancePreserved)
       else (``Queries.noAcceptanceRegression, ``Queries.acceptancePreserved)
     let forward : Array Query := #[
       ⟨"acceptance_preserved", preserved, #[0, 1]⟩,
       ⟨"no_acceptance_regression", noRegression, #[0, 1]⟩]
-    let rejectedDeclaration := if c.minting then ``Queries.mintingRejected
-      else if c.mixedLanguages then ``Queries.spendingRejected else ``Queries.rejected
     let rejected := fun (name : String) (side : Nat) =>
-      #[Query.mk name rejectedDeclaration #[side]]
+      #[Query.mk name c.rejectionDeclaration #[side]]
     let comparisons := if c.equivalence then #[
       ⟨"acceptance_preserved", preserved, #[0, 1]⟩,
       ⟨"reverse_acceptance_preserved", preserved, #[1, 0]⟩,
@@ -227,6 +241,9 @@ def inputDomain (c : Config) : String :=
   if c.minting then
     s!"Structured minting transactions for OLD {c.languageFor 0} and NEW {c.languageFor 1}, with up to {c.maxInputs} inputs, {c.maxOutputs} outputs and {c.maxSigners} signers. The policy currency symbol, one token name and its nonzero mint or burn quantity are symbolic. The redeemer map contains the current minting entry. Inputs and outputs follow the spending profile's value and address shapes. Reference inputs, certificates, withdrawals and governance fields are empty or absent. Transactions satisfy the selected ledger models." ++
     (c.redeemer.map (fun redeemer => s!" Restricted to redeemer {redeemer}.")).getD ""
+  else if c.withdrawal then
+    s!"Structured reward-withdrawal transactions for OLD {c.languageFor 0} and NEW {c.languageFor 1}, with up to {c.maxInputs} inputs, {c.maxOutputs} outputs and {c.maxSigners} signers. One symbolic script credential withdraws a nonnegative amount of lovelace, including zero. The redeemer map contains the current withdrawal entry. Inputs and outputs follow the spending profile's value and address shapes. Reference inputs, certificates, and governance fields are empty or absent. Transactions satisfy the selected ledger models." ++
+    (c.redeemer.map (fun redeemer => s!" Restricted to redeemer {redeemer}.")).getD ""
   else if c.mode == "validator" then
     (if c.mixedLanguages then
       s!"Shared spending transactions for OLD {c.languageFor 0} and NEW {c.languageFor 1}, with "
@@ -250,7 +267,9 @@ def status : Blaster.Smt.Result → String
 /-- A concrete valid member witnesses nonemptiness, not acceptance by OLD. -/
 def nativeDomainWitness (c : Config) : Option PlutusCore.Data.Data :=
   if checksLedger c then do
-    let raw ← if c.minting then ValidContext.validMintingContext c.toLimits else ValidContext.validContext c.toLimits
+    let raw ← if c.minting then ValidContext.validMintingContext c.toLimits
+      else if c.withdrawal then ValidContext.validWithdrawalContext c.toLimits
+      else ValidContext.validContext c.toLimits
     if validLedgerContext c raw then some raw else none
   else none
 
@@ -266,8 +285,9 @@ def queryPredicate (c : Config) (query : Query) (programs : Array Expr) : MetaM 
       (mkConst ``PlutusCore.UPLC.Term.Term)) fun args => do
     let body := mkAppN (mkConst query.declaration) (#[args] ++ query.sides.map (programs[·]!) ++
       limits ++ #[toExpr c.bounded, toExpr c.budget.isSome, mkRawNatLit c.steps])
-    let valid := if c.minting then mkApp3 (mkConst ``Context.validMintingArguments)
-        (toExpr (!c.isV3 0 || !c.isV3 1)) (toExpr (c.isV3 0 || c.isV3 1)) args
+    let valid := if !c.spending then
+        let predicate := if c.minting then ``Context.validMintingArguments else ``Context.validWithdrawalArguments
+        mkApp3 (mkConst predicate) (toExpr (!c.isV3 0 || !c.isV3 1)) (toExpr (c.isV3 0 || c.isV3 1)) args
       else mkApp (mkConst (if c.mixedLanguages then
         ``Context.validSharedArguments else ``Ledger.validArguments)) args
     let premise ← Meta.mkEq valid (toExpr true)
@@ -279,7 +299,8 @@ def queryPredicate (c : Config) (query : Query) (programs : Array Expr) : MetaM 
 def queryProposition (c : Config) (query : Query) (programs : Array Expr) : MetaM Expr := do
   let predicate ← queryPredicate c query programs
   if c.mode == "function" then return predicate
-  ValidContext.proposition c.toLimits predicate (shared := c.mixedLanguages) (minting := c.minting)
+  ValidContext.proposition c.toLimits predicate (shared := c.mixedLanguages)
+    (minting := c.minting) (withdrawal := c.withdrawal)
 
 def report (verdict explanation : String) (fields : List (String × Json) := []) : Json :=
   Json.mkObj ([("verdict", toJson verdict), ("explanation", toJson explanation)] ++ fields)
@@ -316,6 +337,7 @@ def functionOutcomeJson (budgeted : Bool) (result : Acceptance.Result) : Json :=
 private def scriptArguments (c : Config) (side : Nat) (args : List PlutusCore.UPLC.Term.Term) :
     List PlutusCore.UPLC.Term.Term :=
   if c.minting then Context.mintingArguments (c.isV3 side) args
+  else if c.withdrawal then Context.withdrawalArguments (c.isV3 side) args
   else if c.mixedLanguages then Context.spendingArguments (c.isV3 side) args
   else args
 
@@ -368,8 +390,8 @@ def replayWitness (c : Config) (oldProgram newProgram : PlutusCore.UPLC.Term.Pro
   -- Optimization can reduce a universally false query to False without asking
   -- Z3 for a model. Try zero inputs too, but still require a successful replay.
   if checksLedger c then
-    for context in ValidContext.modelContexts c.toLimits model c.minting ++
-        ValidContext.modelContexts c.toLimits [] c.minting do
+    for context in ValidContext.modelContexts c.toLimits model c.minting c.withdrawal ++
+        ValidContext.modelContexts c.toLimits [] c.minting c.withdrawal do
       if let some witness := replayContext (Queries.contextArgs context) then return witness
   else if c.inputs == "data" then
     let candidates := (model.filterMap PlutusCore.Smt.Model.dataBinding).map Prod.snd ++ [.I 0]
@@ -561,11 +583,9 @@ private def synthesizeOldAcceptance (c : Config)
     (diagnostics : Option (IO.Ref (Array (String × Json)))) (observer : Solver.Observer) :
     MetaM (Option (List String)) := do
   let progress := observer.message
-  let rejected := if c.minting then ``Queries.mintingRejected
-    else if c.mixedLanguages then ``Queries.spendingRejected else ``Queries.rejected
-  let query : Query := ⟨"old_rejected", rejected, #[0]⟩
+  let query : Query := ⟨"old_rejected", c.rejectionDeclaration, #[0]⟩
   progress "Starting: synthesizing an OLD-accepting witness"
-  if c.minting then
+  if !c.spending then
     observer.reportPhase "preprocessing" (some "old_acceptance_witness_search")
     let goal ← queryProposition c query programs
     let result ← Solver.runQuery goal "old_acceptance_witness_search" c.timeout true diagnostics
@@ -686,10 +706,10 @@ def solve (env : Environment) (c : Config) (oldProgram newProgram : PlutusCore.U
             results := results.set! i .Valid
             if let some ref := checkedResults then ref.modify (fun rows => rows.set! i none)
             progress s!"Derived: {previous.name} (from {evidence})"
-    -- Minting witness synthesis uses the full rejection query. Spending can
+    -- Minting and withdrawal synthesis use the full rejection query. Spending can
     -- still try its distinct witness subsets after an unsuccessful query.
     if checksLedger c && comparisonsProved results && oldAcceptanceModel.isNone &&
-        (!c.minting || c.skipOldRejected) then
+        (c.spending || c.skipOldRejected) then
       let oldIndex := names.idxOf "old_rejected"
       let rejection := results[oldIndex]?.getD .Undetermined
       unless rejection matches .Valid do
@@ -764,6 +784,7 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
         if !validLedgerContext c raw then return domainIssue "invalid_witness" "The supplied domain witness fails the ledger model."
         ledgerFields := [("domain_status", toJson "nonempty"),
           ("proof_domain", toJson (if c.minting then "ledger-valid structured minting transactions"
+            else if c.withdrawal then "ledger-valid structured reward-withdrawal transactions"
             else if c.mixedLanguages then "ledger-valid shared V2/V3 spending transactions"
             else "ledger-valid structured spending contexts")),
           ("domain_witness", PlutusCore.Data.toDetailedJson raw), ("ledger_validity", auditLedgerContext c raw)]
@@ -850,7 +871,7 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
       ("earlier_spending_redeemers_max", toJson c.maxEarlierSpendingRedeemers), ("integer_bits", Json.null),
       ("inspected_byte_string_bytes", Json.null),
       ("value_policy_entries", toJson (2 : Nat)), ("tokens_per_policy", toJson (1 : Nat)),
-      ("script_purpose", toJson (if c.minting then "minting" else "spending")),
+      ("script_purpose", toJson (if c.minting then "minting" else if c.withdrawal then "withdrawal" else "spending")),
       ("validity_range", toJson "arbitrary Data")])] ++
     (if c.budget.isSome then
       let costModel := fun side => if c.isV3 side then "bundled post-Conway E" else "bundled post-Conway D"

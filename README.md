@@ -340,6 +340,7 @@ The checker encodes each symbolic spend for both versions. See the
 [mixed-language domain](equivalence/README.md#plutus-v2-and-v3-spending-comparisons)
 and the [standard V3 profile](equivalence/README.md#structured-context-profile).
 Use `--purpose mint` to compare [V2 and V3 minting policies](equivalence/README.md#minting-policy-comparisons).
+Use `--purpose withdraw` to compare [V2 and V3 reward-withdrawal validators](equivalence/README.md#withdrawal-validator-comparisons).
 
 | Setting | Default | Purpose |
 | --- | --- | --- |

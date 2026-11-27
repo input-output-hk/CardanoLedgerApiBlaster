@@ -19,7 +19,7 @@ explicitly rather than rely on CLI defaults.
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--mode validator\|function` | `validator` | Compare validator acceptance or function outcomes. |
-| `--purpose spend\|mint` | `spend` | Select the ledger purpose for both validators. |
+| `--purpose spend\|mint\|withdraw` | `spend` | Select the ledger purpose for both validators. |
 | `--equivalence` | Off | Check both directions for validators and bounded functions. Strict function mode already checks equality. |
 | `--bounded` | Off | Make the execution-step limit part of the comparison scope. |
 | `--steps N` | `100000` | Execution-step bound with `--bounded`; otherwise an analysis guard. |
@@ -179,6 +179,26 @@ fields are empty or absent. `--datum`, earlier spending redeemers, and
 dispatch splitting apply to spending checks. You can still fix a minting
 redeemer with `--redeemer`. The JSON report records the purpose and includes
 the actual arguments for each replayed policy.
+
+### Withdrawal validator comparisons
+
+```sh
+lake exe uplc_equiv old.uplc new.uplc --purpose withdraw \
+  --language-old PlutusV2 --language-new PlutusV3 \
+  --bounded --max-inputs 1 --max-outputs 1 --max-signers 1
+```
+
+Either validator can use V2 or V3. Both see one symbolic script credential
+with a nonnegative withdrawal amount. Amount zero is included for forwarding
+validators. The ledger model includes the withdrawal amount in the ADA
+balance and checks the matching reward redeemer. V2 receives the redeemer
+and a context with a wrapped staking credential. V3 receives one context
+with the underlying script credential.
+
+The transaction uses the same input and output shapes as the spending profile.
+The redeemer map contains the current withdrawal redeemer. Reference inputs,
+certificates, and governance fields are empty or absent. You can fix the
+redeemer with `--redeemer`.
 
 ### Datum and redeemer syntax
 

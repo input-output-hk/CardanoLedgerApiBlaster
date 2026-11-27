@@ -160,6 +160,8 @@ def context (value : Json) : Option (List String) := do
       let own := reference ref
       some (own, ["  Spending input: " ++ own.getD (raw ref), "  Datum: " ++ optionalData datum])
     | some (0, #[symbol]) => some (none, ["  Minting policy: " ++ raw symbol])
+    | some (2, #[cred]) =>
+      some (none, ["  Withdrawal credential: " ++ (credential cred).getD (raw cred)])
     | _ => none
   let hash := (bytes fields[11]!).map ("#" ++ ·) |>.getD (raw fields[11]!)
   let fee := (integer fields[3]!).map lovelace |>.getD (raw fields[3]!)

@@ -46,7 +46,7 @@ def usage : String := "Usage: lake exe uplc_equiv OLD NEW [options]
 Validator mode checks that NEW accepts every input accepted by OLD within the supplied limits.
 Function mode compares returned constants and success/error outcomes, ignoring execution costs.
   --mode validator|function                             Default validator; function defaults to integer inputs, no budget
-  --purpose spend|mint                                  Validator purpose for OLD and NEW (default spend)
+  --purpose spend|mint|withdraw                         Validator purpose for OLD and NEW (default spend)
   --steps N                                             Execution step limit; analysis guard unless --bounded (default 100000)
   --bounded                                             Compare observations within step/budget limits; OLD results/acceptance preserved
 Budgeted checks use the bundled post-Conway cost model (V3: E; V1/V2: D).
@@ -372,9 +372,10 @@ private def emitSource (env : Environment) (c : Config) (header : String)
     let counts := s!"{c.maxInputs} {c.maxOutputs} {c.maxSigners}"
     let counts := if c.maxEarlierSpendingRedeemers == 0 then counts
       else counts ++ s!" earlier_redeemers {c.maxEarlierSpendingRedeemers}"
-    let proposition := if c.toConfig.minting then
+    let proposition := if !c.toConfig.spending then
         let redeemer := (redeemerText.map fun value => s!" fixed_redeemer ({value})").getD ""
-        s!"minting_context% {counts}{redeemer} ({rendered.pretty})"
+        let syntaxName := if c.toConfig.minting then "minting_context%" else "withdrawal_context%"
+        s!"{syntaxName} {counts}{redeemer} ({rendered.pretty})"
       else if c.toConfig.mixedLanguages then
         let datum := (datumText.map fun value => s!" fixed_datum ({value})").getD ""
         let redeemer := (redeemerText.map fun value => s!" fixed_redeemer ({value})").getD ""
@@ -400,6 +401,7 @@ private def emitSource (env : Environment) (c : Config) (header : String)
     return some s!"\n-- {query.name}\n{command}\n"
   let scope := if checksLedger c then
     let predicate := if c.toConfig.minting then "Context.validMintingArguments"
+      else if c.toConfig.withdrawal then "Context.validWithdrawalArguments"
       else if c.toConfig.mixedLanguages then "Context.validSharedArguments" else "Ledger.validArguments"
     s!"\n-- These queries require {predicate} for each structured context.\n-- The checker separately checks a native ledger-model-valid domain witness\n-- and validates counterexample replays; those checks are not reproduced here.\n"
     else ""

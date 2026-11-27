@@ -48,25 +48,26 @@ private def sanitize (f : Fields) : Fields := Id.run do
       treasury := raw 14 u.treasury d.unused.treasury, donation := raw 15 u.donation d.unused.donation } }
 
 private def balance (f : Fields) (inputs : List Input) (outputs : List Output)
-    (anchor : Nat) (minted : Int := 0) : Fields × List Input := Id.run do
+    (anchor : Nat) (minted : Int := 0) (rewards : Int := 0) : Fields × List Input := Id.run do
   if inputs.isEmpty then return (f, inputs)
   let totalAda := (inputs.map (·.ada)).sum
   let totalQty := (inputs.map (·.quantity)).sum
   if outputs.isEmpty then
     let d := inputs[0]?.getD ({} : Input)
     return ({ f with unused := { f.unused with
-      fee := .I totalAda,
+      fee := .I (totalAda + rewards),
       mint := .Map [(.B d.policy, .Map [(.B d.token, .I (-totalQty))])] } }, inputs)
   let fee := match f.unused.fee with | .I n => n | _ => 1
   let old := inputs[anchor]?.getD ({} : Input)
-  let ada := (outputs.map (·.ada)).sum + fee - (totalAda - old.ada)
+  let ada := (outputs.map (·.ada)).sum + fee - (totalAda - old.ada) - rewards
   let quantity := (outputs.map (·.quantity)).sum - (totalQty - old.quantity) - minted
   return (f, inputs.modify anchor fun input => { input with ada := ada, quantity := quantity })
 
 /-- Models expose individual primitive fields. Enumerate the same count cases
     as the symbolic generator. Invalid or repaired models are never accepted
     without independently validating the full context and reproducing behavior. -/
-def modelContexts (limits : Limits) (model : List String) (minting := false) : List Data := Id.run do
+def modelContexts (limits : Limits) (model : List String) (minting := false)
+    (withdrawal := false) : List Data := Id.run do
   let data := model.filterMap PlutusCore.Smt.Model.dataBinding
   let integers := model.filterMap Blaster.Smt.Model.integerBinding
   let bytes := model.filterMap PlutusCore.Smt.Model.byteStringBinding
@@ -78,6 +79,9 @@ def modelContexts (limits : Limits) (model : List String) (minting := false) : L
   let asset : Input := {}
   let currencySymbol := key "currencySymbol" asset.policy
   let mintToken := key "mintToken" asset.token
+  let withdrawalHash := key "withdrawalHash" asset.addressHash
+  let rewards := if withdrawal then number "withdrawalAmount" 0 else 0
+  let spending := !minting && !withdrawal
   let d : Fields := {}
   let f : Fields := {
     scriptTxId := key "scriptTxId" d.scriptTxId, scriptIndex := number "scriptIndex" d.scriptIndex
@@ -91,7 +95,7 @@ def modelContexts (limits : Limits) (model : List String) (minting := false) : L
   let input := fun (i : Nat) =>
     let stem := s!"input{i}"
     let d : Input := {
-      index := Int.ofNat i, isScript := !minting && i == 0, hasDatum := !minting && i == 0,
+      index := Int.ofNat i, isScript := spending && i == 0, hasDatum := spending && i == 0,
       quantity := if i == 0 then Int.ofNat (max limits.maxOutputs 1) else 1 }
     ({
       txId := key (stem ++ "TxId") d.txId, index := number (stem ++ "Index") d.index
@@ -120,7 +124,7 @@ def modelContexts (limits : Limits) (model : List String) (minting := false) : L
     let totalAda := (inputs.map (·.ada)).sum
     let totalQty := (inputs.map (·.quantity)).sum
     let asset := inputs[0]?.getD ({} : Input)
-    let inputsAligned := if minting then inputs else inputs.modify 0 fun input => { input with
+    let inputsAligned := if !spending then inputs else inputs.modify 0 fun input => { input with
       txId := f.scriptTxId, index := f.scriptIndex, isScript := true
       hasDatum := true, inlineDatum := true, datum := f.datum }
     for outputCount in List.range (limits.maxOutputs + 1) do
@@ -131,7 +135,8 @@ def modelContexts (limits : Limits) (model : List String) (minting := false) : L
         ({
           address := raw (stem ++ "Address") ((bytes.lookup (stem ++ "AddressHash")).map
             Context.pubKeyAddress |>.getD d.address)
-          ada := number (stem ++ "Ada") (if i == 0 then totalAda - fee - Int.ofNat (outputCount - 1) else 1)
+          ada := number (stem ++ "Ada")
+            (if i == 0 then totalAda + rewards - fee - Int.ofNat (outputCount - 1) else 1)
           policy := key (stem ++ "Policy") asset.policy, token := key (stem ++ "Token") asset.token
           quantity := number (stem ++ "Quantity")
             (if i == 0 then totalQty - Int.ofNat (outputCount - 1) + (if minting then minted else 0) else 1)
@@ -143,12 +148,13 @@ def modelContexts (limits : Limits) (model : List String) (minting := false) : L
           | .Constr _ (.Constr 1 [.B hash] :: _) => Context.scriptAddress hash
           | _ => ({} : Output).address }
       let balancedCases := (if inputCount ≤ 1 then [0] else [0, inputCount - 1]).map
-        (fun anchor => balance sanitized inputsAligned outputsSafe anchor (if minting then minted else 0))
+        (fun anchor => balance sanitized inputsAligned outputsSafe anchor (if minting then minted else 0) rewards)
       for signers in signerCases do
         for n in List.range (limits.maxEarlierSpendingRedeemers + 1) do
           let earlierRedeemers := earlierEntries.take n
           let encode := fun f inputs outputs => if minting then
               mintContext f inputs outputs signers currencySymbol mintToken minted
+            else if withdrawal then withdrawalContext f inputs outputs signers withdrawalHash rewards
             else context f inputs outputs signers earlierRedeemers
           candidates := encode f inputs outputs :: candidates
           candidates := encode sanitized inputs outputsSafe :: candidates

@@ -74,14 +74,15 @@ open _root_.Equivalence.Cli (parse)
   let paths := ["old.uplc", "new.uplc", "--bounded"]
   let spending ← IO.ofExcept (parse {} paths)
   unless spending.purpose == "spend" do throw <| IO.userError "Expected spending by default"
-  let minting := paths ++ ["--purpose", "mint"]
-  let c ← IO.ofExcept (parse {} (minting ++ ["--language", "PlutusV2", "--redeemer", "1"]))
-  unless c.purpose == "mint" && c.redeemer == some (.I 1) do
-    throw <| IO.userError "Minting options were not parsed"
-  for flags in [["--datum", "0"], ["--max-earlier-spending-redeemers", "1"], ["--split-dispatch"],
-      ["--mode", "function"], ["--language", "PlutusV1"]] do
-    unless (parse {} (minting ++ flags)).toOption.isNone do
-      throw <| IO.userError s!"Unsupported minting flags accepted: {flags}"
+  for purpose in ["mint", "withdraw"] do
+    let args := paths ++ ["--purpose", purpose]
+    let c ← IO.ofExcept (parse {} (args ++ ["--language", "PlutusV2", "--redeemer", "1"]))
+    unless c.purpose == purpose && c.redeemer == some (.I 1) do
+      throw <| IO.userError s!"Options for {purpose} were not parsed"
+    for flags in [["--datum", "0"], ["--max-earlier-spending-redeemers", "1"], ["--split-dispatch"],
+        ["--mode", "function"], ["--language", "PlutusV1"]] do
+      unless (parse {} (args ++ flags)).toOption.isNone do
+        throw <| IO.userError s!"Unsupported flags for {purpose}: {flags}"
 
 -- Validators have a single structured domain. Function domains remain separate.
 #eval show IO Unit from do

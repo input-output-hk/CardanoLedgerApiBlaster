@@ -99,6 +99,25 @@ def mintingNoAcceptanceRegression (args : List Term) (old new : Program) (cpu me
   ¬ (mintingAcceptance args old cpu memory oldV3 bounded budgeted steps = some true ∧
     mintingAcceptance args new cpu memory newV3 bounded budgeted steps = some false)
 
+def withdrawalAcceptance (args : List Term) (program : Program) (cpu memory : Nat) (v3 bounded budgeted : Bool)
+    (steps : Nat) : Option Bool :=
+  Acceptance.accepts v3 (Function.executeValidator program (Context.withdrawalArguments v3 args)
+    cpu memory v3 bounded budgeted steps)
+
+def withdrawalRejected (args : List Term) (program : Program) (cpu memory : Nat) (v3 bounded budgeted : Bool)
+    (steps : Nat) : Prop :=
+  withdrawalAcceptance args program cpu memory v3 bounded budgeted steps = some false
+
+def withdrawalAcceptancePreserved (args : List Term) (old new : Program) (cpu memory : Nat)
+    (oldV3 newV3 bounded budgeted : Bool) (steps : Nat) : Prop :=
+  withdrawalAcceptance args old cpu memory oldV3 bounded budgeted steps = some false ∨
+    withdrawalAcceptance args new cpu memory newV3 bounded budgeted steps = some true
+
+def withdrawalNoAcceptanceRegression (args : List Term) (old new : Program) (cpu memory : Nat)
+    (oldV3 newV3 bounded budgeted : Bool) (steps : Nat) : Prop :=
+  ¬ (withdrawalAcceptance args old cpu memory oldV3 bounded budgeted steps = some true ∧
+    withdrawalAcceptance args new cpu memory newV3 bounded budgeted steps = some false)
+
 def args (n : Integer) : List Term := [.Const (.Integer n)]
 
 def integerRejected (old : Program) (cpu memory : Nat) (v3 : Bool)

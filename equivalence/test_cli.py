@@ -832,23 +832,13 @@ class CheckerProcess(unittest.TestCase):
                                      capture_output=True, text=True, timeout=30)
             self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
 
-    def test_minting_export_and_blueprint_purpose(self):
+    def test_minting_and_withdrawal_exports_and_blueprint_purpose(self):
         with tempfile.TemporaryDirectory() as directory:
             old = Path(directory) / "v2.uplc"
             new = Path(directory) / "v3.uplc"
             emitted = Path(directory) / "comparison.lean"
             old.write_text("(program 1.0.0 (lam redeemer (lam ctx (con unit ()))))")
             new.write_text("(program 1.1.0 (lam ctx (con unit ())))")
-            args = [str(CLI), str(old), "--purpose", "mint", "--language-old", "PlutusV2", "--bounded",
-                    "--max-inputs", "1", "--max-outputs", "0", "--max-signers", "0", "--redeemer", "1", "--json"]
-            result = subprocess.run([*args, str(new), "--emit-lean", str(emitted)], cwd=ROOT,
-                                    capture_output=True, text=True, timeout=30)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertIn("minting_context% 1 0 0 fixed_redeemer", emitted.read_text())
-            checked = subprocess.run(["lake", "env", "lean", str(emitted)], cwd=ROOT,
-                                     capture_output=True, text=True, timeout=30)
-            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
-
             blueprint = Path(directory) / "plutus.json"
             script = ROOT / "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex"
             blueprint.write_text(json.dumps({
@@ -858,10 +848,22 @@ class CheckerProcess(unittest.TestCase):
                     "redeemer": {"purpose": "spend", "schema": {"dataType": "integer"}},
                 }],
             }))
-            result = subprocess.run([*args, str(blueprint)], cwd=ROOT,
-                                    capture_output=True, text=True, timeout=10)
-            self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
-            self.assertIn("does not declare purpose 'mint'", json.loads(result.stdout)["explanation"])
+            for purpose, syntax in (("mint", "minting_context%"), ("withdraw", "withdrawal_context%")):
+                with self.subTest(purpose=purpose):
+                    args = [str(CLI), str(old), "--purpose", purpose, "--language-old", "PlutusV2", "--bounded",
+                            "--max-inputs", "1", "--max-outputs", "0", "--max-signers", "0", "--redeemer", "1", "--json"]
+                    result = subprocess.run([*args, str(new), "--emit-lean", str(emitted)], cwd=ROOT,
+                                            capture_output=True, text=True, timeout=30)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn(f"{syntax} 1 0 0 fixed_redeemer", emitted.read_text())
+                    checked = subprocess.run(["lake", "env", "lean", str(emitted)], cwd=ROOT,
+                                             capture_output=True, text=True, timeout=30)
+                    self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
+                    result = subprocess.run([*args, str(blueprint)], cwd=ROOT,
+                                            capture_output=True, text=True, timeout=10)
+                    self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+                    self.assertIn(f"does not declare purpose '{purpose}'", json.loads(result.stdout)["explanation"])
 
     def test_blueprint_purpose_uses_selected_compiled_entry(self):
         fixture = ROOT / "equivalence/examples/fibonacci/Plinth_1.67.0.0_Unisay.cbor_hex"
