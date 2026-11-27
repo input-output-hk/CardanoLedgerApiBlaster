@@ -1,4 +1,4 @@
-import Equivalence.Queries
+import PlutusCore.UPLC
 
 /-!
 Defines syntax for constructing raw transaction values and V3 TxInfo fields.

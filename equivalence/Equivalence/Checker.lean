@@ -34,6 +34,8 @@ structure Config extends ValidContext.Limits where
   bounded : Bool := false
   steps : Nat := 100000
   language : String := "PlutusV3"
+  languageOld : Option String := none
+  languageNew : Option String := none
   inputs : String := "valid-context"
   equivalence : Bool := false
   budget : Option (Nat × Nat) := none
@@ -45,6 +47,18 @@ structure Config extends ValidContext.Limits where
   splitDispatch : Bool := false
   dispatchCaseLimit : Nat := 16
   dispatchTimeout : Nat := 10
+
+def Config.languageFor (c : Config) (side : Nat) : String :=
+  (if side == 0 then c.languageOld else c.languageNew).getD c.language
+
+def Config.isV3 (c : Config) (side : Nat) : Bool := c.languageFor side == "PlutusV3"
+
+def Config.mixedLanguages (c : Config) : Bool := c.languageFor 0 != c.languageFor 1
+
+def Config.languageFields (c : Config) : List (String × Json) :=
+  if c.mixedLanguages then
+    [("language_old", toJson (c.languageFor 0)), ("language_new", toJson (c.languageFor 1))]
+  else [("language", toJson (c.languageFor 0))]
 
 /-- Steps restrict execution in bounded mode; otherwise they only guard analysis. -/
 def Config.stepLimitFields (c : Config) : List (String × Json) := [
@@ -64,9 +78,13 @@ def Config.validate (c : Config) : Except String Unit := do
   if c.solverJobs == 0 then throw "solver worker count must be positive"
   if c.solverSeed.getD 0 + c.solverJobs - 1 > 4294967295 then
     throw "solver seeds must fit in an unsigned 32-bit integer"
+  for language in [c.language, c.languageFor 0, c.languageFor 1] do
+    unless ["PlutusV1", "PlutusV2", "PlutusV3"].contains language do
+      throw s!"unsupported language: {language}"
   if c.mode == "validator" && !c.bounded && c.budget.isNone then
     throw "validator checking requires --budget CPU MEMORY or --bounded --steps N"
   if c.mode == "function" then
+    if c.mixedLanguages then throw "function comparison requires matching languages"
     if c.maxEarlierSpendingRedeemers != 0 then throw "earlier spending redeemer limit is a validator option"
     if c.splitDispatch then throw "--split-dispatch is a validator option"
     if c.datum.isSome then throw "--datum is a validator option"
@@ -80,20 +98,27 @@ def Config.validate (c : Config) : Except String Unit := do
   if c.mode == "validator" then
     if c.inputs != "valid-context" then
       throw s!"unsupported validator input mode: {c.inputs}; use valid-context"
-    if c.language != "PlutusV3" then throw "valid-context requires --language PlutusV3"
-  unless ["PlutusV1", "PlutusV2", "PlutusV3"].contains c.language do
-    throw s!"unsupported language: {c.language}"
+    if c.mixedLanguages then
+      unless [c.languageFor 0, c.languageFor 1].contains "PlutusV2" &&
+          [c.languageFor 0, c.languageFor 1].contains "PlutusV3" do
+        throw "mixed-language spending checks require PlutusV2 and PlutusV3"
+      if c.splitDispatch then throw "--split-dispatch requires two PlutusV3 validators"
+    else unless c.isV3 0 do throw "same-language spending checks require PlutusV3"
 
 def checksLedger (c : Config) : Bool := c.mode == "validator"
 
 def validLedgerContext (c : Config) (raw : PlutusCore.Data.Data) : Bool :=
-  Ledger.validContext raw && ValidContext.contains c.toLimits raw
+  (if c.mixedLanguages then Context.validSharedArguments (Queries.contextArgs raw)
+    else Ledger.validContext raw) && ValidContext.contains c.toLimits raw
 
-def auditLedgerContext (_c : Config) (raw : PlutusCore.Data.Data) : Json :=
-  Ledger.audit raw
+def auditLedgerContext (c : Config) (raw : PlutusCore.Data.Data) : Json :=
+  if c.mixedLanguages then Json.mkObj [
+    ("predicate", toJson "V2 and V3 validSpendingContext"),
+    ("valid", toJson (Context.validSharedArguments (Queries.contextArgs raw)))]
+  else Ledger.audit raw
 
 /-- One query description drives solving, reports and emitted Lean source.
-    Side indices select the old/left (0) or new/right (1) program. -/
+    Side indices select the OLD (0) or NEW (1) program. -/
 structure Query where
   name : String
   declaration : Name
@@ -138,11 +163,13 @@ def queries (c : Config) : Array Query :=
       else ``Queries.integerFunctionEquivalent
     #[⟨functionQueryName c, declaration, #[0, 1]⟩]
   else
-    let (noRegression, preserved) := (``Queries.noAcceptanceRegression, ``Queries.acceptancePreserved)
+    let (noRegression, preserved) := if c.mixedLanguages then
+        (``Queries.spendingNoAcceptanceRegression, ``Queries.spendingAcceptancePreserved)
+      else (``Queries.noAcceptanceRegression, ``Queries.acceptancePreserved)
     let forward : Array Query := #[
       ⟨"acceptance_preserved", preserved, #[0, 1]⟩,
       ⟨"no_acceptance_regression", noRegression, #[0, 1]⟩]
-    let rejectedDeclaration := ``Queries.rejected
+    let rejectedDeclaration := if c.mixedLanguages then ``Queries.spendingRejected else ``Queries.rejected
     let rejected := fun (name : String) (side : Nat) =>
       #[Query.mk name rejectedDeclaration #[side]]
     let comparisons := if c.equivalence then #[
@@ -175,7 +202,14 @@ def queryEvidence (c : Config) (query : Query) (results : Array Blaster.Smt.Resu
 
 def inputDomain (c : Config) : String :=
   if c.mode == "validator" then
-    s!"Structured V3 spending contexts with 0..{c.maxInputs} independently symbolic inputs, 0..{c.maxOutputs} outputs and 0..{c.maxSigners} signer byte strings; present script datum; typed independent input and spending references; input pubkey/script credentials without staking and absent/hash/inline datums; outputs have arbitrary addresses and inline datums; no reference scripts; each value has an ADA entry and one independent policy/token entry; arbitrary Data validity range, datum and redeemer; 0..{c.maxEarlierSpendingRedeemers} spending redeemers before the current map entry and a symbolic tail; other auxiliary fields are arbitrary Data; unbounded integers and byte strings; symbolic queries require CardanoLedgerApi.V3.validSpendingContext; concrete witnesses and counterexamples are independently ledger-validated and natively replayed; model validity does not establish on-chain reachability" ++
+    (if c.mixedLanguages then
+      s!"Shared spending transactions for OLD {c.languageFor 0} and NEW {c.languageFor 1}, with "
+    else "Structured V3 spending contexts with ") ++
+    s!"0..{c.maxInputs} independently symbolic inputs, 0..{c.maxOutputs} outputs and 0..{c.maxSigners} signer byte strings; present script datum; typed independent input and spending references; input pubkey/script credentials without staking and absent/hash/inline datums; outputs have arbitrary addresses and inline datums; no reference scripts; each value has an ADA entry and one independent policy/token entry; arbitrary Data validity range, datum and redeemer; 0..{c.maxEarlierSpendingRedeemers} spending redeemers before the current map entry" ++
+    (if c.mixedLanguages then
+      "; no later redeemers, reference inputs, certificates, withdrawals or governance fields; shared fee, mint, datum map and transaction ID; both ledger models must validate the spend"
+    else " and a symbolic tail; other auxiliary fields are arbitrary Data; symbolic queries require CardanoLedgerApi.V3.validSpendingContext") ++
+    "; unbounded integers and byte strings; concrete witnesses and counterexamples are independently ledger-validated and natively replayed; model validity does not establish on-chain reachability" ++
     (c.datum.map (fun datum => s!"; restricted to spending datum {datum}")).getD "" ++
     (c.redeemer.map (fun redeemer => s!"; restricted to spending redeemer {redeemer}")).getD ""
   else if c.inputs == "integer" then "all integers, encoded as raw UPLC integer constants"
@@ -197,7 +231,8 @@ def nativeDomainWitness (c : Config) : Option PlutusCore.Data.Data :=
 /-- Construct the per-argument property independently of context enumeration. -/
 def queryPredicate (c : Config) (query : Query) (programs : Array Expr) : MetaM Expr := do
   let (cpu, memory) := c.budget.getD (0, 0)
-  let limits := #[mkRawNatLit cpu, mkRawNatLit memory, toExpr (c.language == "PlutusV3")]
+  let sides := if c.mixedLanguages then query.sides else #[0]
+  let limits := #[mkRawNatLit cpu, mkRawNatLit memory] ++ sides.map (toExpr ∘ c.isV3)
   if c.mode == "function" then
     return mkAppN (mkConst query.declaration) (query.sides.map (programs[·]!) ++
       limits ++ #[toExpr c.budget.isSome, mkRawNatLit c.steps])
@@ -205,7 +240,8 @@ def queryPredicate (c : Config) (query : Query) (programs : Array Expr) : MetaM 
       (mkConst ``PlutusCore.UPLC.Term.Term)) fun args => do
     let body := mkAppN (mkConst query.declaration) (#[args] ++ query.sides.map (programs[·]!) ++
       limits ++ #[toExpr c.bounded, toExpr c.budget.isSome, mkRawNatLit c.steps])
-    let valid := mkApp (mkConst ``Ledger.validArguments) args
+    let valid := mkApp (mkConst (if c.mixedLanguages then
+      ``Context.validSharedArguments else ``Ledger.validArguments)) args
     let premise ← Meta.mkEq valid (toExpr true)
     -- Establish ledger validity before specializing either script. In particular,
     -- invalid zero-input frames must not expand the symbolic CEK execution.
@@ -215,7 +251,7 @@ def queryPredicate (c : Config) (query : Query) (programs : Array Expr) : MetaM 
 def queryProposition (c : Config) (query : Query) (programs : Array Expr) : MetaM Expr := do
   let predicate ← queryPredicate c query programs
   if c.mode == "function" then return predicate
-  ValidContext.proposition c.toLimits predicate
+  ValidContext.proposition c.toLimits predicate (shared := c.mixedLanguages)
 
 def report (verdict explanation : String) (fields : List (String × Json) := []) : Json :=
   Json.mkObj ([("verdict", toJson verdict), ("explanation", toJson explanation)] ++ fields)
@@ -249,33 +285,47 @@ def functionOutcomeJson (budgeted : Bool) (result : Acceptance.Result) : Json :=
   | .budgetExhausted => Json.mkObj [("kind", toJson "budget_exhausted")]
   | .unfinished => Json.mkObj [("kind", toJson "unfinished")]
 
-def replayWitness (c : Config) (left right : PlutusCore.UPLC.Term.Program)
+private def spendingArgumentFields (c : Config) (args : List PlutusCore.UPLC.Term.Term) :
+    List (String × Json) :=
+  if c.mixedLanguages then
+    let encoded := fun side =>
+      (Context.spendingArguments (c.isV3 side) args).filterMap fun
+        | .Const (.Data value) => some (PlutusCore.Data.toDetailedJson value)
+        | _ => none
+    [("arguments", Json.mkObj [("old", toJson (encoded 0)), ("new", toJson (encoded 1))])]
+  else []
+
+def replayWitness (c : Config) (oldProgram newProgram : PlutusCore.UPLC.Term.Program)
     (model : List String) (reverse := false) (acceptanceOnly := false) : Json := Id.run do
   let (cpu, memory) := c.budget.getD (0, 0)
-  let v3 := c.language == "PlutusV3"
   let replay := fun args input => do
-    let execute := fun program => Function.execute program args cpu memory v3 c.budget.isSome c.steps
-    let old := execute left
-    let new := execute right
+    let execute := fun side program =>
+      let scriptArgs := if c.mixedLanguages then Context.spendingArguments (c.isV3 side) args else args
+      Function.execute program scriptArgs cpu memory (c.isV3 side) c.budget.isSome c.steps
+    let old := execute 0 oldProgram
+    let new := execute 1 newProgram
     let oldObserved := Function.observeValidator c.bounded old
     let newObserved := Function.observeValidator c.bounded new
     let reproduces := if c.mode == "function" then
         if c.bounded then
           if c.equivalence then !Function.boundedSame old new else !Function.boundedPreserved old new
         else Function.same old new == some false
-      else if acceptanceOnly then Acceptance.accepts v3 oldObserved == some true
-      else if reverse then Acceptance.regression v3 newObserved oldObserved
-      else Acceptance.regression v3 oldObserved newObserved
+      else
+        let oldAccepts := Acceptance.accepts (c.isV3 0) oldObserved
+        let newAccepts := Acceptance.accepts (c.isV3 1) newObserved
+        if acceptanceOnly then oldAccepts == some true
+        else if reverse then newAccepts == some true && oldAccepts == some false
+        else oldAccepts == some true && newAccepts == some false
     if reproduces then
-      let outcome := if c.mode == "function" then functionOutcomeJson c.budget.isSome
-        else fun result => budgetOutcomeJson v3 result c.bounded c.budget.isSome
+      let outcome := fun side => if c.mode == "function" then functionOutcomeJson c.budget.isSome
+        else fun result => budgetOutcomeJson (c.isV3 side) result c.bounded c.budget.isSome
       let validity := if c.mode == "function" then [] else match args with
         | [.Const (.Data context)] => [("ledger_validity", auditLedgerContext c context)]
         | _ => []
-      some (Json.mkObj ([("input", input), ("old", outcome old),
-        ("new", outcome new),
+      some (Json.mkObj ([("input", input), ("old", outcome 0 old),
+        ("new", outcome 1 new),
         ("direction", toJson (if c.mode == "function" then "function_outcomes" else if acceptanceOnly then "old_acceptance" else if reverse then "new_to_old" else "old_to_new")),
-        ("replayed", toJson true)] ++ validity))
+        ("replayed", toJson true)] ++ validity ++ spendingArgumentFields c args))
     else none
   let replayContext := fun args => do
     let [.Const (.Data context)] := args | none
@@ -311,13 +361,13 @@ def replayWitness (c : Config) (left right : PlutusCore.UPLC.Term.Program)
   return Json.mkObj [("replayed", toJson false), ("model", toJson (model.map String.trim)),
     ("reason", toJson s!"Could not extract and replay {kind} witness from Blaster's model.")]
 
-def replayCounterexample (c : Config) (left right : PlutusCore.UPLC.Term.Program)
+def replayCounterexample (c : Config) (oldProgram newProgram : PlutusCore.UPLC.Term.Program)
     (model : List String) (reverse := false) : Json :=
-  replayWitness c left right model reverse
+  replayWitness c oldProgram newProgram model reverse
 
-def replayOldAcceptance (c : Config) (left right : PlutusCore.UPLC.Term.Program)
+def replayOldAcceptance (c : Config) (oldProgram newProgram : PlutusCore.UPLC.Term.Program)
     (model : List String) : Json :=
-  replayWitness c left right model false true
+  replayWitness c oldProgram newProgram model false true
 
 private def replayConfirmed (witness : Json) : Bool :=
   (witness.getObjValAs? Bool "replayed").toOption == some true
@@ -339,7 +389,7 @@ private def runDispatchQuery (c : Config) (goal : MetaM Expr) (name : String)
 /-- Discovered cases are search subsets, not an exhaustive proof partition.
 A result is promoted to the original domain only after independent native replay.
 An unsuccessful search is followed by an exhaustive proof partition. -/
-private def searchDispatch (c : Config) (left right : PlutusCore.UPLC.Term.Program)
+private def searchDispatch (c : Config) (oldProgram newProgram : PlutusCore.UPLC.Term.Program)
     (programs : Array Expr) (discovery : Dispatch.Discovery) (info : Option (IO.Ref Json))
     (diagnostics : Option (IO.Ref (Array (String × Json)))) (observer : Solver.Observer) : MetaM (Option (Array Blaster.Smt.Result)) := do
   let plan := queries c
@@ -363,7 +413,7 @@ private def searchDispatch (c : Config) (left right : PlutusCore.UPLC.Term.Progr
       let probe := { c with
         datum := candidate.datum.value "dispatch_datum" bindings
         redeemer := candidate.redeemer.value "dispatch_redeemer" bindings }
-      if replayConfirmed (replayCounterexample probe left right model reverse) then some model else none
+      if replayConfirmed (replayCounterexample probe oldProgram newProgram model reverse) then some model else none
     observer.message s!"Starting: {label}: {candidate.describe}"
     for (query, queryIndex) in plan.zipIdx do
       unless query.name.endsWith "no_acceptance_regression" do continue
@@ -400,7 +450,7 @@ private def searchDispatch (c : Config) (left right : PlutusCore.UPLC.Term.Progr
 /-- Every discovered guard is checked on the original context schema, excluding
 previous guards. The final part is their complement. Discovery limits therefore
 cannot omit inputs from a proof. Counterexamples still require native replay. -/
-private def proveDispatch (c : Config) (left right : PlutusCore.UPLC.Term.Program)
+private def proveDispatch (c : Config) (oldProgram newProgram : PlutusCore.UPLC.Term.Program)
     (programs : Array Expr) (discovery : Dispatch.Discovery) (info : Option (IO.Ref Json))
     (diagnostics : Option (IO.Ref (Array (String × Json)))) (observer : Solver.Observer) :
     MetaM (Array (Option Blaster.Smt.Result) × Option (List String)) := do
@@ -436,7 +486,7 @@ private def proveDispatch (c : Config) (left right : PlutusCore.UPLC.Term.Progra
     -- whether that case is useful for proving preservation.
     if oldAcceptanceModel.isNone then
       if let some model := candidate.bind (·.model []) then
-        if replayConfirmed (replayOldAcceptance c left right model) then
+        if replayConfirmed (replayOldAcceptance c oldProgram newProgram model) then
           oldAcceptanceModel := some model
     observer.message s!"Starting: {label}: {(candidate.map Dispatch.Case.describe).getD "all inputs not covered by earlier cases"}"
     for (query, queryIndex) in comparisons do
@@ -448,7 +498,7 @@ private def proveDispatch (c : Config) (left right : PlutusCore.UPLC.Term.Progra
       outcomes := outcomes ++ [(query.name, toJson resultStatus)]
       unless result matches .Valid do allValid := allValid.set! queryIndex false
       if let .Falsified model := result then
-        if replayConfirmed (replayCounterexample c left right model (query.sides[0]? == some 1)) then
+        if replayConfirmed (replayCounterexample c oldProgram newProgram model (query.sides[0]? == some 1)) then
           let record := caseReport outcomes [("replayed", toJson true)]
           tried := tried.push record
           if let some ref := info then ref.set (summary tried record #[] false)
@@ -472,14 +522,16 @@ private def proveDispatch (c : Config) (left right : PlutusCore.UPLC.Term.Progra
   return (cached, oldAcceptanceModel)
 
 private def synthesizeOldAcceptance (c : Config)
-    (left right : PlutusCore.UPLC.Term.Program) (programs : Array Expr)
+    (oldProgram newProgram : PlutusCore.UPLC.Term.Program) (programs : Array Expr)
     (diagnostics : Option (IO.Ref (Array (String × Json)))) (observer : Solver.Observer) :
     MetaM (Option (List String)) := do
   let progress := observer.message
-  let query : Query := ⟨"old_rejected", ``Queries.rejected, #[0]⟩
+  let rejected := if c.mixedLanguages then ``Queries.spendingRejected else ``Queries.rejected
+  let query : Query := ⟨"old_rejected", rejected, #[0]⟩
   progress "Starting: synthesizing an OLD-accepting structured spending witness"
   let predicate ← queryPredicate c query programs
-  let fast := c.datum.isNone && c.redeemer.isNone && c.maxInputs > 0 && c.maxOutputs > 0 && c.maxSigners > 0
+  let fast := !c.mixedLanguages && c.datum.isNone && c.redeemer.isNone &&
+    c.maxInputs > 0 && c.maxOutputs > 0 && c.maxSigners > 0
   let (cpu, memory) := c.budget.getD (0, 0)
   let fastGoal := mkAppN (mkConst ``ValidContext.fastWitnessRejected)
     (query.sides.map (programs[·]!) ++ #[mkRawNatLit cpu, mkRawNatLit memory,
@@ -504,7 +556,7 @@ private def synthesizeOldAcceptance (c : Config)
           ["input0Quantity: 1"] else []
       let bindings := bindings ++ aliases ++ sharedDatum.flatMap (fun value =>
         names.map fun name => name ++ ": " ++ value)
-      if replayConfirmed (replayOldAcceptance c left right bindings) then
+      if replayConfirmed (replayOldAcceptance c oldProgram newProgram bindings) then
         progress "Finished: ledger-valid OLD acceptance confirmed by native replay"
         return some bindings
       else progress "Finished: structured witness model failed validated replay"
@@ -515,13 +567,13 @@ private def synthesizeOldAcceptance (c : Config)
 
 /-- Call Blaster in-process on propositions constructed from decoded programs.
     Results are consumed as an inductive type, without parsing diagnostic text. -/
-def solve (env : Environment) (c : Config) (left right : PlutusCore.UPLC.Term.Program)
+def solve (env : Environment) (c : Config) (oldProgram newProgram : PlutusCore.UPLC.Term.Program)
     (checkedResults : Option (IO.Ref (Array (Option Blaster.Smt.Result))) := none)
     (diagnostics : Option (IO.Ref (Array (String × Json))) := none)
     (observer : Solver.Observer := {})
     (dispatchInfo : Option (IO.Ref Json) := none) : IO (Array Blaster.Smt.Result × Option (List String)) := do
   let progress := observer.message
-  let programs := #[toExpr left, toExpr right]
+  let programs := #[toExpr oldProgram, toExpr newProgram]
   let plan := queries c
   let names := plan.map Query.name
   let skipRemaining := fun (checked : Nat) (reason : String) => do
@@ -530,10 +582,10 @@ def solve (env : Environment) (c : Config) (left right : PlutusCore.UPLC.Term.Pr
   let action : MetaM (Array Blaster.Smt.Result × Option (List String)) := do
     let (dispatchResults, oldAcceptanceModel) ← if c.splitDispatch && c.mode == "validator" then
         do
-          let discovery := Dispatch.discover c.toLimits left right c.dispatchCaseLimit
-          if let some found ← searchDispatch c left right programs discovery dispatchInfo diagnostics observer then
+          let discovery := Dispatch.discover c.toLimits oldProgram newProgram c.dispatchCaseLimit
+          if let some found ← searchDispatch c oldProgram newProgram programs discovery dispatchInfo diagnostics observer then
             pure (found.map some, none)
-          else proveDispatch c left right programs discovery dispatchInfo diagnostics observer
+          else proveDispatch c oldProgram newProgram programs discovery dispatchInfo diagnostics observer
       else pure (#[], none)
     if plan.zipIdx.any (fun (query, index) => query.sides.size == 2 &&
         ((dispatchResults[index]?).getD none matches some (.Falsified _))) then
@@ -552,7 +604,7 @@ def solve (env : Environment) (c : Config) (left right : PlutusCore.UPLC.Term.Pr
         break
       if query.name == "old_rejected" && comparisonsProved results then
         progress "Starting: looking for an OLD-accepting replay"
-        let witness := replayOldAcceptance c left right []
+        let witness := replayOldAcceptance c oldProgram newProgram []
         if replayConfirmed witness then
           progress "Skipping: old_rejected (OLD acceptance confirmed by native replay)"
           if c.equivalence then progress "Skipping: new_rejected (both comparisons proved)"
@@ -580,7 +632,7 @@ def solve (env : Environment) (c : Config) (left right : PlutusCore.UPLC.Term.Pr
       progress s!"Finished: {query.name}: {status primary}"
       if c.mode == "validator" && query.sides.size == 2 then
         if let .Falsified model := primary then
-          let witness := replayCounterexample c left right model (query.sides[0]? == some 1)
+          let witness := replayCounterexample c oldProgram newProgram model (query.sides[0]? == some 1)
           if replayConfirmed witness then
             skipRemaining results.size "regression confirmed by native replay"
             break
@@ -597,8 +649,8 @@ def solve (env : Environment) (c : Config) (left right : PlutusCore.UPLC.Term.Pr
         let bindings := match rejection with
           | .Falsified model => model
           | _ => []
-        unless replayConfirmed (replayOldAcceptance c left right bindings) do
-          if let some model ← synthesizeOldAcceptance c left right programs diagnostics observer then
+        unless replayConfirmed (replayOldAcceptance c oldProgram newProgram bindings) do
+          if let some model ← synthesizeOldAcceptance c oldProgram newProgram programs diagnostics observer then
             -- A replayed witness refutes universal rejection when that query was enabled.
             if oldIndex < results.size then
               results := results.set! oldIndex (.Falsified model)
@@ -610,7 +662,7 @@ def solve (env : Environment) (c : Config) (left right : PlutusCore.UPLC.Term.Pr
   return result
 
 def classifyFunction (c : Config) (results : Array Blaster.Smt.Result)
-    (left right : PlutusCore.UPLC.Term.Program) : Json := Id.run do
+    (oldProgram newProgram : PlutusCore.UPLC.Term.Program) : Json := Id.run do
   let result := results[0]?.getD .Undetermined
   let queryName := functionQueryName c
   let equivalent := if c.bounded then
@@ -621,9 +673,9 @@ def classifyFunction (c : Config) (results : Array Blaster.Smt.Result)
     else "inequivalent"
   let details := [("mode", toJson "function"), ("function_check", toJson (if c.bounded then if c.equivalence then "bounded_equivalence" else "bounded_preservation" else "strict")),
     ("check", toJson (if c.bounded then if c.equivalence then "bounded constant-or-none observation equality" else "OLD constant observations preserved by NEW within supplied limits" else "function outcome and returned-value equality")),
-    ("input_domain", toJson (inputDomain c)), ("language", toJson c.language),
-    ("budget", c.budget.map (fun (cpu, memory) => Json.mkObj [("cpu", toJson cpu), ("memory", toJson memory)]) |>.getD Json.null)] ++ c.stepLimitFields
-  if left = right then
+    ("input_domain", toJson (inputDomain c)),
+    ("budget", c.budget.map (fun (cpu, memory) => Json.mkObj [("cpu", toJson cpu), ("memory", toJson memory)]) |>.getD Json.null)] ++ c.languageFields ++ c.stepLimitFields
+  if oldProgram = newProgram then
     return report equivalent "The decoded UPLC programs are identical; their behavior is identical for every input."
       (details ++ [("queries", Json.mkObj [("program_identity", toJson "valid"),
         (queryName, toJson "valid")]),
@@ -641,7 +693,7 @@ def classifyFunction (c : Config) (results : Array Blaster.Smt.Result)
       else "Both functions return equal constants or both fail for every input in the declared domain."
     return report equivalent explanation details
   | .Falsified model =>
-    let witness := replayCounterexample c left right model
+    let witness := replayCounterexample c oldProgram newProgram model
     if replayConfirmed witness then
       return report inequivalent (if c.bounded then if c.equivalence then "The functions have different bounded observations on a replayed input." else "NEW fails to preserve an OLD constant result within the supplied limits on a replayed input." else "The functions produce different outcomes or returned values on a replayed input.")
         (details ++ [("counterexample", witness)])
@@ -650,10 +702,10 @@ def classifyFunction (c : Config) (results : Array Blaster.Smt.Result)
   | .Undetermined => return report "inconclusive" "Function equivalence is unestablished: symbolic reasoning did not finish." details
 
 def classify (c : Config) (results : Array Blaster.Smt.Result)
-    (left right : PlutusCore.UPLC.Term.Program)
+    (oldProgram newProgram : PlutusCore.UPLC.Term.Program)
     (domainWitness : Option PlutusCore.Data.Data := none)
     (oldAcceptanceModel : Option (List String) := none) : Json := Id.run do
-  if c.mode == "function" then return classifyFunction c results left right
+  if c.mode == "function" then return classifyFunction c results oldProgram newProgram
   let names := queryNames c
   let result := fun name => results[names.idxOf name]?.getD .Undetermined
   let mut ledgerFields := []
@@ -664,7 +716,8 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
       | some raw =>
         if !validLedgerContext c raw then return domainIssue "invalid_witness" "The supplied domain witness fails the ledger model."
         ledgerFields := [("domain_status", toJson "nonempty"),
-          ("proof_domain", toJson "ledger-valid structured spending contexts"),
+          ("proof_domain", toJson (if c.mixedLanguages then "ledger-valid shared V2/V3 spending transactions"
+            else "ledger-valid structured spending contexts")),
           ("domain_witness", PlutusCore.Data.toDetailedJson raw), ("ledger_validity", auditLedgerContext c raw)]
       | _ => return domainIssue "unestablished" "Could not construct a ledger-valid context witnessing the selected domain; no preservation claim is made."
   let preserved := result "acceptance_preserved"
@@ -676,7 +729,7 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
   let mut diagnostic : Option Json := none
   for (reverse, candidate) in candidates do
     if let .Falsified model := candidate then
-      let witness := replayCounterexample c left right model reverse
+      let witness := replayCounterexample c oldProgram newProgram model reverse
       if replayConfirmed witness then
         regression := some witness
         break
@@ -705,7 +758,7 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
     | .Valid =>
       verdict := "vacuously_" ++ successVerdict
       explanation := s!"OLD accepts no input in the declared domain {scope}; preservation is vacuous."
-      let variant : PlutusCore.Default.BuiltinSemanticsVariant := if c.language == "PlutusV3" then
+      let variant : PlutusCore.Default.BuiltinSemanticsVariant := if c.isV3 0 then
         .defaultFunSemanticsVariantE else .defaultFunSemanticsVariantD
       let costs := PlutusCore.UPLC.CekMachine.semVarToCosts variant
       let startup := costs.startupCost
@@ -715,9 +768,9 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
       -- term is an application, independent of the script and input values.
       let belowFirstStep := c.budget.isSome && !budget.canAfford (startup + costs.stepCostApply)
       if belowStartup then
-        explanation := "The supplied budget cannot cover startup; OLD and NEW reject every input before execution. Preservation is vacuous."
+        explanation := "The supplied budget cannot cover OLD startup. Preservation is vacuous."
       else if belowFirstStep then
-        explanation := "The supplied budget covers startup but cannot cover the first application step; OLD and NEW reject every input. Preservation is vacuous."
+        explanation := "The supplied budget covers OLD startup but cannot cover its first application step. Preservation is vacuous."
       acceptanceFields := [("old_acceptance_status", toJson "rejected_everywhere"),
         ("vacuity_reason", toJson (if belowStartup then "startup_budget_exhausted"
           else if belowFirstStep then "initial_step_budget_exhausted"
@@ -726,7 +779,7 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
       let model := match rejectionResult with
         | .Falsified model => model
         | _ => oldAcceptanceModel.getD []
-      let witness := replayOldAcceptance c left right model
+      let witness := replayOldAcceptance c oldProgram newProgram model
       if replayConfirmed witness then
         acceptanceFields := [("old_acceptance_status", toJson "accepted"),
           ("old_acceptance_witness", witness)]
@@ -739,8 +792,8 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
   let details := [
     ("mode", toJson "validator"),
     ("check", toJson (if c.equivalence then "acceptance preservation in both directions" else "old acceptance implies new acceptance")),
-    ("budget", c.budget.map (fun (cpu, memory) => Json.mkObj [("cpu", toJson cpu), ("memory", toJson memory)]) |>.getD Json.null),
-    ("language", toJson c.language)] ++ c.stepLimitFields ++
+    ("budget", c.budget.map (fun (cpu, memory) => Json.mkObj [("cpu", toJson cpu), ("memory", toJson memory)]) |>.getD Json.null)] ++
+    c.languageFields ++ c.stepLimitFields ++
     [("context_limits", Json.mkObj [
       ("inputs_min", toJson (0 : Nat)), ("inputs_max", toJson c.maxInputs),
       ("outputs_min", toJson (0 : Nat)), ("outputs_max", toJson c.maxOutputs),
@@ -749,7 +802,9 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
       ("inspected_byte_string_bytes", Json.null),
       ("value_policy_entries", toJson (2 : Nat)), ("tokens_per_policy", toJson (1 : Nat)),
       ("script_purpose", toJson "spending"), ("validity_range", toJson "arbitrary Data")])] ++
-    (if c.budget.isSome then [("cost_model", toJson (if c.language == "PlutusV3" then "bundled post-Conway E" else "bundled post-Conway D"))]
+    (if c.budget.isSome then
+      let costModel := fun side => if c.isV3 side then "bundled post-Conway E" else "bundled post-Conway D"
+      [("cost_model", toJson (if c.mixedLanguages then s!"OLD {costModel 0}, NEW {costModel 1}" else costModel 0))]
      else [("execution", toJson "uncosted")])
   let counterexample := match regression with
     | some witness => [("counterexample", witness)]
@@ -761,23 +816,35 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
     ("queries", Json.mkObj (names.toList.zip (results.toList.map (toJson ∘ status)))),
     ("verification", toJson "Blaster SMT result; no reconstructed Lean proof term")] ++ provenance ++ counterexample)
 
+/-- The bundled D/E cost models target Van Rossem (protocol version 11).
+    Both V2 and V3 support UPLC 1.0.0 and 1.1.0 in that era. -/
+private def validateMixedProgramVersion (side language : String) :
+    PlutusCore.UPLC.Term.Program → Except String Unit
+  | .Program (.Version 1 0 0) _ | .Program (.Version 1 1 0) _ => .ok ()
+  | .Program (.Version major minor patch) _ =>
+    .error s!"{side} uses UPLC {major}.{minor}.{patch}, which is unsupported for {language} at protocol version 11. Expected UPLC 1.0.0 or 1.1.0."
+
 /-- Check two decoded programs. Observers are optional; library checks are silent
     by default. inspectQueries can export or inspect the initial and checked plan. -/
-def check (c : Config) (left right : PlutusCore.UPLC.Term.Program)
+def check (c : Config) (oldProgram newProgram : PlutusCore.UPLC.Term.Program)
     (observer : Solver.Observer := {})
     (inspectQueries : Environment → Array (Option Blaster.Smt.Result) → IO Unit := fun _ _ => pure ()) : IO Json := do
   IO.ofExcept c.validate
+  if c.mixedLanguages then
+    IO.ofExcept (validateMixedProgramVersion "OLD" (c.languageFor 0) oldProgram)
+    IO.ofExcept (validateMixedProgramVersion "NEW" (c.languageFor 1) newProgram)
   let progress := observer.message
   observer.reportPhase "preprocessing"
-  if c.mode == "function" && decide (left = right) then
+  if c.mode == "function" && decide (oldProgram = newProgram) then
     progress "Finished: program_identity: identical decoded UPLC programs"
-    return classifyFunction c #[] left right
+    return classifyFunction c #[] oldProgram newProgram
   observer.reportPhase "validation"
   if checksLedger c then progress "Starting: constructing a ledger-model-valid domain witness"
   let domainWitness := if checksLedger c then nativeDomainWitness c else none
   if checksLedger c && domainWitness.isNone then
     return report "inconclusive" "Could not construct a ledger-valid context witnessing the selected domain; no preservation claim is made."
-      [("domain_status", toJson "unestablished"), ("input_domain", toJson (inputDomain c))]
+      ([("domain_status", toJson "unestablished"), ("input_domain", toJson (inputDomain c))] ++
+        c.languageFields)
   if checksLedger c then progress "Finished: ledger-model-valid domain witness constructed"
   -- Resolve dependencies when the checker is used outside Lake or the repository.
   progress "Starting: preparing symbolic checker"
@@ -791,11 +858,11 @@ def check (c : Config) (left right : PlutusCore.UPLC.Term.Program)
   if c.skipOldRejected then progress "Skipping: old_rejected (--skip-old-rejected)"
   let dispatchInfo ← IO.mkRef Json.null
   let (results, oldAcceptanceModel) ←
-    solve env c left right (some checkedResults) (some diagnostics) observer (some dispatchInfo)
+    solve env c oldProgram newProgram (some checkedResults) (some diagnostics) observer (some dispatchInfo)
   inspectQueries env (← checkedResults.get)
   progress "Starting: validating replay witnesses and classifying results"
   observer.reportPhase "validation"
-  let result := classify c results left right domainWitness oldAcceptanceModel
+  let result := classify c results oldProgram newProgram domainWitness oldAcceptanceModel
   let dispatch ← dispatchInfo.get
   let result := if c.splitDispatch then result.setObjVal! "dispatch" dispatch else result
   let nativeProbe := ((dispatch.getObjVal? "winning_case").toOption.bind fun winner =>

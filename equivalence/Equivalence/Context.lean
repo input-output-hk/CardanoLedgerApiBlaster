@@ -126,6 +126,63 @@ def unpackSpendingContext : Data → Option SpendingFrame
         treasury := treasury, donation := donation } }
   | _ => none
 
+/-- The initial common spending domain leaves these auxiliary fields empty.
+    The current and earlier spending redeemers are carried separately. -/
+def RawUnusedTxInfo.sharedDefaults : RawUnusedTxInfo := {}
+
+private def v2Reference : Data → Option Data
+  | .Constr 0 [.B txId, .I index] => some (.Constr 0 [.Constr 0 [.B txId], .I index])
+  | _ => none
+
+private def v2Input : Data → Option Data
+  | .Constr 0 [reference, output] => do
+    return txInput (← v2Reference reference) output
+  | _ => none
+
+private def v2Redeemer : Data × Data → Option (Data × Data)
+  | (.Constr 1 [reference], value) => do
+    return (.Constr 1 [← v2Reference reference], value)
+  | _ => none
+
+/-- Encode the same structured spend for V2. Outputs, signers, validity range,
+    datum witnesses and payloads retain their common encodings. -/
+def SpendingFrame.v2Arguments (frame : SpendingFrame) : Option (List Term) := do
+  let u := frame.unused
+  let d := RawUnusedTxInfo.sharedDefaults
+  unless u.referenceInputs == d.referenceInputs && u.certificates == d.certificates &&
+      u.withdrawals == d.withdrawals && u.redeemers == d.redeemers &&
+      u.votes == d.votes && u.proposals == d.proposals &&
+      u.treasury == d.treasury && u.donation == d.donation do none
+  let .I fee := u.fee | none
+  let .Map mint := u.mint | none
+  let .B txId := u.txId | none
+  let inputs ← frame.inputs.mapM v2Input
+  let reference ← v2Reference frame.reference
+  let earlier ← frame.earlierRedeemers.mapM v2Redeemer
+  let purpose := Data.Constr 1 [reference]
+  let tx := Data.Constr 0 [
+    .List inputs, u.referenceInputs, .List frame.outputs, lovelace fee,
+    .Map ((.B "", .Map [(.B "", .I 0)]) :: mint), u.certificates,
+    u.withdrawals, frame.validRange, .List frame.signers,
+    .Map (earlier ++ [(purpose, frame.redeemer)]), u.datums, .Constr 0 [.B txId]]
+  return [.Const (.Data frame.datum), .Const (.Data frame.redeemer),
+    .Const (.Data (.Constr 0 [tx, purpose]))]
+
+def v2Arguments : List Term → Option (List Term)
+  | [.Const (.Data raw)] => (unpackSpendingContext raw).bind SpendingFrame.v2Arguments
+  | _ => none
+
+/-- Both projections must be valid in their ledger models before checking acceptance. -/
+def validSharedArguments (args : List Term) : Bool :=
+  Ledger.validArguments args && match v2Arguments args with
+    | some [.Const (.Data datum), .Const (.Data redeemer), .Const (.Data raw)] =>
+      (CardanoLedgerApi.IsData.Class.IsData.fromData raw).any
+        (fun ctx => CardanoLedgerApi.V2.Contexts.validSpendingContext ⟨datum, redeemer, ctx⟩)
+    | _ => false
+
+def spendingArguments (v3 : Bool) (args : List Term) : List Term :=
+  if v3 then args else (v2Arguments args).getD []
+
 /-- One concrete member of the generic valid-context domain. These choices
     witness nonemptiness; they impose no restrictions on the symbolic domain. -/
 def genericValidContext : Data :=

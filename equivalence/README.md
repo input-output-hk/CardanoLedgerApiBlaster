@@ -23,7 +23,8 @@ explicitly rather than rely on CLI defaults.
 | `--bounded` | Off | Make the execution-step limit part of the comparison scope. |
 | `--steps N` | `100000` | Execution-step bound with `--bounded`; otherwise an analysis guard. |
 | `--budget CPU MEMORY` | None | Apply the same execution-unit limits independently to each script. Required for validators without `--bounded`; optional otherwise. |
-| `--language VERSION` | `PlutusV3` | Function mode also accepts `PlutusV1` and `PlutusV2`. Validator checking currently supports V3 spending contexts only. |
+| `--language VERSION` | `PlutusV3` | Set both script languages. Functions support V1, V2 and V3. Same-language spending comparisons use V3. |
+| `--language-old VERSION`, `--language-new VERSION` | Shared language | Override the language for one side. Mixed spending comparisons support V2 and V3. |
 
 **Validators:** by default, every input accepted by OLD must be accepted by NEW.
 Use `--equivalence` to require identical acceptance. V3 acceptance requires a unit
@@ -46,7 +47,7 @@ part of the observation: nonacceptance for validators, or no constant for
 functions. A bounded verdict therefore applies to the stated execution bound.
 
 Execution budgets use the bundled post-Conway cost model, not live network
-parameters: V3 uses semantics variant E; function evaluation under V1/V2 uses D.
+parameters. V3 uses semantics variant E. V1 and V2 use D.
 Omitting `--budget` selects uncosted execution. Optimizations can change costs,
 so comparisons under execution budgets can differ from uncosted comparisons.
 
@@ -55,10 +56,10 @@ so comparisons under execution budgets can differ from uncosted comparisons.
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--format FORMAT` | `.uplc` → `textual`, `.json` → `blueprint`, otherwise `single_cbor_hex` | Input encoding for both scripts. |
-| `--format-left FORMAT` | Shared format | Override OLD's encoding. |
-| `--format-right FORMAT` | Shared format | Override NEW's encoding. |
-| `--validator-left ID_OR_TITLE` | Sole compiled validator | Select OLD’s blueprint entry by ID or exact title. |
-| `--validator-right ID_OR_TITLE` | Sole compiled validator | Select NEW’s blueprint entry by ID or exact title. |
+| `--format-old FORMAT` | Shared format | Override OLD's encoding. |
+| `--format-new FORMAT` | Shared format | Override NEW's encoding. |
+| `--validator-old ID_OR_TITLE` | Sole compiled validator | Select OLD’s blueprint entry by ID or exact title. |
+| `--validator-new ID_OR_TITLE` | Sole compiled validator | Select NEW’s blueprint entry by ID or exact title. |
 | `--inputs DOMAIN` | `valid-context` for validators; `integer` for functions | Select the input domain. `--input` is an alias. |
 
 Supported formats: `textual`, `flat`, `flat_hex`, `single_cbor_hex`,
@@ -68,14 +69,14 @@ file extensions.
 For [CIP-57](https://cips.cardano.org/cip/CIP-0057) blueprints, the usual filename
 is `plutus.json`. Each file must contain a selected validator with `compiledCode`.
 The CLI checks a declared script hash and requires the blueprint’s
-`preamble.plutusVersion` to match the comparison’s `--language` (default V3).
+`preamble.plutusVersion` to match the language selected for that input (default V3).
 Apply any template parameters before comparing deployed validators. The checker
 uses the same input domain as for raw UPLC and does not derive restrictions from
 blueprint schemas.
 
 ```sh
 lake exe uplc_equiv old/plutus.json new/plutus.json \
-  --validator-left escrow.spend --validator-right escrow.spend \
+  --validator-old escrow.spend --validator-new escrow.spend \
   --bounded --equivalence --max-inputs 1 --max-outputs 1
 ```
 
@@ -126,6 +127,32 @@ example when input ADA pays the fee and tokens are burned.
 Reports describe the domain and configured limits. Concrete domain witnesses,
 acceptance witnesses and counterexamples are checked against the profile and
 ledger model. Model validity does not establish on-chain reachability.
+
+### Plutus V2 and V3 spending comparisons
+
+```sh
+lake exe uplc_equiv old.uplc new.uplc \
+  --language-old PlutusV2 --language-new PlutusV3 \
+  --bounded --max-inputs 1 --max-outputs 1 --max-signers 1
+```
+
+Each symbolic spend supplies the same datum, redeemer, and transaction fields
+to both script encoders. V2 receives the datum, redeemer, and V2 context as
+three arguments. V3 receives one V3 context and must return unit to accept.
+Each version uses its own ledger predicate and bundled cost model.
+Mixed-language checks accept UPLC 1.0.0 and 1.1.0, as supported by both
+languages at Cardano protocol version 11.
+
+This domain uses the same count and value-shape limits as the V3 profile. It
+fixes reference inputs, certificates, withdrawals, later redeemers, and
+governance fields to empty or absent. Earlier spending redeemers, the fee,
+minted value, datum map, and transaction ID stay symbolic. Addresses and
+application datum and redeemer payloads are shared across versions.
+`--equivalence` checks both directions over this domain. Dispatch splitting
+is available for V3-to-V3 checks.
+
+In mixed-language JSON witnesses, `arguments.old` and `arguments.new` record
+the exact argument lists passed during native replay.
 
 ### Datum and redeemer syntax
 
@@ -227,7 +254,7 @@ When NEW is a blueprint, `--emit-assurance DIR` saves a completed comparison:
 
 ```sh
 lake exe uplc_equiv old/plutus.json new/plutus.json \
-  --validator-left escrow.spend --validator-right escrow.spend \
+  --validator-old escrow.spend --validator-new escrow.spend \
   --bounded --equivalence --max-inputs 1 --max-outputs 1 \
   --emit-assurance escrow-evidence
 ```

@@ -371,7 +371,7 @@ private def groupCase (groups : Array (Pattern × Array Case)) (candidate : Case
 
 /-- Analyze each implementation along separate bounded decision traces. Never
 combine datum facts from one branch with redeemer facts from another. -/
-def discover (limits : ValidContext.Limits) (left right : Program) (caseLimit : Nat := 16) : Discovery := Id.run do
+def discover (limits : ValidContext.Limits) (oldProgram newProgram : Program) (caseLimit : Nat := 16) : Discovery := Id.run do
   let datum := limits.datum.map (fun d => ofConst (.Data d)) |>.getD (.data ⟨.datum,[]⟩)
   let redeemer := limits.redeemer.map (fun d => ofConst (.Data d)) |>.getD (.data ⟨.redeemer,[]⟩)
   -- Some validators read datum/redeemer through the own input or redeemer
@@ -389,7 +389,7 @@ def discover (limits : ValidContext.Limits) (left right : Program) (caseLimit : 
   let mut facts : Array Fact := #[]
   let mut limited := false
   let mut limitReasons := #[]
-  for program in [left,right] do
+  for program in [oldProgram, newProgram] do
     let mut pending := #[(0, ([] : List Nat))]
     let mut remaining := 200000
     let mut seen : Array (List Nat) := #[]

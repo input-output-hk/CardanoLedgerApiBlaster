@@ -146,19 +146,19 @@ class CheckerProcess(unittest.TestCase):
                 "hash": hashlib.blake2b(b"\x03" + bytes.fromhex(other_code), digest_size=28).hexdigest(),
             })
             named.write_text(json.dumps(blueprint))
-            status, report = check(script, named, "--format-right", "blueprint")
+            status, report = check(script, named, "--format-new", "blueprint")
             self.assertEqual(status, 3, report)
             self.assertIn("multiple validators with compiledCode", report["explanation"])
             for selector in ("fib", "Fibonacci example"):
-                status, report = check(script, named, "--format-right", "blueprint",
-                                       "--validator-right", selector)
+                status, report = check(script, named, "--format-new", "blueprint",
+                                       "--validator-new", selector)
                 self.assertEqual(status, 0, report)
                 self.assertEqual(report["derived_queries"]["function_equivalent"], "program_identity")
 
             export = Path(directory) / "evidence"
             named_bytes = named.read_bytes()
-            status, report = check(path, named, "--format-right", "blueprint",
-                                   "--validator-right", "fib", "--emit-assurance", str(export))
+            status, report = check(path, named, "--format-new", "blueprint",
+                                   "--validator-new", "fib", "--emit-assurance", str(export))
             self.assertEqual(status, 0, report)
             assurance_path = export / "assurance.json"
             assurance = json.loads(assurance_path.read_text())
@@ -179,8 +179,8 @@ class CheckerProcess(unittest.TestCase):
             self.assertEqual(comparison["settings"]["inputs"], "integer")
             self.assertEqual(named.read_bytes(), named_bytes)
             self.assertEqual(path.read_text(), json.dumps({**blueprint, "validators": [validator]}))
-            status, report = check(path, named, "--format-right", "blueprint",
-                                   "--validator-right", "fib", "--emit-assurance", str(export))
+            status, report = check(path, named, "--format-new", "blueprint",
+                                   "--validator-new", "fib", "--emit-assurance", str(export))
             self.assertEqual(status, 3, report)
             self.assertIn("already exists", report["explanation"])
             self.assertEqual(json.loads(assurance_path.read_text()), assurance)
@@ -197,7 +197,7 @@ class CheckerProcess(unittest.TestCase):
 
             status, report = check(path, script, "--language", "PlutusV2")
             self.assertEqual(status, 3, report)
-            self.assertIn("comparison uses PlutusV2", report["explanation"])
+            self.assertIn("this input uses PlutusV2", report["explanation"])
 
     def test_progress_identifies_query_order_without_polluting_json(self):
         for skip in [False, True]:
@@ -314,7 +314,7 @@ class CheckerProcess(unittest.TestCase):
             raw.write_bytes(flat)
             result = subprocess.run(
                 [str(CLI), str(raw), str(cbor_path), "--mode", "function",
-                 "--format-left", "flat", "--emit-lean", str(emitted), "--json"],
+                 "--format-old", "flat", "--emit-lean", str(emitted), "--json"],
                 cwd=ROOT, capture_output=True, text=True, timeout=15)
             report = json.loads(result.stdout)
             self.assertEqual((result.returncode, report["verdict"]), (0, "equivalent"), report)
@@ -810,6 +810,27 @@ class CheckerProcess(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, report)
                 self.assertEqual(report["fixed_datum"], expected_datum)
                 self.assertEqual(report["fixed_redeemer"], expected_redeemer)
+
+    def test_mixed_language_lean_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            old = Path(directory) / "v2.uplc"
+            new = Path(directory) / "v3.uplc"
+            emitted = Path(directory) / "comparison.lean"
+            old.write_text("(program 1.0.0 (lam datum (lam redeemer (lam ctx (con unit ())))))")
+            new.write_text("(program 1.1.0 (lam ctx (con unit ())))")
+            result = subprocess.run(
+                [str(CLI), str(old), str(new), "--language-old", "PlutusV2", "--language-new", "PlutusV3",
+                 "--bounded", "--steps", "300", "--max-inputs", "1", "--max-outputs", "1",
+                 "--max-signers", "0", "--emit-lean", str(emitted), "--json"],
+                cwd=ROOT, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            source = emitted.read_text()
+            self.assertIn("#import_uplc old PlutusV2", source)
+            self.assertIn("#import_uplc new PlutusV3", source)
+            self.assertIn("shared_context%", source)
+            checked = subprocess.run(["lake", "env", "lean", str(emitted)], cwd=ROOT,
+                                     capture_output=True, text=True, timeout=30)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
 
     def test_fixed_datum_and_redeemer_find_escrow_price(self):
         examples = ROOT / "equivalence/examples/two_party_escrow_old"

@@ -22,7 +22,7 @@ open _root_.Equivalence.Cli (parse)
   let paths := ["old.uplc", "new.uplc"]
   let c ← IO.ofExcept (parse {} (paths ++ ["--mode", "function"]))
   unless c.mode == "function" && c.inputs == "integer" && c.budget.isNone &&
-      c.language == "PlutusV3" && c.leftFormat == some "textual" && c.rightFormat == some "textual" do
+      c.language == "PlutusV3" && c.oldFormat == some "textual" && c.newFormat == some "textual" do
     throw <| IO.userError "Unexpected function defaults"
   unless _root_.Equivalence.Checker.queryNames c == #["function_equivalent"] do
     throw <| IO.userError "Function mode must only compare outcomes"
@@ -39,13 +39,31 @@ open _root_.Equivalence.Cli (parse)
     unless (parse {} (paths ++ options) matches .error _) do
       throw <| IO.userError s!"Expected invalid options: {options}"
   let explicit ← IO.ofExcept (parse {} (paths ++ ["--mode", "function", "--format", "flat_hex"]))
-  unless explicit.leftFormat.isNone && explicit.format == "flat_hex" do
+  unless explicit.oldFormat.isNone && explicit.format == "flat_hex" do
     throw <| IO.userError "Explicit format lost"
+  for (oldSide, newSide) in [("old", "new"), ("left", "right")] do
+    let c ← IO.ofExcept (parse {} (paths ++ ["--mode", "function",
+      s!"--format-{oldSide}", "blueprint", s!"--validator-{oldSide}", "original",
+      s!"--format-{newSide}", "blueprint", s!"--validator-{newSide}", "updated"]))
+    unless c.oldFormat == some "blueprint" && c.newFormat == some "blueprint" &&
+        c.oldValidator == some "original" && c.newValidator == some "updated" do
+      throw <| IO.userError s!"Per-script input options lost for {oldSide}/{newSide}"
 
 #eval show IO Unit from do
-  let validator ← IO.ofExcept (parse {} ["old", "new", "--bounded", "--budget", "1", "1"])
+  let args := ["old", "new", "--bounded", "--budget", "1", "1"]
+  let validator ← IO.ofExcept (parse {} args)
   unless validator.mode == "validator" && validator.bounded do
     throw <| IO.userError "Bounded validator mode was not selected"
+  for flags in [["--language-old", "PlutusV2"],
+      ["--language-new", "PlutusV3", "--language", "PlutusV2"]] do
+    let c ← IO.ofExcept (parse {} (args ++ flags))
+    unless c.toConfig.languageFor 0 == "PlutusV2" && c.toConfig.languageFor 1 == "PlutusV3" do
+      throw <| IO.userError s!"Per-script language override lost: {flags}"
+  for flags in [["--language-old", "PlutusV1"], ["--language-new", "bad"],
+      ["--language-old", "PlutusV2", "--split-dispatch"],
+      ["--language-old", "PlutusV2", "--mode", "function"]] do
+    unless (parse {} (args ++ flags)).toOption.isNone do
+      throw <| IO.userError s!"Unsupported language combination accepted: {flags}"
 
 #eval show IO Unit from do
   for options in [["--bounded", "--equivalence"], ["--equivalence", "--bounded"]] do

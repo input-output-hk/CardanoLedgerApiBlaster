@@ -327,17 +327,18 @@ lake exe uplc_equiv old.uplc new.uplc --mode function
 
 The CLI recognizes textual `.uplc` files and CIP-57 JSON blueprints such as
 `plutus.json`. Other paths default to single-CBOR hex. If a blueprint contains
-several compiled validators, use `--validator-left` or `--validator-right` to select
+several compiled validators, use `--validator-old` or `--validator-new` to select
 one by ID or title.
 Strict function mode already checks equality of outcomes. Its bounded mode instead
 preserves observed OLD constants unless `--equivalence` is requested.
 
 ### Choose the input domain and limits
 
-Validator checking currently supports structured, ledger-model-valid **Plutus V3
-spending contexts** with a present datum. Datum, redeemer and transaction contents
-remain symbolic. The profile has additional encoding and value-shape restrictions;
-see the [full input-domain description](equivalence/README.md#structured-context-profile).
+Validator checking supports structured, ledger-model-valid spending transactions
+with a present datum. For a V2-to-V3 port, use `--language-old PlutusV2 --language-new PlutusV3`.
+The checker encodes each symbolic spend for both versions. See the
+[mixed-language domain](equivalence/README.md#plutus-v2-and-v3-spending-comparisons)
+and the [standard V3 profile](equivalence/README.md#structured-context-profile).
 
 | Setting | Default | Purpose |
 | --- | --- | --- |

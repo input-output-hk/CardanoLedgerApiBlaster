@@ -1,4 +1,4 @@
-import Equivalence.Context
+import Equivalence.Queries
 
 /-!
 Defines the structured V3 spending-context domain and its configurable count limits.
@@ -258,7 +258,7 @@ private def rawExpr (f : Context.RawUnusedTxInfo) (fee mint : Expr) : Expr :=
     list-length conditions inside the proposition. -/
 def proposition (limits : Limits) (predicate : Expr)
     (fixedDatum : Option Expr := none) (fixedRedeemer : Option Expr := none)
-    (restriction : Option Expr := none) : MetaM Expr := do
+    (restriction : Option Expr := none) (shared := false) : MetaM Expr := do
   let fixedDatum := fixedDatum.orElse fun _ => limits.datum.map toExpr
   let fixedRedeemer := fixedRedeemer.orElse fun _ => limits.redeemer.map toExpr
   let fixed := (fixedDatum.map (fun value => (`datum, value))).toList ++
@@ -279,7 +279,9 @@ def proposition (limits : Limits) (predicate : Expr)
   let frameFields := (← schema ``Fields).filter (fun (name, _) => name != `unused)
   specs := specs ++ frameFields.filter (fun (name, _) => (fixed.lookup name).isNone)
   let rawFields ← schema ``Context.RawUnusedTxInfo
-  specs := specs ++ rawFields.filter (fun (name, _) => name != `outputs)
+  let symbolicRaw := fun name =>
+    name != `outputs && (!shared || [`fee, `mint, `datums, `txId].contains name)
+  specs := specs ++ rawFields.filter (fun (name, _) => symbolicRaw name)
   for i in [:limits.maxSigners] do
     Core.checkInterrupted
     specs := specs.push (Name.mkSimple s!"signer{i}", mkConst ``ByteString)
@@ -293,8 +295,9 @@ def proposition (limits : Limits) (predicate : Expr)
     let bindings := (specs.map Prod.fst).zip vars
     let find := fun name => ((fixed.lookup name).orElse fun _ =>
       (bindings.find? (fun (key, _) => key == name)).map Prod.snd).get!
-    let unused := recordExpr ``Context.RawUnusedTxInfo (rawFields.map fun (name, _) =>
-      if name == `outputs then toExpr (Data.List []) else find name)
+    let unused := recordExpr ``Context.RawUnusedTxInfo (rawFields.zipIdx.map fun ((name, _), i) =>
+      if symbolicRaw name then find name
+      else mkProj ``Context.RawUnusedTxInfo i (mkConst ``Context.RawUnusedTxInfo.sharedDefaults))
     let frame := recordExpr ``Fields ((frameFields.map (fun (name, _) => find name)).push unused)
     let earlierEntries := (Array.range limits.maxEarlierSpendingRedeemers).map fun i =>
       let stem := earlierRedeemerStem i
@@ -430,7 +433,7 @@ elab_rules : term
 
 private def elabFixedContext (inputs outputs signers : TSyntax `num)
     (earlier : Option (TSyntax `num)) (datum redeemer : Option (TSyntax `term))
-    (predicate : TSyntax `term) : Elab.Term.TermElabM Expr := do
+    (predicate : TSyntax `term) (shared := false) : Elab.Term.TermElabM Expr := do
   let elaborate := fun value => do
     let result ← Elab.Term.elabTerm value (some (mkConst ``Data))
     Elab.Term.synthesizeSyntheticMVarsNoPostponing
@@ -444,12 +447,14 @@ private def elabFixedContext (inputs outputs signers : TSyntax `num)
     maxInputs := inputs.getNat, maxOutputs := outputs.getNat,
     maxSigners := signers.getNat,
     maxEarlierSpendingRedeemers := (earlier.map (·.getNat)).getD 0 } (← instantiateMVars predicate)
-    (fixedDatum := datum) (fixedRedeemer := redeemer)
+    (fixedDatum := datum) (fixedRedeemer := redeemer) (shared := shared)
 
 /-- Standalone exports preserve optional fixed spending arguments. -/
 syntax "valid_context_datum% " num num num (" earlier_redeemers " num)? term:max term:max : term
 syntax "valid_context_redeemer% " num num num (" earlier_redeemers " num)? term:max term:max : term
 syntax "valid_context_fixed% " num num num (" earlier_redeemers " num)? term:max term:max term:max : term
+syntax "shared_context% " num num num (" earlier_redeemers " num)?
+  (" fixed_datum " term:max)? (" fixed_redeemer " term:max)? term:max : term
 elab_rules : term
   | `(valid_context_datum% $inputs:num $outputs:num $signers:num $[earlier_redeemers $earlier:num]? $datum $predicate) =>
     elabFixedContext inputs outputs signers earlier (some datum) none predicate
@@ -457,4 +462,7 @@ elab_rules : term
     elabFixedContext inputs outputs signers earlier none (some redeemer) predicate
   | `(valid_context_fixed% $inputs:num $outputs:num $signers:num $[earlier_redeemers $earlier:num]? $datum $redeemer $predicate) =>
     elabFixedContext inputs outputs signers earlier (some datum) (some redeemer) predicate
+  | `(shared_context% $inputs:num $outputs:num $signers:num $[earlier_redeemers $earlier:num]?
+      $[fixed_datum $datum]? $[fixed_redeemer $redeemer]? $predicate) =>
+    elabFixedContext inputs outputs signers earlier datum redeemer predicate (shared := true)
 end Equivalence.ValidContext

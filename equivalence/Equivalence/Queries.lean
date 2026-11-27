@@ -1,4 +1,5 @@
 import Equivalence.Acceptance
+import Equivalence.Context
 import Equivalence.Function
 
 /-!
@@ -59,6 +60,25 @@ def validatorNoAcceptanceRegression (old new : Program) (cpu memory : Nat) (v3 :
     (bounded := false) (budgeted := true) (steps := 100000) : Prop :=
   ∀ datum redeemer context : Data,
     noAcceptanceRegression (dataArgs datum redeemer context) old new cpu memory v3 bounded budgeted steps
+
+def spendingAcceptance (args : List Term) (program : Program) (cpu memory : Nat) (v3 bounded budgeted : Bool)
+    (steps : Nat) : Option Bool :=
+  Acceptance.accepts v3 (Function.executeValidator program (Context.spendingArguments v3 args)
+    cpu memory v3 bounded budgeted steps)
+
+def spendingRejected (args : List Term) (program : Program) (cpu memory : Nat) (v3 bounded budgeted : Bool)
+    (steps : Nat) : Prop :=
+  spendingAcceptance args program cpu memory v3 bounded budgeted steps = some false
+
+def spendingAcceptancePreserved (args : List Term) (old new : Program) (cpu memory : Nat)
+    (oldV3 newV3 bounded budgeted : Bool) (steps : Nat) : Prop :=
+  spendingAcceptance args old cpu memory oldV3 bounded budgeted steps = some false ∨
+    spendingAcceptance args new cpu memory newV3 bounded budgeted steps = some true
+
+def spendingNoAcceptanceRegression (args : List Term) (old new : Program) (cpu memory : Nat)
+    (oldV3 newV3 bounded budgeted : Bool) (steps : Nat) : Prop :=
+  ¬ (spendingAcceptance args old cpu memory oldV3 bounded budgeted steps = some true ∧
+    spendingAcceptance args new cpu memory newV3 bounded budgeted steps = some false)
 
 def args (n : Integer) : List Term := [.Const (.Integer n)]
 

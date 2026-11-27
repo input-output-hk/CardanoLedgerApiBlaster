@@ -118,11 +118,11 @@ def compareFixtures (c : Config) : IO Json := do
     new := { source := ← IO.FS.readFile c.scripts[1]!, format := c.format } } c.wallTimeout
 
 /-- Synthetic programs go straight to the library worker, without temporary files. -/
-def comparePrograms (left right : String) (c : Config := config) : IO Json :=
+def comparePrograms (oldProgram newProgram : String) (c : Config := config) : IO Json :=
   runRequest {
     options := c.toConfig
-    old := { source := s!"(program 1.1.0 {left})", format := "textual" }
-    new := { source := s!"(program 1.1.0 {right})", format := "textual" } } c.wallTimeout
+    old := { source := s!"(program 1.1.0 {oldProgram})", format := "textual" }
+    new := { source := s!"(program 1.1.0 {newProgram})", format := "textual" } } c.wallTimeout
 
 /-- UPLC expression selecting a path through Data constructor fields. -/
 def dataFieldTerm (term : String) (indices : List Nat) : String :=
