@@ -376,7 +376,7 @@ private def emitSource (env : Environment) (c : Config) (header : String)
         let redeemer := (redeemerText.map fun value => s!" fixed_redeemer ({value})").getD ""
         let syntaxName := if c.toConfig.minting then "minting_context%" else "withdrawal_context%"
         s!"{syntaxName} {counts}{redeemer} ({rendered.pretty})"
-      else if c.toConfig.mixedLanguages then
+      else if c.mode == "validator" && c.toConfig.usesV2 then
         let datum := (datumText.map fun value => s!" fixed_datum ({value})").getD ""
         let redeemer := (redeemerText.map fun value => s!" fixed_redeemer ({value})").getD ""
         s!"shared_context% {counts}{datum}{redeemer} ({rendered.pretty})"
@@ -402,7 +402,7 @@ private def emitSource (env : Environment) (c : Config) (header : String)
   let scope := if checksLedger c then
     let predicate := if c.toConfig.minting then "Context.validMintingArguments"
       else if c.toConfig.withdrawal then "Context.validWithdrawalArguments"
-      else if c.toConfig.mixedLanguages then "Context.validSharedArguments" else "Ledger.validArguments"
+      else toString c.toConfig.spendingValidityDeclaration
     s!"\n-- These queries require {predicate} for each structured context.\n-- The checker separately checks a native ledger-model-valid domain witness\n-- and validates counterexample replays; those checks are not reproduced here.\n"
     else ""
   writeLeanExport file (header ++

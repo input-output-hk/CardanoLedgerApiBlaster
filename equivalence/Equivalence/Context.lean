@@ -200,13 +200,16 @@ def v2Arguments : List Term → Option (List Term)
   | [.Const (.Data raw)] => (unpackSpendingContext raw).bind SpendingFrame.v2Arguments
   | _ => none
 
+def validV2SpendingArguments (args : List Term) : Bool :=
+  match v2Arguments args with
+  | some [.Const (.Data datum), .Const (.Data redeemer), .Const (.Data raw)] =>
+    (CardanoLedgerApi.IsData.Class.IsData.fromData raw).any
+      (fun ctx => CardanoLedgerApi.V2.Contexts.validSpendingContext ⟨datum, redeemer, ctx⟩)
+  | _ => false
+
 /-- Both projections must be valid in their ledger models before checking acceptance. -/
 def validSharedArguments (args : List Term) : Bool :=
-  Ledger.validArguments args && match v2Arguments args with
-    | some [.Const (.Data datum), .Const (.Data redeemer), .Const (.Data raw)] =>
-      (CardanoLedgerApi.IsData.Class.IsData.fromData raw).any
-        (fun ctx => CardanoLedgerApi.V2.Contexts.validSpendingContext ⟨datum, redeemer, ctx⟩)
-    | _ => false
+  Ledger.validArguments args && validV2SpendingArguments args
 
 def spendingArguments (v3 : Bool) (args : List Term) : List Term :=
   if v3 then args else (v2Arguments args).getD []

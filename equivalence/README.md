@@ -24,7 +24,7 @@ explicitly rather than rely on CLI defaults.
 | `--bounded` | Off | Make the execution-step limit part of the comparison scope. |
 | `--steps N` | `100000` | Execution-step bound with `--bounded`; otherwise an analysis guard. |
 | `--budget CPU MEMORY` | None | Apply the same execution-unit limits independently to each script. Required for validators without `--bounded`; optional otherwise. |
-| `--language VERSION` | `PlutusV3` | Set both script languages. Functions support V1, V2 and V3. Same-language spending comparisons use V3. |
+| `--language VERSION` | `PlutusV3` | Set both script languages. Validator checks support V2 and V3. Functions also support V1. |
 | `--language-old VERSION`, `--language-new VERSION` | Shared language | Override the language for one side. Mixed validator comparisons support V2 and V3. |
 
 **Validators:** by default, every input accepted by OLD must be accepted by NEW.
@@ -133,6 +133,9 @@ ledger model. Model validity does not establish on-chain reachability.
 
 ### Plutus V2 and V3 spending comparisons
 
+Use `--language PlutusV2` to compare two V2 validators. Use per-script language
+options for a port between V2 and V3.
+
 ```sh
 lake exe uplc_equiv old.uplc new.uplc \
   --language-old PlutusV2 --language-new PlutusV3 \
@@ -142,9 +145,10 @@ lake exe uplc_equiv old.uplc new.uplc \
 Each symbolic spend supplies the same datum, redeemer, and transaction fields
 to both script encoders. V2 receives the datum, redeemer, and V2 context as
 three arguments. V3 receives one V3 context and must return unit to accept.
-Each version uses its own ledger predicate and bundled cost model.
-Mixed-language checks accept UPLC 1.0.0 and 1.1.0, as supported by both
-languages at Cardano protocol version 11.
+Each version uses its own ledger predicate and bundled cost model. A V2-only
+comparison applies the V2 predicate. A mixed comparison applies both.
+These checks accept UPLC 1.0.0 and 1.1.0, as supported by both languages
+at Cardano protocol version 11.
 
 This domain uses the same count and value-shape limits as the V3 profile. It
 fixes reference inputs, certificates, withdrawals, later redeemers, and
@@ -154,8 +158,8 @@ application datum and redeemer payloads are shared across versions.
 `--equivalence` checks both directions over this domain. Dispatch splitting
 is available for V3-to-V3 checks.
 
-In mixed-language JSON witnesses, `arguments.old` and `arguments.new` record
-the exact argument lists passed during native replay.
+In V2-only and mixed-language JSON witnesses, `arguments.old` and
+`arguments.new` record the exact argument lists passed during native replay.
 
 ### Minting policy comparisons
 

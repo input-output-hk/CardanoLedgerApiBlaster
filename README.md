@@ -335,9 +335,9 @@ preserves observed OLD constants unless `--equivalence` is requested.
 ### Choose the input domain and limits
 
 Validator checking supports structured, ledger-model-valid spending transactions
-with a present datum. For a V2-to-V3 port, use `--language-old PlutusV2 --language-new PlutusV3`.
-The checker encodes each symbolic spend for both versions. See the
-[mixed-language domain](equivalence/README.md#plutus-v2-and-v3-spending-comparisons)
+with a present datum. Use `--language PlutusV2` for two V2 validators or
+`--language-old PlutusV2 --language-new PlutusV3` for a V2-to-V3 port. See the
+[V2 and mixed-language domain](equivalence/README.md#plutus-v2-and-v3-spending-comparisons)
 and the [standard V3 profile](equivalence/README.md#structured-context-profile).
 Use `--purpose mint` to compare [V2 and V3 minting policies](equivalence/README.md#minting-policy-comparisons).
 Use `--purpose withdraw` to compare [V2 and V3 reward-withdrawal validators](equivalence/README.md#withdrawal-validator-comparisons).

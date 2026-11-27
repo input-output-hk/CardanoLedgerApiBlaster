@@ -17,29 +17,33 @@ private def spendingBody (datum redeemer fee : String) (maximum : Nat) (result :
     s!"(force [[[(force (builtin ifThenElse)) {condition}] (delay {branch})] (delay (error))])") result
   s!"(lam c {body})"
 
-private def comparePort (maximum : Nat) (equivalence : Bool)
-    (oldVersion := "1.0.0") (newVersion := "1.1.0") : IO Lean.Json :=
+private def compareSpending (maximum : Nat) (equivalence : Bool)
+    (oldVersion := "1.0.0") (newVersion := "1.1.0") (newIsV2 := false) : IO Lean.Json :=
   let fee := contextFieldTerm [0, 3]
-  let oldBody := spendingBody "datum" "redeemer" (firstMapValue (firstMapValue fee)) 7 "(con integer 0)"
-  let newBody := spendingBody datumTerm (contextFieldTerm [1]) fee maximum "(con unit ())"
+  let v2Fee := firstMapValue (firstMapValue fee)
+  let v2Body := fun limit result =>
+    s!"(lam datum (lam redeemer {spendingBody "datum" "redeemer" v2Fee limit result}))"
+  let oldBody := v2Body 7 "(con integer 0)"
+  let newBody := if newIsV2 then v2Body maximum "(con integer 1)"
+    else spendingBody datumTerm (contextFieldTerm [1]) fee maximum "(con unit ())"
   runRequest {
     options := {
       languageOld := some "PlutusV2"
-      languageNew := some "PlutusV3"
+      languageNew := some (if newIsV2 then "PlutusV2" else "PlutusV3")
       bounded := true
       steps := 300
       maxInputs := 1
       maxOutputs := 1
       maxSigners := 0
       equivalence := equivalence }
-    old := { source := s!"(program {oldVersion} (lam datum (lam redeemer {oldBody})))", format := "textual" }
+    old := { source := s!"(program {oldVersion} {oldBody})", format := "textual" }
     new := { source := s!"(program {newVersion} {newBody})", format := "textual" } } 90
 
 #eval show IO Unit from do
   for (oldVersion, newVersion, side, language, version) in [
       ("2.0.0", "1.1.0", "OLD", "PlutusV2", "2.0.0"),
       ("1.0.0", "1.2.0", "NEW", "PlutusV3", "1.2.0")] do
-    let report ← comparePort 7 false oldVersion newVersion
+    let report ← compareSpending 7 false oldVersion newVersion
     verdict report "error"
     expect report ["explanation"]
       s!"{side} uses UPLC {version}, which is unsupported for {language} at protocol version 11. Expected UPLC 1.0.0 or 1.1.0."
@@ -47,7 +51,7 @@ private def comparePort (maximum : Nat) (equivalence : Bool)
 
 -- Both versions test the same payloads and fee. V2 accepts the integer result.
 #eval show IO Unit from do
-  let report ← comparePort 7 true (oldVersion := "1.1.0") (newVersion := "1.0.0")
+  let report ← compareSpending 7 true (oldVersion := "1.1.0") (newVersion := "1.0.0")
   verdict report "bounded_equivalent"
   expect report ["language_old"] "PlutusV2"
   expect report ["language_new"] "PlutusV3"
@@ -57,7 +61,7 @@ private def comparePort (maximum : Nat) (equivalence : Bool)
 
 -- Tighten the V3 fee limit and inspect the two encodings of the replayed spend.
 #eval show IO Unit from do
-  let report ← comparePort 6 false
+  let report ← compareSpending 6 false
   verdict report "bounded_regression"
   let w ← witness report
   expect w ["ledger_validity", "valid"] true
@@ -82,5 +86,30 @@ private def comparePort (maximum : Nat) (equivalence : Bool)
   check w ((← dataField oldContext [0, 3]) == detailed (_root_.Equivalence.Context.lovelace 7))
     "Expected the V2 fee to encode 7 lovelace"
   expect (← dataField newContext [0, 3]) ["int"] (7 : Int)
+
+#eval show IO Unit from do
+  let report ← compareSpending 7 true (newIsV2 := true)
+  verdict report "bounded_equivalent"
+  expect report ["language"] "PlutusV2"
+  let w ← field report ["old_acceptance_witness"]
+  expect w ["replayed"] true
+  expect w ["ledger_validity", "predicate"] "V2 validSpendingContext"
+  expect w ["old", "result", "value"] (0 : Int)
+  expect w ["new", "result", "value"] (1 : Int)
+  let old ← field w ["arguments", "old"]
+  expect w ["arguments", "new"] old
+
+#eval show IO Unit from do
+  let report ← compareSpending 6 false (newIsV2 := true)
+  verdict report "bounded_regression"
+  let w ← witness report
+  expect w ["old", "accepts"] true
+  expect w ["new", "accepts"] false
+  expect w ["ledger_validity", "valid"] true
+  let #[_, _, ctx] ← IO.ofExcept ((← field w ["arguments", "old"]).getArr?)
+    | throw <| IO.userError "Expected three V2 spending arguments"
+  let detailed := PlutusCore.Data.toDetailedJson
+  check w ((← dataField ctx [0, 3]) == detailed (_root_.Equivalence.Context.lovelace 7))
+    "Expected a fee of seven lovelace"
 
 end Tests.Equivalence.MixedLanguage

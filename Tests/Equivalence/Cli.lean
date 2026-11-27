@@ -54,6 +54,9 @@ open _root_.Equivalence.Cli (parse)
   let validator ← IO.ofExcept (parse {} args)
   unless validator.mode == "validator" && validator.bounded do
     throw <| IO.userError "Bounded validator mode was not selected"
+  let v2 ← IO.ofExcept (parse {} (args ++ ["--language", "PlutusV2"]))
+  unless v2.toConfig.languageFor 0 == "PlutusV2" && v2.toConfig.languageFor 1 == "PlutusV2" do
+    throw <| IO.userError "V2 spending language was not selected for both sides"
   for flags in [["--language-old", "PlutusV2"],
       ["--language-new", "PlutusV3", "--language", "PlutusV2"]] do
     let c ← IO.ofExcept (parse {} (args ++ flags))
@@ -101,7 +104,7 @@ open _root_.Equivalence.Cli (parse)
       throw <| IO.userError s!"Removed validator mode accepted: {mode}"
   for args in [["--max-inputs", "-1"], ["--max-outputs"], ["--max-signers", "oops"],
       ["--max-earlier-spending-redeemers", "-1"],
-      ["--language", "PlutusV2"], ["--raw-context"],
+      ["--language", "PlutusV1"], ["--raw-context"],
       ["--mode", "function", "--max-inputs", "2"],
       ["--mode", "function", "--max-earlier-spending-redeemers", "0"],
       ["--max-inputs", "2", "--mode", "function"]] do

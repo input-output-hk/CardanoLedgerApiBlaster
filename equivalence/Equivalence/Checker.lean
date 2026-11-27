@@ -56,18 +56,21 @@ def Config.isV3 (c : Config) (side : Nat) : Bool := c.languageFor side == "Plutu
 
 def Config.mixedLanguages (c : Config) : Bool := c.languageFor 0 != c.languageFor 1
 
+def Config.usesV2 (c : Config) : Bool :=
+  c.languageFor 0 == "PlutusV2" || c.languageFor 1 == "PlutusV2"
+
 def Config.minting (c : Config) : Bool := c.purpose == "mint"
 
 def Config.withdrawal (c : Config) : Bool := c.purpose == "withdraw"
 
 def Config.spending (c : Config) : Bool := c.purpose == "spend"
 
-def Config.versionedArguments (c : Config) : Bool := c.mixedLanguages || !c.spending
+def Config.versionedArguments (c : Config) : Bool := c.mode == "validator" && (c.usesV2 || !c.spending)
 
 def Config.rejectionDeclaration (c : Config) : Name :=
   if c.minting then ``Queries.mintingRejected
   else if c.withdrawal then ``Queries.withdrawalRejected
-  else if c.mixedLanguages then ``Queries.spendingRejected
+  else if c.usesV2 then ``Queries.spendingRejected
   else ``Queries.rejected
 
 def Config.languageFields (c : Config) : List (String × Json) :=
@@ -115,19 +118,20 @@ def Config.validate (c : Config) : Except String Unit := do
   if c.mode == "validator" then
     if c.inputs != "valid-context" then
       throw s!"unsupported validator input mode: {c.inputs}; use valid-context"
+    unless [c.languageFor 0, c.languageFor 1].all (fun lang => ["PlutusV2", "PlutusV3"].contains lang) do
+      throw s!"--purpose {c.purpose} requires PlutusV2 or PlutusV3"
     if !c.spending then
-      unless [c.languageFor 0, c.languageFor 1].all (fun lang => ["PlutusV2", "PlutusV3"].contains lang) do
-        throw s!"--purpose {c.purpose} requires PlutusV2 or PlutusV3"
       if c.datum.isSome then throw "--datum requires --purpose spend"
       if c.maxEarlierSpendingRedeemers != 0 then
         throw "--max-earlier-spending-redeemers requires --purpose spend"
       if c.splitDispatch then throw "--split-dispatch requires --purpose spend"
-    else if c.mixedLanguages then
-      unless [c.languageFor 0, c.languageFor 1].contains "PlutusV2" &&
-          [c.languageFor 0, c.languageFor 1].contains "PlutusV3" do
-        throw "mixed-language spending checks require PlutusV2 and PlutusV3"
-      if c.splitDispatch then throw "--split-dispatch requires two PlutusV3 validators"
-    else unless c.isV3 0 do throw "same-language spending checks require PlutusV3"
+    else if c.usesV2 && c.splitDispatch then
+      throw "--split-dispatch requires two PlutusV3 validators"
+
+def Config.spendingValidityDeclaration (c : Config) : Name :=
+  if c.mixedLanguages then ``Context.validSharedArguments
+  else if c.usesV2 then ``Context.validV2SpendingArguments
+  else ``Ledger.validArguments
 
 def checksLedger (c : Config) : Bool := c.mode == "validator"
 
@@ -138,18 +142,22 @@ def validLedgerContext (c : Config) (raw : PlutusCore.Data.Data) : Bool :=
   else if c.withdrawal then
     ValidContext.containsWithdrawal c.toLimits raw &&
       Context.validWithdrawalArguments (!c.isV3 0 || !c.isV3 1) (c.isV3 0 || c.isV3 1) (Queries.contextArgs raw)
-  else (if c.mixedLanguages then Context.validSharedArguments (Queries.contextArgs raw)
-    else Ledger.validContext raw) && ValidContext.contains c.toLimits raw
+  else
+    let args := Queries.contextArgs raw
+    (if c.mixedLanguages then Context.validSharedArguments args
+      else if c.usesV2 then Context.validV2SpendingArguments args
+      else Ledger.validContext raw) && ValidContext.contains c.toLimits raw
 
 def auditLedgerContext (c : Config) (raw : PlutusCore.Data.Data) : Json :=
-  if !c.spending then
-    let predicate := if c.minting then "validMintingContext" else "validRewardingContext"
-    Json.mkObj [("predicate", toJson s!"{predicate} ({c.languageFor 0}, {c.languageFor 1})"),
+  if c.spending && !c.usesV2 then Ledger.audit raw
+  else
+    let predicate :=
+      if c.minting then s!"validMintingContext ({c.languageFor 0}, {c.languageFor 1})"
+      else if c.withdrawal then s!"validRewardingContext ({c.languageFor 0}, {c.languageFor 1})"
+      else if c.mixedLanguages then "V2 and V3 validSpendingContext"
+      else "V2 validSpendingContext"
+    Json.mkObj [("predicate", toJson predicate),
       ("valid", toJson (validLedgerContext c raw))]
-  else if c.mixedLanguages then Json.mkObj [
-    ("predicate", toJson "V2 and V3 validSpendingContext"),
-    ("valid", toJson (Context.validSharedArguments (Queries.contextArgs raw)))]
-  else Ledger.audit raw
 
 /-- One query description drives solving, reports and emitted Lean source.
     Side indices select the OLD (0) or NEW (1) program. -/
@@ -201,7 +209,7 @@ def queries (c : Config) : Array Query :=
         (``Queries.mintingNoAcceptanceRegression, ``Queries.mintingAcceptancePreserved)
       else if c.withdrawal then
         (``Queries.withdrawalNoAcceptanceRegression, ``Queries.withdrawalAcceptancePreserved)
-      else if c.mixedLanguages then
+      else if c.usesV2 then
         (``Queries.spendingNoAcceptanceRegression, ``Queries.spendingAcceptancePreserved)
       else (``Queries.noAcceptanceRegression, ``Queries.acceptancePreserved)
     let forward : Array Query := #[
@@ -247,10 +255,13 @@ def inputDomain (c : Config) : String :=
   else if c.mode == "validator" then
     (if c.mixedLanguages then
       s!"Shared spending transactions for OLD {c.languageFor 0} and NEW {c.languageFor 1}, with "
+    else if c.usesV2 then "Structured V2 spending contexts with "
     else "Structured V3 spending contexts with ") ++
     s!"0..{c.maxInputs} independently symbolic inputs, 0..{c.maxOutputs} outputs and 0..{c.maxSigners} signer byte strings; present script datum; typed independent input and spending references; input pubkey/script credentials without staking and absent/hash/inline datums; outputs have arbitrary addresses and inline datums; no reference scripts; each value has an ADA entry and one independent policy/token entry; arbitrary Data validity range, datum and redeemer; 0..{c.maxEarlierSpendingRedeemers} spending redeemers before the current map entry" ++
-    (if c.mixedLanguages then
-      "; no later redeemers, reference inputs, certificates, withdrawals or governance fields; shared fee, mint, datum map and transaction ID; both ledger models must validate the spend"
+    (if c.usesV2 then
+      "; no later redeemers, reference inputs, certificates, withdrawals or governance fields; symbolic fee, mint, datum map and transaction ID" ++
+        (if c.mixedLanguages then "; both ledger models must validate the spend"
+          else "; the V2 ledger model must validate the spend")
     else " and a symbolic tail; other auxiliary fields are arbitrary Data; symbolic queries require CardanoLedgerApi.V3.validSpendingContext") ++
     "; unbounded integers and byte strings; concrete witnesses and counterexamples are independently ledger-validated and natively replayed; model validity does not establish on-chain reachability" ++
     (c.datum.map (fun datum => s!"; restricted to spending datum {datum}")).getD "" ++
@@ -288,8 +299,7 @@ def queryPredicate (c : Config) (query : Query) (programs : Array Expr) : MetaM 
     let valid := if !c.spending then
         let predicate := if c.minting then ``Context.validMintingArguments else ``Context.validWithdrawalArguments
         mkApp3 (mkConst predicate) (toExpr (!c.isV3 0 || !c.isV3 1)) (toExpr (c.isV3 0 || c.isV3 1)) args
-      else mkApp (mkConst (if c.mixedLanguages then
-        ``Context.validSharedArguments else ``Ledger.validArguments)) args
+      else mkApp (mkConst c.spendingValidityDeclaration) args
     let premise ← Meta.mkEq valid (toExpr true)
     -- Establish ledger validity before specializing either script. In particular,
     -- invalid zero-input frames must not expand the symbolic CEK execution.
@@ -299,7 +309,7 @@ def queryPredicate (c : Config) (query : Query) (programs : Array Expr) : MetaM 
 def queryProposition (c : Config) (query : Query) (programs : Array Expr) : MetaM Expr := do
   let predicate ← queryPredicate c query programs
   if c.mode == "function" then return predicate
-  ValidContext.proposition c.toLimits predicate (shared := c.mixedLanguages)
+  ValidContext.proposition c.toLimits predicate (shared := c.spending && c.usesV2)
     (minting := c.minting) (withdrawal := c.withdrawal)
 
 def report (verdict explanation : String) (fields : List (String × Json) := []) : Json :=
@@ -338,7 +348,7 @@ private def scriptArguments (c : Config) (side : Nat) (args : List PlutusCore.UP
     List PlutusCore.UPLC.Term.Term :=
   if c.minting then Context.mintingArguments (c.isV3 side) args
   else if c.withdrawal then Context.withdrawalArguments (c.isV3 side) args
-  else if c.mixedLanguages then Context.spendingArguments (c.isV3 side) args
+  else if c.mode == "validator" && c.usesV2 then Context.spendingArguments (c.isV3 side) args
   else args
 
 private def validatorArgumentFields (c : Config) (args : List PlutusCore.UPLC.Term.Term) :
@@ -594,7 +604,7 @@ private def synthesizeOldAcceptance (c : Config)
       if replayConfirmed (replayOldAcceptance c oldProgram newProgram bindings) then return some bindings
     return none
   let predicate ← queryPredicate c query programs
-  let fast := !c.mixedLanguages && c.datum.isNone && c.redeemer.isNone &&
+  let fast := !c.usesV2 && c.datum.isNone && c.redeemer.isNone &&
     c.maxInputs > 0 && c.maxOutputs > 0 && c.maxSigners > 0
   let (cpu, memory) := c.budget.getD (0, 0)
   let fastGoal := mkAppN (mkConst ``ValidContext.fastWitnessRejected)
@@ -786,6 +796,7 @@ def classify (c : Config) (results : Array Blaster.Smt.Result)
           ("proof_domain", toJson (if c.minting then "ledger-valid structured minting transactions"
             else if c.withdrawal then "ledger-valid structured reward-withdrawal transactions"
             else if c.mixedLanguages then "ledger-valid shared V2/V3 spending transactions"
+            else if c.usesV2 then "ledger-valid structured V2 spending transactions"
             else "ledger-valid structured spending contexts")),
           ("domain_witness", PlutusCore.Data.toDetailedJson raw), ("ledger_validity", auditLedgerContext c raw)]
       | _ => return domainIssue "unestablished" "Could not construct a ledger-valid context witnessing the selected domain; no preservation claim is made."

@@ -832,6 +832,26 @@ class CheckerProcess(unittest.TestCase):
                                      capture_output=True, text=True, timeout=30)
             self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
 
+    def test_v2_spending_lean_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / "v2.uplc"
+            emitted = Path(directory) / "comparison.lean"
+            script.write_text("(program 1.0.0 (lam datum (lam redeemer (lam ctx (con integer 0)))))")
+            result = subprocess.run(
+                [str(CLI), str(script), str(script), "--language", "PlutusV2", "--bounded",
+                 "--max-inputs", "1", "--max-outputs", "0", "--max-signers", "0",
+                 "--emit-lean", str(emitted), "--json"],
+                cwd=ROOT, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            source = emitted.read_text()
+            self.assertIn("#import_uplc old PlutusV2", source)
+            self.assertIn("#import_uplc new PlutusV2", source)
+            query = source.partition("\n#blaster ")[2].split("\n\n", 1)[0]
+            self.assertIn("Context.validV2SpendingArguments args = true", query)
+            checked = subprocess.run(["lake", "env", "lean", str(emitted)], cwd=ROOT,
+                                     capture_output=True, text=True, timeout=30)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
     def test_minting_and_withdrawal_exports_and_blueprint_purpose(self):
         with tempfile.TemporaryDirectory() as directory:
             old = Path(directory) / "v2.uplc"
